@@ -1,41 +1,19 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Theme definitions for light and dark modes
+ * Centralized theme configuration for consistent styling
  */
 
+import type { Theme } from '@/src/types';
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
-};
-
-export const Fonts = Platform.select({
+/**
+ * Font families based on platform
+ */
+const platformFonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -45,9 +23,63 @@ export const Fonts = Platform.select({
     mono: 'monospace',
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    rounded: "'SF Pro Rounded', sans-serif",
+    mono: "Menlo, Monaco, Consolas, monospace",
   },
-});
+})!;
+
+/**
+ * Light theme configuration
+ */
+export const lightTheme: Theme = {
+  colors: {
+    background: '#F5F6FA',
+    card: '#FFFFFF',
+    text: '#1E1E1E',
+    textSecondary: '#666666',
+    primary: '#6C63FF',
+    danger: '#FF4B4B',
+    border: '#DDD',
+    tabIconDefault: '#687076',
+    tabIconSelected: '#6C63FF',
+  },
+  shadows: {
+    small: {
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+      elevation: 2,
+    },
+  },
+  fonts: platformFonts,
+};
+
+/**
+ * Dark theme configuration
+ */
+export const darkTheme: Theme = {
+  colors: {
+    background: '#1A1A1A',
+    card: '#2D2D2D',
+    text: '#FFFFFF',
+    textSecondary: '#A0A0A0',
+    primary: '#8B85FF',
+    danger: '#FF6B6B',
+    border: '#404040',
+    tabIconDefault: '#9BA1A6',
+    tabIconSelected: '#8B85FF',
+  },
+  shadows: {
+    small: {
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 4,
+      elevation: 4,
+    },
+  },
+  fonts: platformFonts,
+};
