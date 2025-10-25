@@ -15,15 +15,15 @@ import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 export default function RewardsScreen() {
@@ -396,11 +396,14 @@ export default function RewardsScreen() {
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.iconScrollView}>
+            <ScrollView 
+              style={styles.iconScrollView}
+              removeClippedSubviews={true}
+            >
               <View style={styles.iconGrid}>
-                {GOAL_REWARD_ICONS.map((icon) => (
+                {GOAL_REWARD_ICONS.map((icon, index) => (
                   <TouchableOpacity
-                    key={icon}
+                    key={`icon-${index}-${icon}`}
                     style={[
                       styles.iconOption,
                       { backgroundColor: theme.colors.background },

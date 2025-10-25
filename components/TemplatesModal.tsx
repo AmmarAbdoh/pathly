@@ -8,7 +8,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalCategory, GoalTemplate } from '@/src/types';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
   Dimensions,
   Modal,
@@ -27,12 +27,65 @@ interface TemplatesModalProps {
   onSelectTemplate: (template: GoalTemplate) => void;
 }
 
-export default function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalProps) {
+// Memoized template card component
+const TemplateCard = memo(({ template, theme, t, onSelect }: any) => (
+  <TouchableOpacity
+    style={[
+      styles.templateCard,
+      {
+        backgroundColor: theme.colors.card,
+        ...theme.shadows.small,
+      },
+    ]}
+    onPress={onSelect}
+    activeOpacity={0.7}
+  >
+    <View style={styles.templateHeader}>
+      <Text style={styles.templateIcon}>{template.icon}</Text>
+      <View style={styles.templateInfo}>
+        <Text style={[styles.templateTitle, { color: theme.colors.text }]}>
+          {template.title}
+        </Text>
+        <Text style={[styles.templateDesc, { color: theme.colors.textSecondary }]}>
+          {template.description}
+        </Text>
+      </View>
+    </View>
+    <View style={styles.templateDetails}>
+      <View style={styles.templateDetail}>
+        <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
+          {t.labels.target}
+        </Text>
+        <Text style={[styles.templateDetailValue, { color: theme.colors.text }]}>
+          {template.target} {t.units[template.unit as keyof typeof t.units] || template.unit}
+        </Text>
+      </View>
+      <View style={styles.templateDetail}>
+        <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
+          {t.goalCard.points}
+        </Text>
+        <Text style={[styles.templateDetailValue, { color: theme.colors.primary }]}>
+          {template.points}
+        </Text>
+      </View>
+      <View style={styles.templateDetail}>
+        <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
+          {t.goalForm.period}
+        </Text>
+        <Text style={[styles.templateDetailValue, { color: theme.colors.text }]}>
+          {t.periods[template.period]}
+        </Text>
+      </View>
+    </View>
+  </TouchableOpacity>
+));
+
+function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalProps) {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
   const [selectedCategory, setSelectedCategory] = useState<GoalCategory | 'all'>('all');
 
-  const CATEGORIES: { key: GoalCategory; label: string; icon: string }[] = [
+  const CATEGORIES: { key: GoalCategory; label: string; icon: string }[] = useMemo(() => [
     { key: 'health', label: t.templates.categories.health, icon: '❤️' },
     { key: 'fitness', label: t.templates.categories.fitness, icon: '💪' },
     { key: 'learning', label: t.templates.categories.learning, icon: '📚' },
@@ -42,7 +95,7 @@ export default function TemplatesModal({ visible, onClose, onSelectTemplate }: T
     { key: 'social', label: t.templates.categories.social, icon: '👥' },
     { key: 'hobby', label: t.templates.categories.hobby, icon: '🎨' },
     { key: 'other', label: t.templates.categories.other, icon: '📋' },
-  ];
+  ], [t]);
 
   const GOAL_TEMPLATES = useMemo(() => getGoalTemplates(language), [language]);
 
@@ -50,6 +103,11 @@ export default function TemplatesModal({ visible, onClose, onSelectTemplate }: T
     if (selectedCategory === 'all') return GOAL_TEMPLATES;
     return GOAL_TEMPLATES.filter(t => t.category === selectedCategory);
   }, [selectedCategory, GOAL_TEMPLATES]);
+
+  const handleSelectTemplate = useCallback((template: GoalTemplate) => {
+    onSelectTemplate(template);
+    onClose();
+  }, [onSelectTemplate, onClose]);
 
   return (
     <Modal
@@ -118,59 +176,13 @@ export default function TemplatesModal({ visible, onClose, onSelectTemplate }: T
           {/* Templates List */}
           <ScrollView style={styles.templatesScroll}>
             {filteredTemplates.map(template => (
-              <TouchableOpacity
+              <TemplateCard
                 key={template.id}
-                style={[
-                  styles.templateCard,
-                  {
-                    backgroundColor: theme.colors.card,
-                    ...theme.shadows.small,
-                  },
-                ]}
-                onPress={() => {
-                  onSelectTemplate(template);
-                  onClose();
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={styles.templateHeader}>
-                  <Text style={styles.templateIcon}>{template.icon}</Text>
-                  <View style={styles.templateInfo}>
-                    <Text style={[styles.templateTitle, { color: theme.colors.text }]}>
-                      {template.title}
-                    </Text>
-                    <Text style={[styles.templateDesc, { color: theme.colors.textSecondary }]}>
-                      {template.description}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.templateDetails}>
-                  <View style={styles.templateDetail}>
-                    <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
-                      {t.labels.target}
-                    </Text>
-                    <Text style={[styles.templateDetailValue, { color: theme.colors.text }]}>
-                      {template.target} {t.units[template.unit as keyof typeof t.units] || template.unit}
-                    </Text>
-                  </View>
-                  <View style={styles.templateDetail}>
-                    <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
-                      {t.goalCard.points}
-                    </Text>
-                    <Text style={[styles.templateDetailValue, { color: theme.colors.primary }]}>
-                      {template.points}
-                    </Text>
-                  </View>
-                  <View style={styles.templateDetail}>
-                    <Text style={[styles.templateDetailLabel, { color: theme.colors.textSecondary }]}>
-                      {t.goalForm.period}
-                    </Text>
-                    <Text style={[styles.templateDetailValue, { color: theme.colors.text }]}>
-                      {t.periods[template.period]}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
+                template={template}
+                theme={theme}
+                t={t}
+                onSelect={() => handleSelectTemplate(template)}
+              />
             ))}
           </ScrollView>
         </View>
@@ -178,6 +190,8 @@ export default function TemplatesModal({ visible, onClose, onSelectTemplate }: T
     </Modal>
   );
 }
+
+export default memo(TemplatesModal);
 
 const styles = StyleSheet.create({
   modalOverlay: {

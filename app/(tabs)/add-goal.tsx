@@ -113,6 +113,7 @@ export default function AddGoalScreen() {
             direction: selectedTemplate.direction,
             points: selectedTemplate.points,
             period: selectedTemplate.period,
+            icon: selectedTemplate.icon,
           } : undefined}
         />
       </ScrollView>

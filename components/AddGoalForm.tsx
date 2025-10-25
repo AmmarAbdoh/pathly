@@ -90,7 +90,10 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       setCustomPeriodDays('');
       setIsUltimate(false);
       setIsRecurring(false);
-      setSelectedIcon(templateData.icon || DEFAULT_GOAL_ICON);
+      // Set icon from template
+      if (templateData.icon) {
+        setSelectedIcon(templateData.icon);
+      }
       setErrors({});
       
       // Clear template after applying
@@ -98,7 +101,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         onClearTemplate();
       }
     }
-  }, [templateData, onClearTemplate]);
+  }, [templateData?.id, templateData?.icon, onClearTemplate]);
 
   // Dropdown items
   const directionItems = useMemo(
@@ -596,11 +599,14 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.iconScrollView}>
+            <ScrollView 
+              style={styles.iconScrollView}
+              removeClippedSubviews={true}
+            >
               <View style={styles.iconGrid}>
-                {GOAL_REWARD_ICONS.map((icon) => (
+                {GOAL_REWARD_ICONS.map((icon, index) => (
                   <TouchableOpacity
-                    key={icon}
+                    key={`icon-${index}-${icon}`}
                     style={[
                       styles.iconOption,
                       { backgroundColor: theme.colors.background },

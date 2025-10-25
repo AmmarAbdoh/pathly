@@ -1,94 +1,170 @@
 /**
  * Tab layout configuration
- * Bottom tab navigation setup
+ * Swipeable tabs with bottom navigation
  */
 
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
-import React, { useMemo } from 'react';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AddGoalScreen from './add-goal';
+import HomeScreen from './home';
+import RewardsScreen from './rewards';
+import SettingsScreen from './settings';
+import StatisticsScreen from './statistics';
+
+const Tab = createMaterialTopTabNavigator();
 
 /**
- * Tab layout component
+ * Custom tab bar component
+ */
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const { theme } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.tabBar,
+        {
+          backgroundColor: theme.colors.card,
+          borderTopColor: theme.colors.border,
+        },
+      ]}
+    >
+      {state.routes.map((route: any, index: number) => {
+        const { options } = descriptors[route.key];
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        return (
+          <TouchableOpacity
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            onPress={onPress}
+            style={styles.tabButton}
+          >
+            <Ionicons
+              name={options.tabBarIcon}
+              size={24}
+              color={isFocused ? theme.colors.primary : theme.colors.tabIconDefault}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                {
+                  color: isFocused ? theme.colors.primary : theme.colors.tabIconDefault,
+                },
+              ]}
+            >
+              {options.title}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * Tab layout component with swipe navigation
  */
 export default function TabLayout() {
   const { theme } = useTheme();
   const { t } = useLanguage();
 
-  const screenOptions = useMemo(
-    () => ({
-      headerShown: false,
-      tabBarStyle: {
-        backgroundColor: theme.colors.card,
-        borderTopColor: theme.colors.border,
-        borderTopWidth: 1,
-        paddingBottom: 4,
-        paddingTop: 4,
-        height: 60,
-      },
-      tabBarActiveTintColor: theme.colors.primary,
-      tabBarInactiveTintColor: theme.colors.tabIconDefault,
-      tabBarLabelStyle: {
-        fontWeight: '600' as const,
-        fontSize: 12,
-      },
-    }),
-    [theme]
-  );
-
   return (
-    <Tabs screenOptions={screenOptions}>
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: t.tabs.home,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
-          ),
-          tabBarAccessibilityLabel: t.tabs.home,
+    <View style={{ flex: 1 }}>
+      <Tab.Navigator
+        tabBar={(props) => <CustomTabBar {...props} />}
+        tabBarPosition="bottom"
+        screenOptions={{
+          swipeEnabled: true,
+          animationEnabled: true,
+          lazy: true,
         }}
-      />
-      <Tabs.Screen
-        name="add-goal"
-        options={{
-          title: t.tabs.addGoal,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" color={color} size={size} />
-          ),
-          tabBarAccessibilityLabel: t.tabs.addGoal,
-        }}
-      />
-      <Tabs.Screen
-        name="statistics"
-        options={{
-          title: t.tabs.statistics,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="analytics-outline" color={color} size={size} />
-          ),
-          tabBarAccessibilityLabel: t.tabs.statistics,
-        }}
-      />
-      <Tabs.Screen
-        name="rewards"
-        options={{
-          title: t.tabs.rewards,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="gift-outline" color={color} size={size} />
-          ),
-          tabBarAccessibilityLabel: t.tabs.rewards,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: t.tabs.settings,
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" color={color} size={size} />
-          ),
-          tabBarAccessibilityLabel: t.tabs.settings,
-        }}
-      />
-    </Tabs>
+      >
+        <Tab.Screen
+          name="home"
+          component={HomeScreen}
+          options={{
+            title: t.tabs.home,
+            tabBarIcon: 'home-outline' as any,
+            tabBarAccessibilityLabel: t.tabs.home,
+          }}
+        />
+        <Tab.Screen
+          name="add-goal"
+          component={AddGoalScreen}
+          options={{
+            title: t.tabs.addGoal,
+            tabBarIcon: 'add-circle-outline' as any,
+            tabBarAccessibilityLabel: t.tabs.addGoal,
+          }}
+        />
+        <Tab.Screen
+          name="statistics"
+          component={StatisticsScreen}
+          options={{
+            title: t.tabs.statistics,
+            tabBarIcon: 'analytics-outline' as any,
+            tabBarAccessibilityLabel: t.tabs.statistics,
+          }}
+        />
+        <Tab.Screen
+          name="rewards"
+          component={RewardsScreen}
+          options={{
+            title: t.tabs.rewards,
+            tabBarIcon: 'gift-outline' as any,
+            tabBarAccessibilityLabel: t.tabs.rewards,
+          }}
+        />
+        <Tab.Screen
+          name="settings"
+          component={SettingsScreen}
+          options={{
+            title: t.tabs.settings,
+            tabBarIcon: 'settings-outline' as any,
+            tabBarAccessibilityLabel: t.tabs.settings,
+          }}
+        />
+      </Tab.Navigator>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    paddingTop: 8,
+    paddingBottom: 8,
+    height: 64,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+});

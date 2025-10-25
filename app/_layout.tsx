@@ -7,8 +7,10 @@ import { GoalsProvider } from '@/src/context/GoalsContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
 import { RewardsProvider } from '@/src/context/RewardsContext';
 import { ThemeProvider } from '@/src/context/ThemeContext';
+import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
-import React from 'react';
+import React, { useEffect } from 'react';
+import { AppState, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 /**
@@ -16,6 +18,30 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
  * Wraps entire app with necessary providers
  */
 export default function RootLayout() {
+  useEffect(() => {
+    // Hide Android navigation bar completely
+    const hideNavigationBar = () => {
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('hidden');
+        NavigationBar.setBehaviorAsync('overlay-swipe');
+      }
+    };
+
+    // Hide immediately on mount
+    hideNavigationBar();
+
+    // Re-hide when app comes to foreground
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        hideNavigationBar();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   return (
     <SafeAreaProvider>
       <LanguageProvider>
