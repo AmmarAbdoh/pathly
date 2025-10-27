@@ -16,6 +16,7 @@ export interface Translations {
     success: string;
     error: string;
     close: string;
+    search: string;
   };
   tabs: {
     home: string;
@@ -35,6 +36,7 @@ export interface Translations {
     monthlyGoals: string;
     yearlyGoals: string;
     customGoals: string;
+    completedGoals: string;
   };
   templates: {
     title: string;
@@ -163,6 +165,7 @@ export interface Translations {
     percent: string;
     subgoals: string;
     ultimate: string;
+    completed: string;
   };
   goalDetail: {
     notFound: string;
@@ -185,6 +188,11 @@ export interface Translations {
     finishSuccess: string;
     finishError: string;
     useSlider: string;
+    expiredWarning: string;
+    complete100Title: string;
+    complete100Message: string;
+    markComplete: string;
+    setTo99: string;
   };
   settings: {
     title: string;
@@ -292,6 +300,21 @@ export interface Translations {
     yearly: string;
     custom: string;
   };
+  time: {
+    days: string;
+    hours: string;
+    minutes: string;
+    day: string;
+    hour: string;
+    minute: string;
+    dayDual: string;      // For 2 days (Arabic)
+    hourDual: string;     // For 2 hours (Arabic)
+    minuteDual: string;   // For 2 minutes (Arabic)
+    left: string;
+    expired: string;
+    resetsIn: string;
+    and: string;          // Separator between time units
+  };
   labels: {
     target: string;
     category: string;
@@ -311,6 +334,7 @@ export const translations: Record<Language, Translations> = {
       success: 'Success',
       error: 'Error',
       close: 'Close',
+      search: 'Search',
     },
     tabs: {
       home: 'Home',
@@ -330,6 +354,7 @@ export const translations: Record<Language, Translations> = {
       monthlyGoals: '🗓️ Monthly Goals',
       yearlyGoals: '📊 Yearly Goals',
       customGoals: '⏱️ Custom Goals',
+      completedGoals: '✓ Completed Goals',
     },
     templates: {
       title: 'Goal Templates',
@@ -458,6 +483,7 @@ export const translations: Record<Language, Translations> = {
       percent: 'complete',
       subgoals: 'subgoals',
       ultimate: '⭐ ULTIMATE',
+      completed: 'Completed',
     },
     goalDetail: {
       notFound: 'Goal not found',
@@ -480,6 +506,11 @@ export const translations: Record<Language, Translations> = {
       finishSuccess: 'Goal marked as complete!',
       finishError: 'Failed to complete goal',
       useSlider: 'Use slider to adjust progress',
+      expiredWarning: 'You can only delete this goal',
+      complete100Title: 'Goal Reached 100%',
+      complete100Message: 'You reached 100% progress! Do you want to mark this goal as complete?',
+      markComplete: 'Mark Complete',
+      setTo99: 'Not Yet',
     },
     settings: {
       title: 'Settings',
@@ -608,6 +639,21 @@ export const translations: Record<Language, Translations> = {
       yearly: 'Yearly',
       custom: 'Custom',
     },
+    time: {
+      days: 'days',
+      hours: 'hours',
+      minutes: 'minutes',
+      day: 'day',
+      hour: 'hour',
+      minute: 'minute',
+      dayDual: 'days',      // English doesn't have dual, use plural
+      hourDual: 'hours',
+      minuteDual: 'minutes',
+      left: 'left',
+      expired: 'Expired',
+      resetsIn: 'Resets in',
+      and: 'and',
+    },
     labels: {
       target: 'Target',
       category: 'Category',
@@ -625,6 +671,7 @@ export const translations: Record<Language, Translations> = {
       success: 'نجح',
       error: 'خطأ',
       close: 'إغلاق',
+      search: 'بحث',
     },
     tabs: {
       home: 'الرئيسية',
@@ -644,6 +691,7 @@ export const translations: Record<Language, Translations> = {
       monthlyGoals: '🗓️ أهداف شهرية',
       yearlyGoals: '📊 أهداف سنوية',
       customGoals: '⏱️ أهداف مخصصة',
+      completedGoals: '✓ أهداف مكتملة',
     },
     templates: {
       title: 'قوالب الأهداف',
@@ -772,6 +820,7 @@ export const translations: Record<Language, Translations> = {
       percent: 'مكتمل',
       subgoals: 'أهداف فرعية',
       ultimate: '⭐ أسمى',
+      completed: 'مكتمل',
     },
     goalDetail: {
       notFound: 'الهدف غير موجود',
@@ -794,6 +843,11 @@ export const translations: Record<Language, Translations> = {
       finishSuccess: 'تم تحديد الهدف كمكتمل!',
       finishError: 'فشل في إكمال الهدف',
       useSlider: 'استخدم المنزلق لضبط التقدم',
+      expiredWarning: 'يمكنك فقط حذف هذا الهدف',
+      complete100Title: 'الهدف وصل إلى 100٪',
+      complete100Message: 'لقد وصلت إلى تقدم 100٪! هل تريد تحديد هذا الهدف كمكتمل؟',
+      markComplete: 'تحديد كمكتمل',
+      setTo99: 'ليس بعد',
     },
     settings: {
       title: 'الإعدادات',
@@ -921,6 +975,21 @@ export const translations: Record<Language, Translations> = {
       monthly: 'شهري',
       yearly: 'سنوي',
       custom: 'مخصص',
+    },
+    time: {
+      days: 'أيام',          // 3-10 days
+      hours: 'ساعات',        // 3-10 hours
+      minutes: 'دقائق',      // 3-10 minutes
+      day: 'يوم',            // 1 day
+      hour: 'ساعة',          // 1 hour
+      minute: 'دقيقة',       // 1 minute
+      dayDual: 'يومان',      // 2 days
+      hourDual: 'ساعتان',    // 2 hours
+      minuteDual: 'دقيقتان', // 2 minutes
+      left: 'متبقية',
+      expired: 'منتهي',
+      resetsIn: 'يتم إعادة التعيين في',
+      and: 'و',
     },
     labels: {
       target: 'الهدف',

@@ -9,6 +9,7 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Goal, TimePeriod } from '@/src/types';
+import { calculateTimeRemaining, formatTimeRemaining } from '@/src/utils/goal-calculations';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
@@ -52,8 +53,12 @@ export default function HomeScreen() {
     const parentGoals = goals.filter(goal => !goal.parentId);
     const sections: GoalSection[] = [];
 
-    // 1. Ultimate Goals Section
-    const ultimateGoals = parentGoals.filter(g => g.isUltimate);
+    // Separate completed and active goals
+    const activeGoals = parentGoals.filter(g => !g.isComplete);
+    const completedGoals = parentGoals.filter(g => g.isComplete);
+
+    // 1. Ultimate Goals Section (active only)
+    const ultimateGoals = activeGoals.filter(g => g.isUltimate);
     if (ultimateGoals.length > 0) {
       sections.push({
         title: t.home.ultimateGoals,
@@ -62,8 +67,8 @@ export default function HomeScreen() {
       });
     }
 
-    // 2. Regular Goals by Period
-    const regularGoals = parentGoals.filter(g => !g.isUltimate);
+    // 2. Regular Goals by Period (active only)
+    const regularGoals = activeGoals.filter(g => !g.isUltimate);
     
     // Group by period
     const groupedByPeriod: Record<TimePeriod, Goal[]> = {
@@ -89,6 +94,14 @@ export default function HomeScreen() {
         });
       }
     });
+
+    // 3. Completed Goals Section (at the end)
+    if (completedGoals.length > 0) {
+      sections.push({
+        title: t.home.completedGoals || 'Completed Goals',
+        data: completedGoals,
+      });
+    }
 
     return sections;
   }, [goals, t, PERIOD_LABELS]);
@@ -146,6 +159,18 @@ export default function HomeScreen() {
       
       // Goal item
       const goal = item.data as Goal;
+      const timeRemainingData = calculateTimeRemaining(
+        goal.periodStartDate,
+        goal.period,
+        goal.customPeriodDays,
+        goal.isRecurring
+      );
+      const timeRemainingText = formatTimeRemaining(
+        timeRemainingData,
+        t.time,
+        goal.isRecurring
+      );
+      
       return (
         <GoalCard
           title={goal.title}
@@ -155,10 +180,14 @@ export default function HomeScreen() {
           subgoalCount={goal.subGoals?.length || 0}
           isUltimate={goal.isUltimate}
           onPress={() => handleGoalPress(goal.id)}
+          timeRemaining={timeRemainingText}
+          isExpired={timeRemainingData.isExpired}
+          isRecurring={goal.isRecurring}
+          isComplete={goal.isComplete}
         />
       );
     },
-    [handleGoalPress, theme]
+    [handleGoalPress, theme, t]
   );
 
   /**

@@ -17,12 +17,16 @@ interface GoalCardProps {
   subgoalCount?: number;
   isUltimate?: boolean;
   onPress?: () => void;
+  timeRemaining?: string; // Formatted time remaining string
+  isExpired?: boolean; // Whether the goal period has expired
+  isRecurring?: boolean; // Whether the goal is recurring
+  isComplete?: boolean; // Whether the goal is completed
 }
 
 /**
  * Goal card component with memoization for performance
  */
-const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCount = 0, isUltimate = false, onPress }) => {
+const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCount = 0, isUltimate = false, onPress, timeRemaining, isExpired = false, isRecurring = false, isComplete = false }) => {
   const { theme } = useTheme();
   const { t } = useLanguage();
 
@@ -44,8 +48,18 @@ const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCo
         shadowRadius: 8,
         elevation: 8,
       },
+      isExpired && !isRecurring && {
+        borderWidth: 2,
+        borderColor: theme.colors.danger,
+        opacity: 0.85,
+      },
+      isComplete && {
+        borderWidth: 2,
+        borderColor: '#22c55e',
+        opacity: 0.9,
+      },
     ],
-    [theme, isUltimate]
+    [theme, isUltimate, isExpired, isRecurring, isComplete]
   );
 
   return (
@@ -61,6 +75,20 @@ const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCo
       {isUltimate && (
         <View style={styles.ultimateBadge}>
           <Text style={styles.ultimateBadgeText}>{t.goalCard.ultimate}</Text>
+        </View>
+      )}
+      
+      {/* Completed Badge */}
+      {isComplete && (
+        <View style={[styles.completedBadge, { backgroundColor: '#22c55e' }]}>
+          <Text style={styles.completedBadgeText}>✓ {t.goalCard.completed || 'Completed'}</Text>
+        </View>
+      )}
+      
+      {/* Expired Badge */}
+      {isExpired && !isRecurring && !isComplete && (
+        <View style={[styles.expiredBadge, { backgroundColor: theme.colors.danger }]}>
+          <Text style={styles.expiredBadgeText}>⚠️ {t.time.expired}</Text>
         </View>
       )}
       
@@ -83,6 +111,29 @@ const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCo
             {points} {t.goalCard.points}
             {subgoalCount > 0 && ` • ${subgoalCount} ${t.goalCard.subgoals}`}
           </Text>
+          {timeRemaining && (
+            <View style={styles.timeRemainingContainer}>
+              <Text style={styles.timeRemainingIcon}>
+                {isRecurring ? '🔄' : '⏱️'}
+              </Text>
+              <Text
+                style={[
+                  styles.timeRemainingText,
+                  {
+                    color: isExpired && !isRecurring
+                      ? theme.colors.danger
+                      : timeRemaining.toLowerCase().includes('day') || timeRemaining.includes('يوم') || timeRemaining.includes('أيام')
+                      ? theme.colors.textSecondary
+                      : timeRemaining.toLowerCase().includes('hour') || timeRemaining.includes('ساعة') || timeRemaining.includes('ساعات')
+                      ? '#f59e0b'
+                      : '#ef4444',
+                  },
+                ]}
+              >
+                {timeRemaining}
+              </Text>
+            </View>
+          )}
         </View>
         <Text
           style={[styles.percent, { color: theme.colors.primary }]}
@@ -121,6 +172,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1a1a1a',
   },
+  completedBadge: {
+    position: 'absolute',
+    top: -6,
+    right: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  completedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
   ultimateTitle: {
     fontWeight: '700',
   },
@@ -153,5 +218,33 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 50,
     textAlign: 'right',
+  },
+  expiredBadge: {
+    position: 'absolute',
+    top: -6,
+    left: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  expiredBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  timeRemainingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingTop: 4,
+  },
+  timeRemainingIcon: {
+    fontSize: 12,
+    marginRight: 4,
+  },
+  timeRemainingText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

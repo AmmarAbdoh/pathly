@@ -10,13 +10,14 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, TimePeriod } from '@/src/types';
-import { formatProgressText } from '@/src/utils/goal-calculations';
+import { calculateTimeRemaining, formatProgressText } from '@/src/utils/goal-calculations';
 import { isValidNumber } from '@/src/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -48,12 +49,26 @@ export default function GoalDetail() {
     [goal, getSubgoals]
   );
 
+  // Check if goal is expired
+  const isGoalExpired = useMemo(() => {
+    if (!goal || goal.isRecurring) return false; // Recurring goals don't expire
+    const timeRemaining = calculateTimeRemaining(
+      goal.periodStartDate,
+      goal.period,
+      goal.customPeriodDays,
+      goal.isRecurring
+    );
+    return timeRemaining.isExpired;
+  }, [goal]);
+
   const [newProgress, setNewProgress] = useState(
     goal?.current.toString() || '0'
   );
   const [sliderValue, setSliderValue] = useState(goal?.current || 0);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [show100PercentModal, setShow100PercentModal] = useState(false);
+  const [pending100PercentValue, setPending100PercentValue] = useState<number | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [showAddSubgoal, setShowAddSubgoal] = useState(false);
 
@@ -64,6 +79,63 @@ export default function GoalDetail() {
       setNewProgress(goal.current.toString());
     }
   }, [goal]);
+
+  /**
+   * Check if a value would result in 100% progress
+   */
+  const wouldReach100Percent = useCallback((value: number) => {
+    if (!goal) return false;
+    
+    let newProgress: number;
+    if (goal.direction === 'increase') {
+      newProgress = ((value - (goal.initialValue || 0)) / (goal.target - (goal.initialValue || 0))) * 100;
+    } else {
+      newProgress = (((goal.initialValue || goal.target * 2) - value) / ((goal.initialValue || goal.target * 2) - goal.target)) * 100;
+    }
+    
+    return Math.round(newProgress) >= 100;
+  }, [goal]);
+
+  /**
+   * Handle 100% completion confirmation - mark as complete
+   */
+  const confirm100PercentComplete = useCallback(async () => {
+    if (!goal || pending100PercentValue === null) return;
+    
+    setShow100PercentModal(false);
+    
+    try {
+      await updateGoal(goal.id, pending100PercentValue);
+      await finishGoal(goal.id);
+      setPending100PercentValue(null);
+      Alert.alert(t.common.success, t.goalDetail.finishSuccess || 'Goal completed!');
+    } catch (error) {
+      console.error('Failed to complete goal:', error);
+      Alert.alert(t.common.error, t.goalDetail.finishError || 'Failed to complete goal');
+    }
+  }, [goal, pending100PercentValue, updateGoal, finishGoal, t]);
+
+  /**
+   * Handle 100% completion confirmation - decrease by 1
+   */
+  const confirm100PercentNotComplete = useCallback(async () => {
+    if (!goal || pending100PercentValue === null) return;
+    
+    setShow100PercentModal(false);
+    
+    // Decrease by 1 from the pending value
+    const decreasedValue = pending100PercentValue - 1;
+    setSliderValue(decreasedValue);
+    setNewProgress(decreasedValue.toString());
+    
+    try {
+      await updateGoal(goal.id, decreasedValue);
+      setPending100PercentValue(null);
+    } catch (error) {
+      console.error('Failed to update progress:', error);
+      Alert.alert(t.common.error, t.goalDetail.updateError);
+    }
+  }, [goal, pending100PercentValue, updateGoal, t]);
 
   /**
    * Handle progress update
@@ -78,6 +150,13 @@ export default function GoalDetail() {
 
     const progress = parseFloat(newProgress);
 
+    // Check if this would reach 100%
+    if (wouldReach100Percent(progress) && !goal.isComplete) {
+      setPending100PercentValue(progress);
+      setShow100PercentModal(true);
+      return;
+    }
+
     try {
       await updateGoal(goal.id, progress);
       Alert.alert(t.common.success, t.goalDetail.updateSuccess);
@@ -85,14 +164,15 @@ export default function GoalDetail() {
       console.error('Failed to update progress:', error);
       Alert.alert(t.common.error, t.goalDetail.updateError);
     }
-  }, [goal, newProgress, updateGoal, t]);
+  }, [goal, newProgress, updateGoal, t, wouldReach100Percent]);
 
   /**
    * Handle slider value change
    */
   const handleSliderChange = useCallback((value: number) => {
-    setSliderValue(value);
-    setNewProgress(value.toString());
+    const roundedValue = Math.round(value);
+    setSliderValue(roundedValue);
+    setNewProgress(roundedValue.toString());
   }, []);
 
   /**
@@ -101,13 +181,78 @@ export default function GoalDetail() {
   const handleSliderComplete = useCallback(async (value: number) => {
     if (!goal) return;
 
+    const roundedValue = Math.round(value);
+    
+    // Check if this would reach 100%
+    if (wouldReach100Percent(roundedValue) && !goal.isComplete) {
+      setPending100PercentValue(roundedValue);
+      setShow100PercentModal(true);
+      return;
+    }
+    
     try {
-      await updateGoal(goal.id, value);
+      await updateGoal(goal.id, roundedValue);
     } catch (error) {
       console.error('Failed to update progress:', error);
       Alert.alert(t.common.error, t.goalDetail.updateError);
     }
-  }, [goal, updateGoal, t]);
+  }, [goal, updateGoal, t, wouldReach100Percent]);
+
+  /**
+   * Handle increment button (+1)
+   */
+  const handleIncrement = useCallback(async () => {
+    if (!goal) return;
+    
+    const minValue = goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0);
+    const maxValue = goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target;
+    const newValue = Math.min(sliderValue + 1, maxValue);
+    
+    setSliderValue(newValue);
+    setNewProgress(newValue.toString());
+    
+    // Check if this would reach 100%
+    if (wouldReach100Percent(newValue) && !goal.isComplete) {
+      setPending100PercentValue(newValue);
+      setShow100PercentModal(true);
+      return;
+    }
+    
+    try {
+      await updateGoal(goal.id, newValue);
+    } catch (error) {
+      console.error('Failed to update progress:', error);
+      Alert.alert(t.common.error, t.goalDetail.updateError);
+    }
+  }, [goal, sliderValue, updateGoal, t, wouldReach100Percent]);
+
+  /**
+   * Handle decrement button (-1)
+   */
+  const handleDecrement = useCallback(async () => {
+    if (!goal) return;
+    
+    const minValue = goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0);
+    const maxValue = goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target;
+    const newValue = Math.max(sliderValue - 1, minValue);
+    
+    setSliderValue(newValue);
+    setNewProgress(newValue.toString());
+    
+    // Check if this would reach 100%
+    if (wouldReach100Percent(newValue) && !goal.isComplete) {
+      setPending100PercentValue(newValue);
+      setShow100PercentModal(true);
+      return;
+    }
+    
+    try {
+      await updateGoal(goal.id, newValue);
+    } catch (error) {
+      console.error('Failed to update progress:', error);
+      Alert.alert(t.common.error, t.goalDetail.updateError);
+    }
+  }, [goal, sliderValue, updateGoal, t, wouldReach100Percent]);
 
   /**
    * Handle finish goal
@@ -466,31 +611,43 @@ export default function GoalDetail() {
           </Text>
         </View>
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
-            onPress={handleEditGoal}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="pencil-outline" size={20} color="#FFF" />
-            <Text style={styles.buttonText}>{t.goalDetail.editGoal}</Text>
-          </TouchableOpacity>
+        {/* Expired Warning */}
+        {isGoalExpired && !goal.isComplete && (
+          <View style={[styles.expiredWarning, { backgroundColor: theme.colors.danger + '15', borderColor: theme.colors.danger }]}>
+            <Ionicons name="warning" size={20} color={theme.colors.danger} />
+            <Text style={[styles.expiredWarningText, { color: theme.colors.danger }]}>
+              {t.time.expired} - {t.goalDetail.expiredWarning}
+            </Text>
+          </View>
+        )}
 
-          {!goal.isComplete && (
+        {/* Action Buttons */}
+        {!isGoalExpired && (
+          <View style={styles.actionButtons}>
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#22c55e' }]}
-              onPress={handleFinishGoal}
+              style={[styles.actionButton, { backgroundColor: theme.colors.primary }]}
+              onPress={handleEditGoal}
               activeOpacity={0.8}
             >
-              <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" />
-              <Text style={styles.buttonText}>{t.goalDetail.finishGoal}</Text>
+              <Ionicons name="pencil-outline" size={20} color="#FFF" />
+              <Text style={styles.buttonText}>{t.goalDetail.editGoal}</Text>
             </TouchableOpacity>
-          )}
-        </View>
+
+            {!goal.isComplete && (
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: '#22c55e' }]}
+                onPress={handleFinishGoal}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-circle-outline" size={20} color="#FFF" />
+                <Text style={styles.buttonText}>{t.goalDetail.finishGoal}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* Slider Progress Update - Hidden for ultimate goals (progress from subgoals) */}
-        {!goal.isComplete && !goal.isUltimate && (
+        {!goal.isComplete && !goal.isUltimate && !isGoalExpired && (
           <View style={cardStyle}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               {t.goalDetail.updateProgress}
@@ -500,20 +657,36 @@ export default function GoalDetail() {
             </Text>
             <View style={styles.sliderContainer}>
               <Text style={[styles.sliderValue, { color: theme.colors.text }]}>
-                {sliderValue.toFixed(1)} {goal.unit}
+                {Math.round(sliderValue)} {goal.unit}
               </Text>
-              <Slider
-                style={styles.slider}
-                minimumValue={goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0)}
-                maximumValue={goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target}
-                value={sliderValue}
-                onValueChange={handleSliderChange}
-                onSlidingComplete={handleSliderComplete}
-                minimumTrackTintColor={theme.colors.primary}
-                maximumTrackTintColor={theme.colors.border}
-                thumbTintColor={theme.colors.primary}
-                step={goal.target > 100 ? 1 : 0.1}
-              />
+              <View style={styles.sliderWithButtons}>
+                <TouchableOpacity
+                  style={[styles.incrementButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleDecrement}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={24} color="#FFF" />
+                </TouchableOpacity>
+                <Slider
+                  style={styles.slider}
+                  minimumValue={goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0)}
+                  maximumValue={goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target}
+                  value={sliderValue}
+                  onValueChange={handleSliderChange}
+                  onSlidingComplete={handleSliderComplete}
+                  minimumTrackTintColor={theme.colors.primary}
+                  maximumTrackTintColor={theme.colors.border}
+                  thumbTintColor={theme.colors.primary}
+                  step={1}
+                />
+                <TouchableOpacity
+                  style={[styles.incrementButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleIncrement}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={24} color="#FFF" />
+                </TouchableOpacity>
+              </View>
               <View style={styles.sliderLabels}>
                 <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>
                   {goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0)}
@@ -527,7 +700,7 @@ export default function GoalDetail() {
         )}
 
         {/* Manual Input (Alternative) - Hidden for ultimate goals */}
-        {!goal.isComplete && !goal.isUltimate && (
+        {!goal.isComplete && !goal.isUltimate && !isGoalExpired && (
           <View style={cardStyle}>
             <Text style={[styles.label, { color: theme.colors.textSecondary }]}>
               Or enter manually:
@@ -560,13 +733,15 @@ export default function GoalDetail() {
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                 {t.goalDetail.subgoalsTitle} ({subgoals.length})
               </Text>
-              <TouchableOpacity
-                style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
-                onPress={handleAddSubgoal}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add" size={20} color="#FFF" />
-              </TouchableOpacity>
+              {!isGoalExpired && (
+                <TouchableOpacity
+                  style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleAddSubgoal}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add" size={20} color="#FFF" />
+                </TouchableOpacity>
+              )}
             </View>
             
             {subgoals.length === 0 ? (
@@ -628,6 +803,45 @@ export default function GoalDetail() {
         onCancel={cancelFinishGoal}
         confirmStyle="default"
       />
+
+      {/* 100% Completion Modal */}
+      <Modal
+        visible={show100PercentModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShow100PercentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modal100, { backgroundColor: theme.colors.card }]}>
+            <Text style={[styles.modal100Title, { color: theme.colors.text }]}>
+              🎉 {t.goalDetail.complete100Title}
+            </Text>
+            <Text style={[styles.modal100Message, { color: theme.colors.textSecondary }]}>
+              {t.goalDetail.complete100Message}
+            </Text>
+            <View style={styles.modal100Buttons}>
+              <TouchableOpacity
+                style={[styles.modal100Button, { backgroundColor: '#22c55e' }]}
+                onPress={confirm100PercentComplete}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark-circle" size={20} color="#FFF" />
+                <Text style={styles.modal100ButtonText}>{t.goalDetail.markComplete}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modal100Button, { backgroundColor: theme.colors.border }]}
+                onPress={confirm100PercentNotComplete}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="remove-circle" size={20} color={theme.colors.text} />
+                <Text style={[styles.modal100ButtonText, { color: theme.colors.text }]}>
+                  {t.goalDetail.setTo99}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -742,8 +956,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textAlign: 'center',
   },
+  sliderWithButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  incrementButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   slider: {
-    width: '100%',
+    flex: 1,
     height: 40,
   },
   sliderLabels: {
@@ -810,4 +1036,65 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
   },
+  expiredWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 20,
+    gap: 8,
+  },
+  expiredWarningText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modal100: {
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modal100Title: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modal100Message: {
+    fontSize: 16,
+    lineHeight: 24,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  modal100Buttons: {
+    gap: 12,
+  },
+  modal100Button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  modal100ButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });
+

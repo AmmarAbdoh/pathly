@@ -781,6 +781,13 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
   },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    fontSize: 15,
+  },
   iconOption: {
     width: 60,
     height: 60,
