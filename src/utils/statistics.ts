@@ -9,12 +9,14 @@ import { getTotalPointsEarned } from './recurring-goals';
 
 /**
  * Calculate statistics from goals and rewards
+ * @param lifetimePointsEarned - Total points earned across all time (never decreases)
  */
-export const calculateStatistics = (goals: Goal[], rewards: Reward[] = []): Statistics => {
-  const totalGoals = goals.filter(g => !g.parentId).length; // Only count parent goals
-  const completedGoals = goals.filter(g => g.isComplete && !g.parentId).length;
+export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifetimePointsEarned: number = 0): Statistics => {
+  const totalGoals = goals.filter(g => !g.parentId && !g.isPaused).length; // Only count parent goals that are not paused
+  const completedGoals = goals.filter(g => g.isComplete && !g.parentId && !g.isPaused).length;
   
   // Calculate total points from completed goals (including recurring completions)
+  // This is for display/tracking purposes - the actual available points uses lifetimePointsEarned
   const totalPoints = goals.reduce((sum, goal) => {
     if (goal.parentId) return sum; // Skip subgoals to avoid double counting
     
@@ -77,6 +79,10 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = []): Stat
   
   // Check which achievements should be unlocked
   const ultimateGoals = goals.filter(g => g.isUltimate && !g.parentId).length;
+  
+  // Check for perfect week (7 consecutive days with at least 1 goal completed each day)
+  const perfectWeek = checkPerfectWeek(completedGoalsByDate);
+  
   const achievementsUnlocked = ACHIEVEMENTS
     .filter(achievement =>
       checkAchievement(achievement, {
@@ -84,7 +90,7 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = []): Stat
         totalPoints,
         currentStreak,
         ultimateGoals,
-        perfectWeek: false, // TODO: Implement perfect week logic
+        perfectWeek,
       })
     )
     .map(a => a.id);
@@ -93,6 +99,7 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = []): Stat
     totalGoals,
     completedGoals,
     totalPoints,
+    lifetimePointsEarned, // Total points earned across all time (used for available points calculation)
     spentPoints,
     currentStreak,
     longestStreak,
@@ -121,6 +128,35 @@ export const formatStreak = (days: number): string => {
   if (days === 0) return 'No streak';
   if (days === 1) return '1 day streak';
   return `${days} days streak`;
+};
+
+/**
+ * Check if user has achieved a perfect week (7 consecutive days with completions)
+ */
+const checkPerfectWeek = (completedGoalsByDate: Goal[]): boolean => {
+  if (completedGoalsByDate.length === 0) return false;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const checkDate = new Date(today);
+  
+  // Check last 7 days for at least 1 completion each day
+  for (let i = 0; i < 7; i++) {
+    const dayStart = checkDate.getTime();
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    
+    const hasActivityThisDay = completedGoalsByDate.some(
+      g => g.completedAt && g.completedAt >= dayStart && g.completedAt < dayEnd
+    );
+    
+    if (!hasActivityThisDay) {
+      return false;
+    }
+    
+    checkDate.setDate(checkDate.getDate() - 1);
+  }
+  
+  return true;
 };
 
 /**

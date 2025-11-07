@@ -15,21 +15,22 @@ import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Modal,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 export default function RewardsScreen() {
   const { theme } = useTheme();
   const { t } = useLanguage();
-  const { goals } = useGoals();
+  const { goals, lifetimePointsEarned } = useGoals();
   const {
     rewards,
     addReward,
@@ -55,8 +56,8 @@ export default function RewardsScreen() {
   const [selectedIcon, setSelectedIcon] = useState(DEFAULT_REWARD_ICON);
 
   // Calculate statistics
-  const stats = calculateStatistics(goals, rewards);
-  const availablePoints = stats.totalPoints - stats.spentPoints;
+  const stats = calculateStatistics(goals, rewards, lifetimePointsEarned);
+  const availablePoints = stats.lifetimePointsEarned - stats.spentPoints;
   const availableRewards = getAvailableRewards();
   const redeemedRewards = getRedeemedRewards();
 
@@ -105,8 +106,8 @@ export default function RewardsScreen() {
     }
 
     const cost = parseInt(pointsCost);
-    if (!cost || cost <= 0) {
-      Alert.alert('Error', 'Please enter a valid points cost');
+    if (isNaN(cost) || cost < 1) {
+      Alert.alert('Invalid Points', 'Reward must cost at least 1 point');
       return;
     }
 
@@ -388,8 +389,8 @@ export default function RewardsScreen() {
 
       {/* Icon Picker Modal */}
       <Modal visible={showIconPicker} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowIconPicker(false)}>
+          <Pressable style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.rewards.icon}</Text>
               <TouchableOpacity onPress={() => setShowIconPicker(false)}>
@@ -416,8 +417,8 @@ export default function RewardsScreen() {
                 ))}
               </View>
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Confirmation Modals */}
@@ -715,16 +716,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 20,
-    gap: 12,
+    justifyContent: 'space-evenly',
   },
   iconOption: {
-    width: 60,
-    height: 60,
+    width: '18%',
+    aspectRatio: 1,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
+    marginBottom: 12,
   },
   iconOptionText: {
     fontSize: 32,

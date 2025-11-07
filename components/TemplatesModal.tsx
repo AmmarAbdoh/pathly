@@ -7,16 +7,18 @@ import { getGoalTemplates } from '@/src/constants/goal-templates';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalCategory, GoalTemplate } from '@/src/types';
+import { customTemplatesStorage } from '@/src/utils/storage';
 import { Ionicons } from '@expo/vector-icons';
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Dimensions,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Dimensions,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -28,7 +30,7 @@ interface TemplatesModalProps {
 }
 
 // Memoized template card component
-const TemplateCard = memo(({ template, theme, t, onSelect }: any) => (
+const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }: any) => (
   <TouchableOpacity
     style={[
       styles.templateCard,
@@ -50,6 +52,18 @@ const TemplateCard = memo(({ template, theme, t, onSelect }: any) => (
           {template.description}
         </Text>
       </View>
+      {isCustom && onDelete && (
+        <TouchableOpacity
+          onPress={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          style={styles.deleteTemplateButton}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
+        </TouchableOpacity>
+      )}
     </View>
     <View style={styles.templateDetails}>
       <View style={styles.templateDetail}>
@@ -83,9 +97,27 @@ const TemplateCard = memo(({ template, theme, t, onSelect }: any) => (
 function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalProps) {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState<GoalCategory | 'all'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<GoalCategory | 'all' | 'custom'>('all');
+  const [customTemplates, setCustomTemplates] = useState<GoalTemplate[]>([]);
 
-  const CATEGORIES: { key: GoalCategory; label: string; icon: string }[] = useMemo(() => [
+  // Load custom templates when modal opens
+  useEffect(() => {
+    if (visible) {
+      loadCustomTemplates();
+    }
+  }, [visible]);
+
+  const loadCustomTemplates = useCallback(async () => {
+    try {
+      const templates = await customTemplatesStorage.loadCustomTemplates();
+      setCustomTemplates(templates);
+    } catch (error) {
+      console.error('Failed to load custom templates:', error);
+    }
+  }, []);
+
+  const CATEGORIES: { key: GoalCategory | 'custom'; label: string; icon: string }[] = useMemo(() => [
+    { key: 'custom' as const, label: 'My Templates', icon: '⭐' },
     { key: 'health', label: t.templates.categories.health, icon: '❤️' },
     { key: 'fitness', label: t.templates.categories.fitness, icon: '💪' },
     { key: 'learning', label: t.templates.categories.learning, icon: '📚' },
@@ -100,14 +132,24 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
   const GOAL_TEMPLATES = useMemo(() => getGoalTemplates(language), [language]);
 
   const filteredTemplates = useMemo(() => {
-    if (selectedCategory === 'all') return GOAL_TEMPLATES;
+    if (selectedCategory === 'custom') return customTemplates;
+    if (selectedCategory === 'all') return [...customTemplates, ...GOAL_TEMPLATES];
     return GOAL_TEMPLATES.filter(t => t.category === selectedCategory);
-  }, [selectedCategory, GOAL_TEMPLATES]);
+  }, [selectedCategory, GOAL_TEMPLATES, customTemplates]);
 
   const handleSelectTemplate = useCallback((template: GoalTemplate) => {
     onSelectTemplate(template);
     onClose();
   }, [onSelectTemplate, onClose]);
+
+  const handleDeleteTemplate = useCallback(async (templateId: string) => {
+    try {
+      await customTemplatesStorage.deleteCustomTemplate(templateId);
+      await loadCustomTemplates();
+    } catch (error) {
+      console.error('Failed to delete template:', error);
+    }
+  }, [loadCustomTemplates]);
 
   return (
     <Modal
@@ -116,8 +158,8 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={[styles.modalContent, { backgroundColor: theme.colors.background }]} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
@@ -182,11 +224,13 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
                 theme={theme}
                 t={t}
                 onSelect={() => handleSelectTemplate(template)}
+                isCustom={template.id.startsWith('custom_')}
+                onDelete={() => handleDeleteTemplate(template.id)}
               />
             ))}
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -289,5 +333,9 @@ const styles = StyleSheet.create({
   templateDetailValue: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  deleteTemplateButton: {
+    padding: 8,
+    marginLeft: 8,
   },
 });

@@ -36,7 +36,16 @@ export interface Translations {
     monthlyGoals: string;
     yearlyGoals: string;
     customGoals: string;
+    ongoingGoals: string;
     completedGoals: string;
+    searchPlaceholder: string;
+    filters: string;
+    filterAll: string;
+    filterActive: string;
+    filterPaused: string;
+    filterCompleted: string;
+    filterExpired: string;
+    noResults: string;
   };
   templates: {
     title: string;
@@ -95,6 +104,25 @@ export interface Translations {
       other: string;
     };
   };
+  iconCategories: {
+    achievements: string;
+    health: string;
+    learning: string;
+    work: string;
+    finance: string;
+    time: string;
+    food: string;
+    fun: string;
+    sports: string;
+    travel: string;
+    nature: string;
+    animals: string;
+    celebrations: string;
+    hobbies: string;
+    tech: string;
+    home: string;
+    symbols: string;
+  };
   statistics: {
     title: string;
     yourProgress: string;
@@ -116,6 +144,36 @@ export interface Translations {
     goalsCompleted: string;
     keepItUp: string;
   };
+  analytics: {
+    title: string;
+    subtitle: string;
+    overview: string;
+    insights: string;
+    noData: string;
+    startCompletingGoals: string;
+    categoryPerformance: string;
+    periodPerformance: string;
+    timeOfDay: string;
+    completionTrend: string;
+    last30Days: string;
+    bestCategory: string;
+    worstCategory: string;
+    bestDay: string;
+    mostProductiveHour: string;
+    averageCompletionTime: string;
+    morning: string;
+    afternoon: string;
+    evening: string;
+    night: string;
+    completions: string;
+    rate: string;
+    avgProgress: string;
+    points: string;
+    goals: string;
+    days: string;
+    day: string;
+    noTrend: string;
+  };
   goalForm: {
     title: string;
     titlePlaceholder: string;
@@ -132,6 +190,13 @@ export interface Translations {
     currentPlaceholder: string;
     currentLabel: string;
     currentHint: string;
+    startingValue: string;
+    startingValueHint: string;
+    goalTarget: string;
+    goalTargetHint: string;
+    progressPreview: string;
+    helperIncrease: string;
+    helperDecrease: string;
     unit: string;
     unitPlaceholder: string;
     unitLabel: string;
@@ -145,6 +210,7 @@ export interface Translations {
     periodMonthly: string;
     periodYearly: string;
     periodCustom: string;
+    periodOngoing: string;
     customPeriodDays: string;
     customPeriodPlaceholder: string;
     points: string;
@@ -159,6 +225,15 @@ export interface Translations {
     recurringGoal: string;
     recurringGoalHint: string;
     editButton: string;
+    linkedReward: string;
+    linkedRewardHint: string;
+    selectReward: string;
+    noReward: string;
+    autoRedeem: string;
+    completedGoalEditNote: string;
+    subgoalNoPoints: string;
+    subgoalsAwardPoints: string;
+    subgoalsAwardPointsHint: string;
   };
   goalCard: {
     points: string;
@@ -166,16 +241,23 @@ export interface Translations {
     subgoals: string;
     ultimate: string;
     completed: string;
+    streak: string;
+    weekStreak: string;
   };
   goalDetail: {
     notFound: string;
     updateProgress: string;
     deleteGoal: string;
+    archiveGoal: string;
     deleteConfirmTitle: string;
     deleteConfirmMessage: string;
+    archiveConfirmTitle: string;
+    archiveConfirmMessage: string;
     updateSuccess: string;
     updateError: string;
     deleteError: string;
+    archiveSuccess: string;
+    archiveError: string;
     reward: string;
     complete: string;
     subgoalsTitle: string;
@@ -188,11 +270,144 @@ export interface Translations {
     finishSuccess: string;
     finishError: string;
     useSlider: string;
+    quickAdjust: string;
+    orEnterValue: string;
     expiredWarning: string;
+    extendDeadline: string;
+    extendDeadlineTitle: string;
+    extendDeadlineMessage: string;
+    extendSuccess: string;
+    extendError: string;
+    pauseGoal: string;
+    resumeGoal: string;
+    pauseSuccess: string;
+    resumeSuccess: string;
+    pauseError: string;
     complete100Title: string;
     complete100Message: string;
     markComplete: string;
     setTo99: string;
+    notYetLabel: string;
+    notYetPlaceholder: string;
+    notYetHint: string;
+    saveCompleteConfirm: string;
+    unsavedChangesMessage: string;
+    discardChanges: string;
+    saveAsTemplate: string;
+    saveAsTemplateTitle: string;
+    saveAsTemplateMessage: string;
+    templateNamePlaceholder: string;
+    templateSaveSuccess: string;
+    templateSaveError: string;
+    notesTitle: string;
+    noNotes: string;
+    addNote: string;
+    noteInputPlaceholder: string;
+    noteSaved: string;
+    deleteNote: string;
+    deleteNoteConfirm: string;
+    dependenciesTitle: string;
+    noDependencies: string;
+    addDependency: string;
+    selectDependencies: string;
+    dependencyDescription: string;
+    blockedByDependencies: string;
+    dependencyCompleted: string;
+    dependencyIncomplete: string;
+    removeDependency: string;
+  };
+  review: {
+    title: string;
+    weeklyReview: string;
+    monthlyReview: string;
+    period: string;
+    thisWeek: string;
+    thisMonth: string;
+    lastWeek: string;
+    lastMonth: string;
+    overview: string;
+    goalsCompleted: string;
+    totalGoals: string;
+    completionRate: string;
+    pointsEarned: string;
+    achievements: string;
+    completedGoals: string;
+    noCompletedGoals: string;
+    noGoalsMessage: string;
+    keepGoing: string;
+    excellentWork: string;
+    goodProgress: string;
+    startWorking: string;
+  };
+  export: {
+    title: string;
+    description: string;
+    exportJSON: string;
+    exportCSV: string;
+    jsonDescription: string;
+    csvDescription: string;
+    exporting: string;
+    exportSuccess: string;
+    exportError: string;
+    noData: string;
+    shareTitle: string;
+  };
+  import: {
+    title: string;
+    description: string;
+    selectFile: string;
+    supportedFormats: string;
+    importing: string;
+    importSuccess: string;
+    importError: string;
+    confirmTitle: string;
+    confirmMessage: string;
+    merge: string;
+    replace: string;
+  };
+  notifications: {
+    title: string;
+    enabled: string;
+    disabled: string;
+    time: string;
+    days: string;
+    selectDays: string;
+    everyday: string;
+    weekdays: string;
+    weekends: string;
+    custom: string;
+    testNotification: string;
+    testNotificationDescription: string;
+    testNotificationSent: string;
+    testNotificationError: string;
+    permissionsRequired: string;
+    permissionsDescription: string;
+    enablePermissions: string;
+    permissionsDenied: string;
+    permissionsGranted: string;
+    scheduleSuccess: string;
+    scheduleError: string;
+    cancelSuccess: string;
+    selectTime: string;
+    selectDaysDescription: string;
+    dayNames: {
+      sunday: string;
+      monday: string;
+      tuesday: string;
+      wednesday: string;
+      thursday: string;
+      friday: string;
+      saturday: string;
+    };
+    dayNamesShort: {
+      sunday: string;
+      monday: string;
+      tuesday: string;
+      wednesday: string;
+      thursday: string;
+      friday: string;
+      saturday: string;
+    };
   };
   settings: {
     title: string;
@@ -203,6 +418,18 @@ export interface Translations {
     language: string;
     languageEnglish: string;
     languageArabic: string;
+    archivedGoals: string;
+    archivedGoalsSubtitle: string;
+    viewArchived: string;
+    noArchivedGoals: string;
+    restoreGoal: string;
+    deleteGoalPermanently: string;
+    deletePermanentlyTitle: string;
+    deletePermanentlyMessage: string;
+    restoreSuccess: string;
+    restoreError: string;
+    deletePermanentlySuccess: string;
+    deletePermanentlyError: string;
     about: string;
     aboutText: string;
     version: string;
@@ -314,6 +541,7 @@ export interface Translations {
     expired: string;
     resetsIn: string;
     and: string;          // Separator between time units
+    endsAt: string;       // "Ends: Oct 30, 11:59 PM"
   };
   labels: {
     target: string;
@@ -354,7 +582,16 @@ export const translations: Record<Language, Translations> = {
       monthlyGoals: '🗓️ Monthly Goals',
       yearlyGoals: '📊 Yearly Goals',
       customGoals: '⏱️ Custom Goals',
+      ongoingGoals: '∞ Ongoing Goals',
       completedGoals: '✓ Completed Goals',
+      searchPlaceholder: 'Search goals...',
+      filters: 'Filters',
+      filterAll: 'All',
+      filterActive: 'Active',
+      filterPaused: 'Paused',
+      filterCompleted: 'Completed',
+      filterExpired: 'Expired',
+      noResults: 'No goals found',
     },
     templates: {
       title: 'Goal Templates',
@@ -413,6 +650,25 @@ export const translations: Record<Language, Translations> = {
         other: 'Other',
       },
     },
+    iconCategories: {
+      achievements: 'Achievements',
+      health: 'Health',
+      learning: 'Learning',
+      work: 'Work',
+      finance: 'Finance',
+      time: 'Time',
+      food: 'Food',
+      fun: 'Fun',
+      sports: 'Sports',
+      travel: 'Travel',
+      nature: 'Nature',
+      animals: 'Animals',
+      celebrations: 'Celebrations',
+      hobbies: 'Hobbies',
+      tech: 'Tech',
+      home: 'Home',
+      symbols: 'Symbols',
+    },
     statistics: {
       title: 'Statistics',
       yourProgress: '📊 Your Progress',
@@ -434,6 +690,36 @@ export const translations: Record<Language, Translations> = {
       goalsCompleted: 'of {total} goals completed',
       keepItUp: 'Keep it up! 🎉',
     },
+    analytics: {
+      title: 'Analytics',
+      subtitle: 'Deep insights into your goal performance',
+      overview: 'Overview',
+      insights: 'Insights',
+      noData: 'No analytics data available',
+      startCompletingGoals: 'Complete some goals to unlock analytics insights!',
+      categoryPerformance: 'Category Performance',
+      periodPerformance: 'Period Performance',
+      timeOfDay: 'Time of Day',
+      completionTrend: 'Completion Trend',
+      last30Days: 'Last 30 Days',
+      bestCategory: 'Best Category',
+      worstCategory: 'Needs Attention',
+      bestDay: 'Best Day',
+      mostProductiveHour: 'Most Productive Hour',
+      averageCompletionTime: 'Avg. Completion Time',
+      morning: 'Morning',
+      afternoon: 'Afternoon',
+      evening: 'Evening',
+      night: 'Night',
+      completions: 'completions',
+      rate: 'Rate',
+      avgProgress: 'Avg. Progress',
+      points: 'pts',
+      goals: 'goals',
+      days: 'days',
+      day: 'day',
+      noTrend: 'No completion trend data yet',
+    },
     goalForm: {
       title: 'Add a new goal',
       titlePlaceholder: 'Goal title (e.g. Lose Weight)',
@@ -450,6 +736,13 @@ export const translations: Record<Language, Translations> = {
       currentPlaceholder: 'Current progress (e.g. 5)',
       currentLabel: 'Current progress',
       currentHint: 'Enter your starting or current value',
+      startingValue: 'Starting Value',
+      startingValueHint: 'Where you are right now',
+      goalTarget: 'Goal Target',
+      goalTargetHint: 'Where you want to be',
+      progressPreview: 'Progress: {{current}} → {{target}}',
+      helperIncrease: 'You\'ll track progress from {{current}} up to {{target}}',
+      helperDecrease: 'You\'ll track progress from {{current}} down to {{target}}',
       unit: 'Unit',
       unitPlaceholder: 'Unit (e.g. kg, books, km)',
       unitLabel: 'Unit of measurement',
@@ -463,6 +756,7 @@ export const translations: Record<Language, Translations> = {
       periodMonthly: 'Monthly',
       periodYearly: 'Yearly',
       periodCustom: 'Custom',
+      periodOngoing: 'Ongoing (No Deadline)',
       customPeriodDays: 'Custom Period (Days)',
       customPeriodPlaceholder: 'Number of days',
       points: 'Reward Points',
@@ -477,6 +771,15 @@ export const translations: Record<Language, Translations> = {
       recurringGoal: 'Recurring Goal',
       recurringGoalHint: 'Goal that automatically resets after completion',
       editButton: 'Save Changes',
+      linkedReward: 'Linked Reward',
+      linkedRewardHint: 'Auto-redeem a reward when this goal completes',
+      selectReward: 'Select Reward',
+      noReward: 'No Reward',
+      autoRedeem: 'Auto-redeem on completion',
+      completedGoalEditNote: 'This goal is completed. You can only edit the title, description, icon, and linked reward.',
+      subgoalNoPoints: 'Subgoals don\'t award points individually. Points are awarded when the parent goal completes.',
+      subgoalsAwardPoints: 'Subgoals award their own points',
+      subgoalsAwardPointsHint: 'If checked, each subgoal will award points individually when completed. If unchecked, only the parent goal awards points.',
     },
     goalCard: {
       points: 'points',
@@ -484,16 +787,23 @@ export const translations: Record<Language, Translations> = {
       subgoals: 'subgoals',
       ultimate: '⭐ ULTIMATE',
       completed: 'Completed',
+      streak: 'streak',
+      weekStreak: 'week streak',
     },
     goalDetail: {
       notFound: 'Goal not found',
       updateProgress: 'Update Progress',
       deleteGoal: 'Delete Goal',
+      archiveGoal: 'Archive Goal',
       deleteConfirmTitle: 'Delete Goal',
       deleteConfirmMessage: 'Are you sure you want to delete this goal?',
+      archiveConfirmTitle: 'Archive Goal',
+      archiveConfirmMessage: 'Archive this goal? You can view and restore it from Settings.',
       updateSuccess: 'Progress updated successfully',
       updateError: 'Failed to update progress',
       deleteError: 'Failed to delete goal',
+      archiveSuccess: 'Goal archived successfully',
+      archiveError: 'Failed to archive goal',
       reward: 'Reward',
       complete: 'complete',
       subgoalsTitle: 'Subgoals',
@@ -506,11 +816,144 @@ export const translations: Record<Language, Translations> = {
       finishSuccess: 'Goal marked as complete!',
       finishError: 'Failed to complete goal',
       useSlider: 'Use slider to adjust progress',
+      quickAdjust: 'Quick adjust:',
+      orEnterValue: 'Or enter value:',
       expiredWarning: 'You can only delete this goal',
+      extendDeadline: 'Extend Deadline',
+      extendDeadlineTitle: 'Extend Goal Deadline',
+      extendDeadlineMessage: 'How many additional days would you like to add?',
+      extendSuccess: 'Deadline extended successfully!',
+      extendError: 'Failed to extend deadline',
+      pauseGoal: 'Pause Goal',
+      resumeGoal: 'Resume Goal',
+      pauseSuccess: 'Goal paused successfully',
+      resumeSuccess: 'Goal resumed successfully',
+      pauseError: 'Failed to pause/resume goal',
       complete100Title: 'Goal Reached 100%',
-      complete100Message: 'You reached 100% progress! Do you want to mark this goal as complete?',
+      complete100Message: 'You reached 100% progress! Adjust the value below or save as-is.',
       markComplete: 'Mark Complete',
       setTo99: 'Not Yet',
+      notYetLabel: 'Adjust value (optional)',
+      notYetPlaceholder: 'Enter new value',
+      notYetHint: 'Leave empty to keep current value, or enter a different value',
+      saveCompleteConfirm: 'This value will complete the goal. Do you want to mark it as complete?',
+      unsavedChangesMessage: 'You have unsaved changes. Discard them?',
+      discardChanges: 'Discard',
+      saveAsTemplate: 'Save as Template',
+      saveAsTemplateTitle: 'Save as Template',
+      saveAsTemplateMessage: 'Give this template a name to reuse it later',
+      templateNamePlaceholder: 'Template name (e.g., "My Weekly Workout")',
+      templateSaveSuccess: 'Template saved successfully! You can use it when creating new goals.',
+      templateSaveError: 'Failed to save template',
+      notesTitle: 'Notes & Journal',
+      noNotes: 'No notes yet. Add your first note to track progress and thoughts!',
+      addNote: 'Add Note',
+      noteInputPlaceholder: 'Write your note here... (e.g., "Week 3: Great progress!")',
+      noteSaved: 'Note saved successfully',
+      deleteNote: 'Delete Note',
+      deleteNoteConfirm: 'Delete this note? This cannot be undone.',
+      dependenciesTitle: 'Dependencies',
+      noDependencies: 'No dependencies set. Add prerequisite goals that must be completed first.',
+      addDependency: 'Add Dependency',
+      selectDependencies: 'Select Goals',
+      dependencyDescription: 'This goal requires the following goals to be completed first:',
+      blockedByDependencies: '🔒 This goal is blocked. Complete the required goals first.',
+      dependencyCompleted: '✅ Completed',
+      dependencyIncomplete: '⏳ In Progress',
+      removeDependency: 'Remove',
+    },
+    review: {
+      title: 'Review',
+      weeklyReview: 'Weekly Review',
+      monthlyReview: 'Monthly Review',
+      period: 'Period',
+      thisWeek: 'This Week',
+      thisMonth: 'This Month',
+      lastWeek: 'Last Week',
+      lastMonth: 'Last Month',
+      overview: 'Overview',
+      goalsCompleted: 'Goals Completed',
+      totalGoals: 'Total Goals',
+      completionRate: 'Completion Rate',
+      pointsEarned: 'Points Earned',
+      achievements: 'Achievements',
+      completedGoals: 'Completed Goals',
+      noCompletedGoals: 'No goals completed in this period',
+      noGoalsMessage: 'Start setting goals to see your progress!',
+      keepGoing: 'Keep going! You\'re making great progress! 🎉',
+      excellentWork: 'Excellent work! You completed all goals! 🏆',
+      goodProgress: 'Good progress! Keep up the momentum! 💪',
+      startWorking: 'Time to start working on your goals! 🚀',
+    },
+    export: {
+      title: 'Export Data',
+      description: 'Export your goals and rewards data for backup or analysis',
+      exportJSON: 'Export as JSON',
+      exportCSV: 'Export as CSV',
+      jsonDescription: 'Complete data with all details',
+      csvDescription: 'Spreadsheet-friendly format',
+      exporting: 'Preparing export...',
+      exportSuccess: 'Data exported successfully',
+      exportError: 'Failed to export data',
+      noData: 'No data available to export',
+      shareTitle: 'Share Pathly Data',
+    },
+    import: {
+      title: 'Import Data',
+      description: 'Import goals and rewards from a backup file or another device',
+      selectFile: 'Select Import File',
+      supportedFormats: 'Supports JSON files',
+      importing: 'Processing import...',
+      importSuccess: 'Successfully imported {goals} goals and {rewards} rewards',
+      importError: 'Failed to import data',
+      confirmTitle: 'Import Data',
+      confirmMessage: 'Found {goals} goals and {rewards} rewards. How would you like to import?',
+      merge: 'Merge with Existing',
+      replace: 'Replace All Data',
+    },
+    notifications: {
+      title: 'Notifications',
+      enabled: 'Enable Notifications',
+      disabled: 'Disabled',
+      time: 'Reminder Time',
+      days: 'Reminder Days',
+      selectDays: 'Select Days',
+      everyday: 'Everyday',
+      weekdays: 'Weekdays',
+      weekends: 'Weekends',
+      custom: 'Custom',
+      testNotification: 'Test Notification',
+      testNotificationDescription: 'Send a test notification to verify settings',
+      testNotificationSent: 'Test notification sent!',
+      testNotificationError: 'Failed to send test notification',
+      permissionsRequired: 'Notification Permissions Required',
+      permissionsDescription: 'Enable notifications to receive goal reminders',
+      enablePermissions: 'Enable Permissions',
+      permissionsDenied: 'Notification permissions denied',
+      permissionsGranted: 'Notification permissions granted',
+      scheduleSuccess: 'Notifications scheduled successfully',
+      scheduleError: 'Failed to schedule notifications',
+      cancelSuccess: 'Notifications cancelled',
+      selectTime: 'Select time for daily reminders',
+      selectDaysDescription: 'Choose which days to receive reminders',
+      dayNames: {
+        sunday: 'Sunday',
+        monday: 'Monday',
+        tuesday: 'Tuesday',
+        wednesday: 'Wednesday',
+        thursday: 'Thursday',
+        friday: 'Friday',
+        saturday: 'Saturday',
+      },
+      dayNamesShort: {
+        sunday: 'Sun',
+        monday: 'Mon',
+        tuesday: 'Tue',
+        wednesday: 'Wed',
+        thursday: 'Thu',
+        friday: 'Fri',
+        saturday: 'Sat',
+      },
     },
     settings: {
       title: 'Settings',
@@ -521,6 +964,18 @@ export const translations: Record<Language, Translations> = {
       language: 'Language',
       languageEnglish: 'English',
       languageArabic: 'Arabic',
+      archivedGoals: 'Archived Goals',
+      archivedGoalsSubtitle: 'View and manage your archived goals',
+      viewArchived: 'View Archived Goals',
+      noArchivedGoals: 'No archived goals',
+      restoreGoal: 'Restore',
+      deleteGoalPermanently: 'Delete Permanently',
+      deletePermanentlyTitle: 'Delete Permanently',
+      deletePermanentlyMessage: 'Permanently delete this goal? This action cannot be undone and all history will be lost.',
+      restoreSuccess: 'Goal restored successfully',
+      restoreError: 'Failed to restore goal',
+      deletePermanentlySuccess: 'Goal deleted permanently',
+      deletePermanentlyError: 'Failed to delete goal',
       about: 'About',
       aboutText: 'Pathly helps you track and achieve your goals with a simple and intuitive interface. Set your targets, monitor progress, and celebrate your achievements.',
       version: 'Version',
@@ -653,6 +1108,7 @@ export const translations: Record<Language, Translations> = {
       expired: 'Expired',
       resetsIn: 'Resets in',
       and: 'and',
+      endsAt: 'Ends',
     },
     labels: {
       target: 'Target',
@@ -691,7 +1147,16 @@ export const translations: Record<Language, Translations> = {
       monthlyGoals: '🗓️ أهداف شهرية',
       yearlyGoals: '📊 أهداف سنوية',
       customGoals: '⏱️ أهداف مخصصة',
+      ongoingGoals: '∞ أهداف مستمرة',
       completedGoals: '✓ أهداف مكتملة',
+      searchPlaceholder: 'البحث عن الأهداف...',
+      filters: 'التصفيات',
+      filterAll: 'الكل',
+      filterActive: 'النشطة',
+      filterPaused: 'المتوقفة',
+      filterCompleted: 'المكتملة',
+      filterExpired: 'المنتهية',
+      noResults: 'لم يتم العثور على أهداف',
     },
     templates: {
       title: 'قوالب الأهداف',
@@ -750,6 +1215,25 @@ export const translations: Record<Language, Translations> = {
         other: 'أخرى',
       },
     },
+    iconCategories: {
+      achievements: 'إنجازات',
+      health: 'صحة',
+      learning: 'تعلم',
+      work: 'عمل',
+      finance: 'مالية',
+      time: 'وقت',
+      food: 'طعام',
+      fun: 'مرح',
+      sports: 'رياضة',
+      travel: 'سفر',
+      nature: 'طبيعة',
+      animals: 'حيوانات',
+      celebrations: 'احتفالات',
+      hobbies: 'هوايات',
+      tech: 'تقنية',
+      home: 'منزل',
+      symbols: 'رموز',
+    },
     statistics: {
       title: 'الإحصائيات',
       yourProgress: '📊 تقدمك',
@@ -771,6 +1255,36 @@ export const translations: Record<Language, Translations> = {
       goalsCompleted: 'من أصل {total} أهداف مكتملة',
       keepItUp: 'استمر في ذلك! 🎉',
     },
+    analytics: {
+      title: 'التحليلات',
+      subtitle: 'رؤى عميقة حول أداء أهدافك',
+      overview: 'نظرة عامة',
+      insights: 'رؤى',
+      noData: 'لا توجد بيانات تحليلية متاحة',
+      startCompletingGoals: 'أكمل بعض الأهداف لفتح رؤى التحليلات!',
+      categoryPerformance: 'أداء الفئات',
+      periodPerformance: 'أداء الفترات',
+      timeOfDay: 'الوقت من اليوم',
+      completionTrend: 'اتجاه الإنجاز',
+      last30Days: 'آخر 30 يوم',
+      bestCategory: 'أفضل فئة',
+      worstCategory: 'تحتاج إلى انتباه',
+      bestDay: 'أفضل يوم',
+      mostProductiveHour: 'الساعة الأكثر إنتاجية',
+      averageCompletionTime: 'متوسط وقت الإنجاز',
+      morning: 'الصباح',
+      afternoon: 'الظهيرة',
+      evening: 'المساء',
+      night: 'الليل',
+      completions: 'إنجازات',
+      rate: 'المعدل',
+      avgProgress: 'متوسط التقدم',
+      points: 'نقاط',
+      goals: 'أهداف',
+      days: 'أيام',
+      day: 'يوم',
+      noTrend: 'لا توجد بيانات اتجاه الإنجاز بعد',
+    },
     goalForm: {
       title: 'إضافة هدف جديد',
       titlePlaceholder: 'عنوان الهدف (مثال: فقدان الوزن)',
@@ -787,6 +1301,13 @@ export const translations: Record<Language, Translations> = {
       currentPlaceholder: 'التقدم الحالي (مثال: 5)',
       currentLabel: 'التقدم الحالي',
       currentHint: 'أدخل قيمتك الحالية أو البدائية',
+      startingValue: 'القيمة البدائية',
+      startingValueHint: 'أين أنت الآن',
+      goalTarget: 'الهدف المستهدف',
+      goalTargetHint: 'أين تريد أن تكون',
+      progressPreview: 'التقدم: {{current}} ← {{target}}',
+      helperIncrease: 'ستتتبع التقدم من {{current}} إلى {{target}}',
+      helperDecrease: 'ستتتبع التقدم من {{current}} إلى {{target}} (تنازلي)',
       unit: 'الوحدة',
       unitPlaceholder: 'الوحدة (مثال: كجم، كتب، كم)',
       unitLabel: 'وحدة القياس',
@@ -800,6 +1321,7 @@ export const translations: Record<Language, Translations> = {
       periodMonthly: 'شهري',
       periodYearly: 'سنوي',
       periodCustom: 'مخصص',
+      periodOngoing: 'مستمر (بدون موعد نهائي)',
       customPeriodDays: 'فترة مخصصة (أيام)',
       customPeriodPlaceholder: 'عدد الأيام',
       points: 'نقاط المكافأة',
@@ -814,6 +1336,15 @@ export const translations: Record<Language, Translations> = {
       recurringGoal: 'هدف متكرر',
       recurringGoalHint: 'هدف يتم إعادة تعيينه تلقائياً بعد الإنجاز',
       editButton: 'حفظ التغييرات',
+      linkedReward: 'مكافأة مرتبطة',
+      linkedRewardHint: 'استرداد تلقائي للمكافأة عند إكمال هذا الهدف',
+      selectReward: 'اختر المكافأة',
+      noReward: 'بدون مكافأة',
+      autoRedeem: 'استرداد تلقائي عند الإكمال',
+      completedGoalEditNote: 'هذا الهدف مكتمل. يمكنك فقط تعديل العنوان والوصف والأيقونة والمكافأة المرتبطة.',
+      subgoalNoPoints: 'الأهداف الفرعية لا تمنح نقاطًا بشكل فردي. يتم منح النقاط عند إكمال الهدف الرئيسي.',
+      subgoalsAwardPoints: 'الأهداف الفرعية تمنح نقاطها الخاصة',
+      subgoalsAwardPointsHint: 'إذا تم التحديد، سيمنح كل هدف فرعي نقاطًا بشكل فردي عند إكماله. إذا لم يتم التحديد، فقط الهدف الرئيسي يمنح النقاط.',
     },
     goalCard: {
       points: 'نقطة',
@@ -821,16 +1352,23 @@ export const translations: Record<Language, Translations> = {
       subgoals: 'أهداف فرعية',
       ultimate: '⭐ أسمى',
       completed: 'مكتمل',
+      streak: 'سلسلة',
+      weekStreak: 'سلسلة أسبوعية',
     },
     goalDetail: {
       notFound: 'الهدف غير موجود',
       updateProgress: 'تحديث التقدم',
       deleteGoal: 'حذف الهدف',
+      archiveGoal: 'أرشفة الهدف',
       deleteConfirmTitle: 'حذف الهدف',
       deleteConfirmMessage: 'هل أنت متأكد أنك تريد حذف هذا الهدف؟',
+      archiveConfirmTitle: 'أرشفة الهدف',
+      archiveConfirmMessage: 'أرشفة هذا الهدف؟ يمكنك عرضه واستعادته من الإعدادات.',
       updateSuccess: 'تم تحديث التقدم بنجاح',
       updateError: 'فشل تحديث التقدم',
       deleteError: 'فشل حذف الهدف',
+      archiveSuccess: 'تم أرشفة الهدف بنجاح',
+      archiveError: 'فشل في أرشفة الهدف',
       reward: 'المكافأة',
       complete: 'مكتمل',
       subgoalsTitle: 'الأهداف الفرعية',
@@ -843,11 +1381,144 @@ export const translations: Record<Language, Translations> = {
       finishSuccess: 'تم تحديد الهدف كمكتمل!',
       finishError: 'فشل في إكمال الهدف',
       useSlider: 'استخدم المنزلق لضبط التقدم',
+      quickAdjust: 'ضبط سريع:',
+      orEnterValue: 'أو أدخل القيمة:',
       expiredWarning: 'يمكنك فقط حذف هذا الهدف',
+      extendDeadline: 'تمديد الموعد النهائي',
+      extendDeadlineTitle: 'تمديد الموعد النهائي للهدف',
+      extendDeadlineMessage: 'كم عدد الأيام الإضافية التي تريد إضافتها؟',
+      extendSuccess: 'تم تمديد الموعد النهائي بنجاح!',
+      extendError: 'فشل تمديد الموعد النهائي',
+      pauseGoal: 'إيقاف الهدف مؤقتًا',
+      resumeGoal: 'استئناف الهدف',
+      pauseSuccess: 'تم إيقاف الهدف مؤقتًا بنجاح',
+      resumeSuccess: 'تم استئناف الهدف بنجاح',
+      pauseError: 'فشل في إيقاف/استئناف الهدف',
       complete100Title: 'الهدف وصل إلى 100٪',
-      complete100Message: 'لقد وصلت إلى تقدم 100٪! هل تريد تحديد هذا الهدف كمكتمل؟',
+      complete100Message: 'لقد وصلت إلى تقدم 100٪! عدّل القيمة أدناه أو احفظها كما هي.',
       markComplete: 'تحديد كمكتمل',
       setTo99: 'ليس بعد',
+      notYetLabel: 'تعديل القيمة (اختياري)',
+      notYetPlaceholder: 'أدخل قيمة جديدة',
+      notYetHint: 'اتركه فارغًا للحفاظ على القيمة الحالية، أو أدخل قيمة مختلفة',
+      saveCompleteConfirm: 'هذه القيمة ستكمل الهدف. هل تريد تحديده كمكتمل؟',
+      unsavedChangesMessage: 'لديك تغييرات غير محفوظة. هل تريد تجاهلها؟',
+      discardChanges: 'تجاهل',
+      saveAsTemplate: 'حفظ كقالب',
+      saveAsTemplateTitle: 'حفظ كقالب',
+      saveAsTemplateMessage: 'أعط هذا القالب اسمًا لإعادة استخدامه لاحقًا',
+      templateNamePlaceholder: 'اسم القالب (مثال: "تمرين أسبوعي")',
+      templateSaveSuccess: 'تم حفظ القالب بنجاح! يمكنك استخدامه عند إنشاء أهداف جديدة.',
+      templateSaveError: 'فشل حفظ القالب',
+      notesTitle: 'ملاحظات ويوميات',
+      noNotes: 'لا توجد ملاحظات بعد. أضف ملاحظتك الأولى لتتبع التقدم والأفكار!',
+      addNote: 'إضافة ملاحظة',
+      noteInputPlaceholder: 'اكتب ملاحظتك هنا... (مثال: "الأسبوع 3: تقدم رائع!")',
+      noteSaved: 'تم حفظ الملاحظة بنجاح',
+      deleteNote: 'حذف الملاحظة',
+      deleteNoteConfirm: 'حذف هذه الملاحظة؟ لا يمكن التراجع عن هذا الإجراء.',
+      dependenciesTitle: 'التبعيات',
+      noDependencies: 'لا توجد تبعيات محددة. أضف أهدافًا مطلوبة يجب إكمالها أولاً.',
+      addDependency: 'إضافة تبعية',
+      selectDependencies: 'اختر الأهداف',
+      dependencyDescription: 'يتطلب هذا الهدف إكمال الأهداف التالية أولاً:',
+      blockedByDependencies: '🔒 هذا الهدف محظور. أكمل الأهداف المطلوبة أولاً.',
+      dependencyCompleted: '✅ مكتمل',
+      dependencyIncomplete: '⏳ قيد التقدم',
+      removeDependency: 'إزالة',
+    },
+    review: {
+      title: 'المراجعة',
+      weeklyReview: 'المراجعة الأسبوعية',
+      monthlyReview: 'المراجعة الشهرية',
+      period: 'الفترة',
+      thisWeek: 'هذا الأسبوع',
+      thisMonth: 'هذا الشهر',
+      lastWeek: 'الأسبوع الماضي',
+      lastMonth: 'الشهر الماضي',
+      overview: 'نظرة عامة',
+      goalsCompleted: 'الأهداف المكتملة',
+      totalGoals: 'إجمالي الأهداف',
+      completionRate: 'معدل الإنجاز',
+      pointsEarned: 'النقاط المكتسبة',
+      achievements: 'الإنجازات',
+      completedGoals: 'الأهداف المكتملة',
+      noCompletedGoals: 'لا توجد أهداف مكتملة في هذه الفترة',
+      noGoalsMessage: 'ابدأ بتحديد الأهداف لرؤية تقدمك!',
+      keepGoing: 'استمر! أنت تحرز تقدمًا رائعًا! 🎉',
+      excellentWork: 'عمل ممتاز! لقد أكملت جميع الأهداف! 🏆',
+      goodProgress: 'تقدم جيد! حافظ على الزخم! 💪',
+      startWorking: 'حان الوقت للعمل على أهدافك! 🚀',
+    },
+    export: {
+      title: 'تصدير البيانات',
+      description: 'قم بتصدير أهدافك ومكافآتك للنسخ الاحتياطي أو التحليل',
+      exportJSON: 'تصدير كـ JSON',
+      exportCSV: 'تصدير كـ CSV',
+      jsonDescription: 'بيانات كاملة مع جميع التفاصيل',
+      csvDescription: 'تنسيق متوافق مع جداول البيانات',
+      exporting: 'جارٍ تحضير التصدير...',
+      exportSuccess: 'تم تصدير البيانات بنجاح',
+      exportError: 'فشل تصدير البيانات',
+      noData: 'لا توجد بيانات متاحة للتصدير',
+      shareTitle: 'مشاركة بيانات Pathly',
+    },
+    import: {
+      title: 'استيراد البيانات',
+      description: 'استيراد الأهداف والمكافآت من ملف نسخ احتياطي أو جهاز آخر',
+      selectFile: 'اختر ملف الاستيراد',
+      supportedFormats: 'يدعم ملفات JSON',
+      importing: 'جارٍ معالجة الاستيراد...',
+      importSuccess: 'تم استيراد {goals} أهداف و {rewards} مكافآت بنجاح',
+      importError: 'فشل استيراد البيانات',
+      confirmTitle: 'استيراد البيانات',
+      confirmMessage: 'تم العثور على {goals} أهداف و {rewards} مكافآت. كيف تريد الاستيراد؟',
+      merge: 'دمج مع الموجود',
+      replace: 'استبدال جميع البيانات',
+    },
+    notifications: {
+      title: 'الإشعارات',
+      enabled: 'تفعيل الإشعارات',
+      disabled: 'معطل',
+      time: 'وقت التذكير',
+      days: 'أيام التذكير',
+      selectDays: 'اختر الأيام',
+      everyday: 'كل يوم',
+      weekdays: 'أيام الأسبوع',
+      weekends: 'عطلة نهاية الأسبوع',
+      custom: 'مخصص',
+      testNotification: 'اختبار الإشعار',
+      testNotificationDescription: 'إرسال إشعار تجريبي للتحقق من الإعدادات',
+      testNotificationSent: 'تم إرسال الإشعار التجريبي!',
+      testNotificationError: 'فشل إرسال الإشعار التجريبي',
+      permissionsRequired: 'مطلوب أذونات الإشعارات',
+      permissionsDescription: 'قم بتمكين الإشعارات لتلقي تذكيرات الأهداف',
+      enablePermissions: 'تمكين الأذونات',
+      permissionsDenied: 'تم رفض أذونات الإشعارات',
+      permissionsGranted: 'تم منح أذونات الإشعارات',
+      scheduleSuccess: 'تم جدولة الإشعارات بنجاح',
+      scheduleError: 'فشل في جدولة الإشعارات',
+      cancelSuccess: 'تم إلغاء الإشعارات',
+      selectTime: 'اختر وقت التذكيرات اليومية',
+      selectDaysDescription: 'اختر الأيام التي تريد تلقي التذكيرات فيها',
+      dayNames: {
+        sunday: 'الأحد',
+        monday: 'الإثنين',
+        tuesday: 'الثلاثاء',
+        wednesday: 'الأربعاء',
+        thursday: 'الخميس',
+        friday: 'الجمعة',
+        saturday: 'السبت',
+      },
+      dayNamesShort: {
+        sunday: 'أحد',
+        monday: 'إثن',
+        tuesday: 'ثلا',
+        wednesday: 'أرب',
+        thursday: 'خمي',
+        friday: 'جمع',
+        saturday: 'سبت',
+      },
     },
     settings: {
       title: 'الإعدادات',
@@ -858,6 +1529,18 @@ export const translations: Record<Language, Translations> = {
       language: 'اللغة',
       languageEnglish: 'الإنجليزية',
       languageArabic: 'العربية',
+      archivedGoals: 'الأهداف المؤرشفة',
+      archivedGoalsSubtitle: 'عرض وإدارة أهدافك المؤرشفة',
+      viewArchived: 'عرض الأهداف المؤرشفة',
+      noArchivedGoals: 'لا توجد أهداف مؤرشفة',
+      restoreGoal: 'استعادة',
+      deleteGoalPermanently: 'حذف نهائياً',
+      deletePermanentlyTitle: 'حذف نهائياً',
+      deletePermanentlyMessage: 'حذف هذا الهدف نهائياً؟ لا يمكن التراجع عن هذا الإجراء وسيتم فقدان كل السجل.',
+      restoreSuccess: 'تم استعادة الهدف بنجاح',
+      restoreError: 'فشل في استعادة الهدف',
+      deletePermanentlySuccess: 'تم حذف الهدف نهائياً',
+      deletePermanentlyError: 'فشل في حذف الهدف',
       about: 'حول',
       aboutText: 'يساعدك باثلي على تتبع أهدافك وتحقيقها من خلال واجهة بسيطة وبديهية. حدد أهدافك، راقب التقدم، واحتفل بإنجازاتك.',
       version: 'الإصدار',
@@ -990,6 +1673,7 @@ export const translations: Record<Language, Translations> = {
       expired: 'منتهي',
       resetsIn: 'يتم إعادة التعيين في',
       and: 'و',
+      endsAt: 'ينتهي',
     },
     labels: {
       target: 'الهدف',

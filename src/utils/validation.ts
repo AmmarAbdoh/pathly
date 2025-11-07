@@ -73,6 +73,14 @@ export const validateGoalForm = (
  * @returns True if valid number
  */
 export const isValidNumber = (value: string): boolean => {
-  const num = parseFloat(value);
-  return !isNaN(num) && isFinite(num);
+  // Check if the entire string is a valid number (no trailing characters)
+  const trimmed = value.trim();
+  if (trimmed === '') return false;
+  
+  const num = parseFloat(trimmed);
+  if (isNaN(num) || !isFinite(num)) return false;
+  
+  // Ensure the string representation matches the parsed number
+  // This prevents cases like "12abc" which parseFloat would accept
+  return trimmed === num.toString() || trimmed === String(num);
 };

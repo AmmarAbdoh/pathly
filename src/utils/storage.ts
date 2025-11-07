@@ -5,7 +5,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storage-keys';
-import { Goal } from '../types';
+import { Goal, GoalTemplate } from '../types';
 
 /**
  * Storage service for goals data
@@ -158,6 +158,94 @@ export const themeStorage = {
     } catch (error) {
       console.error('Error loading language:', error);
       return null;
+    }
+  },
+};
+
+/**
+ * Storage service for custom goal templates
+ */
+export const customTemplatesStorage = {
+  /**
+   * Save custom templates array to AsyncStorage
+   * @param templates - Array of custom templates to persist
+   */
+  async saveCustomTemplates(templates: GoalTemplate[]): Promise<void> {
+    try {
+      const jsonData = JSON.stringify(templates);
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_TEMPLATES, jsonData);
+    } catch (error) {
+      console.error('Error saving custom templates:', error);
+      throw new Error('Failed to save custom templates');
+    }
+  },
+
+  /**
+   * Load custom templates array from AsyncStorage
+   * @returns Array of custom templates, or empty array if none exist
+   */
+  async loadCustomTemplates(): Promise<GoalTemplate[]> {
+    try {
+      const jsonData = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_TEMPLATES);
+      
+      if (!jsonData) {
+        return [];
+      }
+
+      const templates: GoalTemplate[] = JSON.parse(jsonData);
+      
+      // Validate that the data is an array
+      if (!Array.isArray(templates)) {
+        console.warn('Invalid custom templates data format, returning empty array');
+        return [];
+      }
+
+      return templates;
+    } catch (error) {
+      console.error('Error loading custom templates:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Add a new custom template
+   * @param template - Template to add
+   */
+  async addCustomTemplate(template: GoalTemplate): Promise<void> {
+    try {
+      const templates = await this.loadCustomTemplates();
+      templates.push(template);
+      await this.saveCustomTemplates(templates);
+    } catch (error) {
+      console.error('Error adding custom template:', error);
+      throw new Error('Failed to add custom template');
+    }
+  },
+
+  /**
+   * Delete a custom template by ID
+   * @param templateId - ID of template to delete
+   */
+  async deleteCustomTemplate(templateId: string): Promise<void> {
+    try {
+      const templates = await this.loadCustomTemplates();
+      const filtered = templates.filter(t => t.id !== templateId);
+      await this.saveCustomTemplates(filtered);
+    } catch (error) {
+      console.error('Error deleting custom template:', error);
+      throw new Error('Failed to delete custom template');
+    }
+  },
+
+  /**
+   * Clear all custom templates
+   */
+  async clearCustomTemplates(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.CUSTOM_TEMPLATES);
+    } catch (error) {
+      console.error('Error clearing custom templates:', error);
+      throw new Error('Failed to clear custom templates');
     }
   },
 };

@@ -4,9 +4,15 @@
 
 export type GoalDirection = 'increase' | 'decrease';
 
-export type TimePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom';
+export type TimePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing';
 
 export type GoalCategory = 'health' | 'fitness' | 'learning' | 'work' | 'finance' | 'personal' | 'social' | 'hobby' | 'other';
+
+export interface GoalNote {
+  id: string;
+  text: string;
+  createdAt: number;
+}
 
 export interface Achievement {
   id: string;
@@ -24,6 +30,7 @@ export interface Statistics {
   totalGoals: number;
   completedGoals: number;
   totalPoints: number;
+  lifetimePointsEarned: number; // Total points earned across all time (never decreases, even on goal deletion)
   spentPoints: number;
   currentStreak: number;
   longestStreak: number;
@@ -54,6 +61,7 @@ export interface Reward {
   createdAt: number;
   isRedeemed: boolean;
   redeemedAt?: number;
+  linkedToGoalId?: number; // ID of goal this reward is linked to (auto-redeems on completion)
 }
 
 export interface Goal {
@@ -80,6 +88,22 @@ export interface Goal {
   completedAt?: number; // Timestamp when goal was completed
   isRecurring?: boolean; // If true, goal resets after period ends
   completionHistory?: number[]; // Array of completion timestamps for recurring goals
+  currentStreak?: number; // Current consecutive completions streak for recurring goals
+  longestStreak?: number; // Longest streak ever achieved for this goal
+  isPaused?: boolean; // If true, goal is paused and won't count towards statistics
+  pausedAt?: number; // Timestamp when goal was paused
+  sortOrder?: number; // Custom sort order for manual reordering (lower numbers appear first)
+  linkedRewardId?: number; // ID of reward that auto-redeems when goal completes
+  subgoalsAwardPoints?: boolean; // If false (default for ultimate goals), subgoals get 0 points and don't award individually
+  isArchived?: boolean; // If true, goal is archived and hidden from main list
+  archivedAt?: number; // Timestamp when goal was archived
+  notes?: GoalNote[]; // Array of notes/journal entries for this goal
+  dependsOn?: number[]; // Array of goal IDs that must be completed before this goal can be started
+  isBlocked?: boolean; // Computed: true if dependsOn goals are not all complete
+  notificationsEnabled?: boolean; // If true, notifications are enabled for this goal
+  notificationTime?: number; // Time in minutes from midnight (e.g., 540 = 9:00 AM)
+  notificationDays?: number[]; // Days of week for notifications (0 = Sunday, 6 = Saturday)
+  notificationIds?: string[]; // Array of scheduled notification IDs for cleanup
 }
 
 export interface GoalFormData {

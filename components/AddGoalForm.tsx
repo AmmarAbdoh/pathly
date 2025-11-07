@@ -3,8 +3,9 @@
  * Form for creating new goals with validation
  */
 
-import { DEFAULT_GOAL_ICON, GOAL_REWARD_ICONS } from '@/src/constants/icons';
+import { DEFAULT_GOAL_ICON, ICON_CATEGORIES } from '@/src/constants/icons';
 import { useLanguage } from '@/src/context/LanguageContext';
+import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, GoalTemplate, TimePeriod } from '@/src/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,11 +28,14 @@ interface AddGoalFormProps {
     isUltimate?: boolean,
     isRecurring?: boolean,
     description?: string,
-    icon?: string
+    icon?: string,
+    linkedRewardId?: number,
+    subgoalsAwardPoints?: boolean
   ) => void;
   parentId?: number; // If set, this is a subgoal form
   parentTitle?: string; // Parent goal title for display
   editMode?: boolean; // If true, this is editing an existing goal
+  isCompleted?: boolean; // If true, lock progress/points fields (only allow editing title/description)
   templateData?: GoalTemplate | null; // Template to pre-fill form
   onClearTemplate?: () => void; // Clear template after applying
   initialValues?: {
@@ -47,15 +51,17 @@ interface AddGoalFormProps {
     isUltimate?: boolean;
     isRecurring?: boolean;
     icon?: string;
+    linkedRewardId?: number;
   };
 }
 
 /**
  * Form component for adding new goals
  */
-export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
+export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode = false, isCompleted = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
   const { theme } = useTheme();
   const { t, isRTL } = useLanguage();
+  const { getAvailableRewards } = useRewards();
   
   const [title, setTitle] = useState(initialValues?.title || '');
   const [description, setDescription] = useState(initialValues?.description || '');
@@ -68,8 +74,12 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
   const [customPeriodDays, setCustomPeriodDays] = useState(initialValues?.customPeriodDays?.toString() || '');
   const [isUltimate, setIsUltimate] = useState(initialValues?.isUltimate || false);
   const [isRecurring, setIsRecurring] = useState(initialValues?.isRecurring || false);
+  const [subgoalsAwardPoints, setSubgoalsAwardPoints] = useState(false); // Default: subgoals don't award points
   const [selectedIcon, setSelectedIcon] = useState(initialValues?.icon || DEFAULT_GOAL_ICON);
   const [showIconPicker, setShowIconPicker] = useState(false);
+  const [selectedIconCategory, setSelectedIconCategory] = useState<string>('achievements'); // Track selected category in icon picker
+  const [linkedRewardId, setLinkedRewardId] = useState<number | undefined>(initialValues?.linkedRewardId);
+  const [rewardPickerOpen, setRewardPickerOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -119,6 +129,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       { label: t.goalForm.periodMonthly, value: 'monthly' as const },
       { label: t.goalForm.periodYearly, value: 'yearly' as const },
       { label: t.goalForm.periodCustom, value: 'custom' as const },
+      { label: t.goalForm.periodOngoing, value: 'ongoing' as const },
     ],
     [t]
   );
@@ -174,10 +185,18 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       }
     }
     
-    if (!points.trim()) {
-      newErrors.points = t.validation.pointsRequired;
-    } else if (isNaN(parseFloat(points)) || parseFloat(points) < 0) {
-      newErrors.points = t.validation.pointsValid;
+    // Points validation - required for regular goals, optional for subgoals
+    if (!parentId) {
+      if (!points.trim()) {
+        newErrors.points = t.validation.pointsRequired;
+      } else if (isNaN(parseFloat(points)) || parseFloat(points) < 0) {
+        newErrors.points = t.validation.pointsValid;
+      }
+    } else {
+      // For subgoals, points are optional but must be valid if provided
+      if (points.trim() && (isNaN(parseFloat(points)) || parseFloat(points) < 0)) {
+        newErrors.points = t.validation.pointsValid;
+      }
     }
     
     if (period === 'custom' && !customPeriodDays.trim()) {
@@ -199,13 +218,15 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       current: isUltimate ? 0 : parseFloat(current),
       unit: isUltimate ? 'subgoals' : unit.trim(),
       direction,
-      points: parseFloat(points),
+      points: parentId ? (points.trim() ? parseFloat(points) : 0) : parseFloat(points), // For subgoals, default to 0 if empty
       period,
       customPeriodDays: period === 'custom' ? parseFloat(customPeriodDays) : undefined,
       parentId,
       isUltimate,
       isRecurring,
       icon: selectedIcon,
+      linkedRewardId,
+      subgoalsAwardPoints: isUltimate ? subgoalsAwardPoints : undefined, // Only set for ultimate goals
     };
 
     // Clear errors and show confirmation
@@ -233,7 +254,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       pendingGoalData.isUltimate,
       pendingGoalData.isRecurring,
       pendingGoalData.description,
-      pendingGoalData.icon
+      pendingGoalData.icon,
+      pendingGoalData.linkedRewardId,
+      pendingGoalData.subgoalsAwardPoints
     );
 
     resetForm();
@@ -303,6 +326,15 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
 
   return (
     <View style={containerStyle}>
+      {isCompleted && (
+        <View style={[styles.noteContainer, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
+          <Ionicons name="information-circle" size={20} color={theme.colors.primary} />
+          <Text style={[styles.noteText, { color: theme.colors.text }]}>
+            {t.goalForm.completedGoalEditNote}
+          </Text>
+        </View>
+      )}
+
       <Text style={labelStyle}>{t.goalForm.title}</Text>
 
       {/* Icon Picker */}
@@ -350,72 +382,125 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
 
       {/* Ultimate Goal Checkbox (only if not a subgoal) - Moved to top */}
       {!parentId && (
-        <Pressable
-          style={styles.checkboxContainer}
-          onPress={() => setIsUltimate(!isUltimate)}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: isUltimate }}
-          accessibilityLabel={t.goalForm.ultimateGoal}
-          accessibilityHint={t.goalForm.ultimateGoalHint}
-        >
-          <View style={[styles.checkbox, { borderColor: theme.colors.border }, isUltimate && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
-            {isUltimate && (
-              <Text style={styles.checkboxIcon}>✓</Text>
-            )}
-          </View>
-          <View style={styles.checkboxTextContainer}>
-            <Text style={[styles.checkboxLabel, { color: theme.colors.text }]}>
-              {t.goalForm.ultimateGoal}
-            </Text>
-            <Text style={[styles.checkboxHint, { color: theme.colors.textSecondary }]}>
-              {t.goalForm.ultimateGoalHint}
-            </Text>
-          </View>
-        </Pressable>
+        <>
+          <Pressable
+            style={styles.checkboxContainer}
+            onPress={() => setIsUltimate(!isUltimate)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isUltimate }}
+            accessibilityLabel={t.goalForm.ultimateGoal}
+            accessibilityHint={t.goalForm.ultimateGoalHint}
+          >
+            <View style={[styles.checkbox, { borderColor: theme.colors.border }, isUltimate && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+              {isUltimate && (
+                <Text style={styles.checkboxIcon}>✓</Text>
+              )}
+            </View>
+            <View style={styles.checkboxTextContainer}>
+              <Text style={[styles.checkboxLabel, { color: theme.colors.text }]}>
+                {t.goalForm.ultimateGoal}
+              </Text>
+              <Text style={[styles.checkboxHint, { color: theme.colors.textSecondary }]}>
+                {t.goalForm.ultimateGoalHint}
+              </Text>
+            </View>
+          </Pressable>
+
+          {/* Subgoals Award Points Checkbox (only shown for ultimate goals) */}
+          {isUltimate && (
+            <Pressable
+              style={[styles.checkboxContainer, { marginTop: -8 }]}
+              onPress={() => setSubgoalsAwardPoints(!subgoalsAwardPoints)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: subgoalsAwardPoints }}
+              accessibilityLabel={t.goalForm.subgoalsAwardPoints}
+              accessibilityHint={t.goalForm.subgoalsAwardPointsHint}
+            >
+              <View style={[styles.checkbox, { borderColor: theme.colors.border }, subgoalsAwardPoints && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                {subgoalsAwardPoints && (
+                  <Text style={styles.checkboxIcon}>✓</Text>
+                )}
+              </View>
+              <View style={styles.checkboxTextContainer}>
+                <Text style={[styles.checkboxLabel, { color: theme.colors.text }]}>
+                  {t.goalForm.subgoalsAwardPoints}
+                </Text>
+                <Text style={[styles.checkboxHint, { color: theme.colors.textSecondary }]}>
+                  {t.goalForm.subgoalsAwardPointsHint}
+                </Text>
+              </View>
+            </Pressable>
+          )}
+        </>
       )}
 
       {/* Target/Current/Unit fields - Hidden for ultimate goals */}
       {!isUltimate && (
         <>
-          {/* Target Input */}
+          {/* Starting Value (Current) */}
+          <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.startingValue}</Text>
+          <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+            {t.goalForm.startingValueHint}
+          </Text>
           <TextInput
-        style={inputStyle('target')}
-        placeholder={t.goalForm.targetPlaceholder}
-        placeholderTextColor={theme.colors.textSecondary}
-        keyboardType="decimal-pad"
-        value={target}
-        onChangeText={(text) => {
-          setTarget(text);
-          if (errors.target) {
-            const newErrors = { ...errors };
-            delete newErrors.target;
-            setErrors(newErrors);
-          }
-        }}
-        accessibilityLabel={t.goalForm.targetLabel}
-        accessibilityHint={t.goalForm.targetHint}
-      />
-      {renderError('target')}
+            style={inputStyle('current')}
+            placeholder={t.goalForm.currentPlaceholder}
+            placeholderTextColor={theme.colors.textSecondary}
+            keyboardType="decimal-pad"
+            value={current}
+            onChangeText={(text) => {
+              setCurrent(text);
+              if (errors.current) {
+                const newErrors = { ...errors };
+                delete newErrors.current;
+                setErrors(newErrors);
+              }
+            }}
+            editable={!isCompleted}
+            accessibilityLabel={t.goalForm.currentLabel}
+            accessibilityHint={t.goalForm.currentHint}
+          />
+          {renderError('current')}
 
-      {/* Current Input */}
-      <TextInput
-        style={inputStyle('current')}
-        placeholder={t.goalForm.currentPlaceholder}
-        placeholderTextColor={theme.colors.textSecondary}
-        keyboardType="decimal-pad"
-        value={current}
-        onChangeText={(text) => {
-          setCurrent(text);
-          if (errors.current) {
-            const newErrors = { ...errors };
-            delete newErrors.current;
-            setErrors(newErrors);
-          }
-        }}
-        accessibilityLabel={t.goalForm.currentLabel}
-        accessibilityHint={t.goalForm.currentHint}
-      />
-      {renderError('current')}
+          {/* Goal Target */}
+          <Text style={[labelStyle, styles.sectionLabel, { marginTop: 12 }]}>{t.goalForm.goalTarget}</Text>
+          <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+            {t.goalForm.goalTargetHint}
+          </Text>
+          <TextInput
+            style={inputStyle('target')}
+            placeholder={t.goalForm.targetPlaceholder}
+            placeholderTextColor={theme.colors.textSecondary}
+            keyboardType="decimal-pad"
+            value={target}
+            onChangeText={(text) => {
+              setTarget(text);
+              if (errors.target) {
+                const newErrors = { ...errors };
+                delete newErrors.target;
+                setErrors(newErrors);
+              }
+            }}
+            editable={!isCompleted}
+            accessibilityLabel={t.goalForm.targetLabel}
+            accessibilityHint={t.goalForm.targetHint}
+          />
+          {renderError('target')}
+
+          {/* Progress Preview */}
+          {current && target && (
+            <View style={[styles.previewContainer, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
+              <Text style={[styles.previewText, { color: theme.colors.primary }]}>
+                {direction === 'increase' 
+                  ? `${t.goalForm.helperIncrease.replace('{{current}}', current).replace('{{target}}', target)}`
+                  : `${t.goalForm.helperDecrease.replace('{{current}}', current).replace('{{target}}', target)}`
+                }
+              </Text>
+              <Text style={[styles.previewProgress, { color: theme.colors.text }]}>
+                📊 {t.goalForm.progressPreview.replace('{{current}}', current).replace('{{target}}', target)}
+              </Text>
+            </View>
+          )}
 
       {/* Unit Input with Suggestions */}
       <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.unit}</Text>
@@ -432,6 +517,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         }}
         placeholder={t.goalForm.unit}
         placeholderTextColor={theme.colors.textSecondary}
+        editable={!isCompleted}
       />
       {renderError('unit')}
       
@@ -458,6 +544,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
           items={directionItems}
           setOpen={setOpen}
           setValue={setDirection}
+          disabled={isCompleted}
           style={{
             backgroundColor: theme.colors.background,
             borderColor: theme.colors.border,
@@ -488,6 +575,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
           items={periodItems}
           setOpen={setPeriodOpen}
           setValue={setPeriod}
+          disabled={isCompleted}
           style={{
             backgroundColor: theme.colors.background,
             borderColor: theme.colors.border,
@@ -524,40 +612,75 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
                 setErrors(newErrors);
               }
             }}
+            editable={!isCompleted}
           />
           {renderError('customPeriodDays')}
         </>
       )}
 
-      {/* Points Input */}
-      <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.points}</Text>
-      
-      <TextInput
-        style={inputStyle('points')}
-        placeholder={t.goalForm.pointsPlaceholder}
-        placeholderTextColor={theme.colors.textSecondary}
-        keyboardType="number-pad"
-        value={points}
-        onChangeText={(text) => {
-          setPoints(text);
-          if (errors.points) {
-            const newErrors = { ...errors };
-            delete newErrors.points;
-            setErrors(newErrors);
-          }
-        }}
-        accessibilityLabel={t.goalForm.pointsLabel}
-        accessibilityHint={t.goalForm.pointsHint}
-      />
-      {renderError('points')}
+      {/* Points Input - Show note for subgoals if parent doesn't allow points */}
+      {parentId ? (
+        // Subgoals: Make points optional
+        <>
+          <Text style={[labelStyle, styles.sectionLabel]}>
+            {t.goalForm.points} (Optional)
+          </Text>
+          <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+            Leave at 0 if you don't want this subgoal to award points
+          </Text>
+          <TextInput
+            style={inputStyle('points')}
+            placeholder="0"
+            placeholderTextColor={theme.colors.textSecondary}
+            keyboardType="number-pad"
+            value={points}
+            onChangeText={(text) => {
+              setPoints(text);
+              if (errors.points) {
+                const newErrors = { ...errors };
+                delete newErrors.points;
+                setErrors(newErrors);
+              }
+            }}
+            editable={!isCompleted}
+            accessibilityLabel={t.goalForm.pointsLabel}
+            accessibilityHint="Optional points to award when completing this subgoal"
+          />
+          {renderError('points')}
+        </>
+      ) : (
+        <>
+          <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.points}</Text>
+          <TextInput
+            style={inputStyle('points')}
+            placeholder={t.goalForm.pointsPlaceholder}
+            placeholderTextColor={theme.colors.textSecondary}
+            keyboardType="number-pad"
+            value={points}
+            onChangeText={(text) => {
+              setPoints(text);
+              if (errors.points) {
+                const newErrors = { ...errors };
+                delete newErrors.points;
+                setErrors(newErrors);
+              }
+            }}
+            editable={!isCompleted}
+            accessibilityLabel={t.goalForm.pointsLabel}
+            accessibilityHint={t.goalForm.pointsHint}
+          />
+          {renderError('points')}
+        </>
+      )}
 
       {/* Recurring Goal Checkbox (only if not ultimate and not subgoal) */}
       {!parentId && !isUltimate && (
         <Pressable
           style={styles.checkboxContainer}
-          onPress={() => setIsRecurring(!isRecurring)}
+          onPress={() => !isCompleted && setIsRecurring(!isRecurring)}
+          disabled={isCompleted}
           accessibilityRole="checkbox"
-          accessibilityState={{ checked: isRecurring }}
+          accessibilityState={{ checked: isRecurring, disabled: isCompleted }}
           accessibilityLabel={t.goalForm.recurringGoal}
           accessibilityHint={t.goalForm.recurringGoalHint}
         >
@@ -577,6 +700,45 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         </Pressable>
       )}
 
+      {/* Linked Reward Dropdown */}
+      <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.linkedReward}</Text>
+      <Text style={[styles.checkboxHint, { color: theme.colors.textSecondary, marginBottom: 8 }]}>{t.goalForm.linkedRewardHint}</Text>
+      
+      <View style={styles.dropdownContainer}>
+        <DropDownPicker
+          open={rewardPickerOpen}
+          value={linkedRewardId ?? 0}
+          items={[
+            { label: t.goalForm.noReward, value: 0 },
+            ...getAvailableRewards().map(reward => ({
+              label: `${reward.icon} ${reward.title} - ${reward.pointsCost} pts`,
+              value: reward.id,
+            }))
+          ]}
+          setOpen={setRewardPickerOpen}
+          setValue={(callback) => {
+            const newValue = typeof callback === 'function' ? callback(linkedRewardId ?? 0) : callback;
+            setLinkedRewardId(newValue === 0 ? undefined : newValue as number);
+          }}
+          placeholder={t.goalForm.selectReward}
+          style={{
+            backgroundColor: theme.colors.background,
+            borderColor: theme.colors.border,
+          }}
+          dropDownContainerStyle={{
+            backgroundColor: theme.colors.background,
+            borderColor: theme.colors.border,
+            zIndex: 5,
+          }}
+          textStyle={{
+            color: theme.colors.text,
+          }}
+          listMode="SCROLLVIEW"
+          zIndex={5000}
+          zIndexInverse={5000}
+        />
+      </View>
+
       {/* Submit Button */}
       <TouchableOpacity
         style={buttonStyle}
@@ -591,20 +753,52 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
 
       {/* Icon Picker Modal */}
       <Modal visible={showIconPicker} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowIconPicker(false)}>
+          <Pressable style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.rewards.icon}</Text>
               <TouchableOpacity onPress={() => setShowIconPicker(false)}>
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
+            
+            {/* Category Tabs */}
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryTabsContainer}
+            >
+              {Object.keys(ICON_CATEGORIES).map((category) => (
+                <TouchableOpacity
+                  key={category}
+                  style={[
+                    styles.categoryTab,
+                    { backgroundColor: theme.colors.background },
+                    selectedIconCategory === category && { 
+                      backgroundColor: theme.colors.primary,
+                      borderColor: theme.colors.primary 
+                    },
+                  ]}
+                  onPress={() => setSelectedIconCategory(category)}
+                >
+                  <Text style={[
+                    styles.categoryTabText,
+                    { color: theme.colors.text },
+                    selectedIconCategory === category && { color: '#fff', fontWeight: '600' }
+                  ]}>
+                    {t.iconCategories[category as keyof typeof t.iconCategories]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* Icon Grid for Selected Category */}
             <ScrollView 
               style={styles.iconScrollView}
               removeClippedSubviews={true}
             >
               <View style={styles.iconGrid}>
-                {GOAL_REWARD_ICONS.map((icon, index) => (
+                {ICON_CATEGORIES[selectedIconCategory]?.map((icon, index) => (
                   <TouchableOpacity
                     key={`icon-${index}-${icon}`}
                     style={[
@@ -622,8 +816,8 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
                 ))}
               </View>
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Confirmation Modal */}
@@ -779,7 +973,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     padding: 20,
-    gap: 12,
+    justifyContent: 'space-evenly',
   },
   searchInput: {
     borderWidth: 1,
@@ -789,15 +983,83 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   iconOption: {
-    width: 60,
-    height: 60,
+    width: '18%',
+    aspectRatio: 1,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
+    marginBottom: 12,
   },
   iconOptionText: {
     fontSize: 32,
+  },
+  categoryTabsContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  categoryTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  categoryTabText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  helperText: {
+    fontSize: 13,
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  previewContainer: {
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  previewText: {
+    fontSize: 14,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  previewProgress: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noteContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 10,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  subgoalPointsNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 8,
+  },
+  subgoalPointsText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

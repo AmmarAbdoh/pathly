@@ -42,10 +42,13 @@ export default function AddGoalScreen() {
       parentId?: number,
       isUltimate?: boolean,
       isRecurring?: boolean,
-      description?: string
+      description?: string,
+      icon?: string,
+      linkedRewardId?: number,
+      subgoalsAwardPoints?: boolean
     ) => {
       try {
-        await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description);
+        await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description, icon, linkedRewardId, subgoalsAwardPoints);
         // Navigate back to home after successful creation
         router.push('/home');
       } catch (err) {
@@ -71,6 +74,8 @@ export default function AddGoalScreen() {
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Header */}
         <View style={styles.header}>

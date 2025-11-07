@@ -9,16 +9,20 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { calculateStatistics, getAchievementProgress } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-    Platform,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View
+  Platform,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,14 +30,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
  * Statistics screen component
  */
 export default function StatisticsScreen() {
-  const { goals } = useGoals();
+  const { goals, lifetimePointsEarned } = useGoals();
   const { rewards } = useRewards();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
+  const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [currentQuote, setCurrentQuote] = useState(getRandomQuote(language));
+  const [focusKey, setFocusKey] = useState(0);
 
-  const stats = useMemo(() => calculateStatistics(goals, rewards), [goals, rewards]);
+  // Force recalculation when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      setFocusKey(prev => prev + 1);
+    }, [])
+  );
+
+  const stats = useMemo(() => calculateStatistics(goals, rewards, lifetimePointsEarned), [goals, rewards, lifetimePointsEarned, focusKey]);
   const ACHIEVEMENTS = useMemo(() => getAchievements(language), [language]);
 
   const onRefresh = React.useCallback(() => {
@@ -83,6 +96,28 @@ export default function StatisticsScreen() {
           <Text style={[styles.title, { color: theme.colors.text }]}>
             {t.statistics.yourProgress}
           </Text>
+          
+          <View style={styles.headerButtons}>
+            {/* Analytics Button */}
+            <TouchableOpacity
+              style={[styles.headerButton, { backgroundColor: theme.colors.primary }]}
+              onPress={() => router.push('/analytics' as any)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="analytics-outline" size={20} color="#FFF" />
+              <Text style={styles.headerButtonText}>{t.analytics.title}</Text>
+            </TouchableOpacity>
+            
+            {/* Review Button */}
+            <TouchableOpacity
+              style={[styles.headerButton, { backgroundColor: theme.colors.primary }]}
+              onPress={() => router.push('/review' as any)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="calendar-outline" size={20} color="#FFF" />
+              <Text style={styles.headerButtonText}>{t.review.title}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Motivational Quote */}
@@ -97,7 +132,7 @@ export default function StatisticsScreen() {
         <View style={styles.statsGrid}>
           <View style={[cardStyle, styles.statCard]}>
             <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
-              {stats.totalGoals}
+              {formatNumber(stats.totalGoals, language)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.totalGoals}
@@ -106,7 +141,7 @@ export default function StatisticsScreen() {
 
           <View style={[cardStyle, styles.statCard]}>
             <Text style={[styles.statNumber, { color: '#22c55e' }]}>
-              {stats.completedGoals}
+              {formatNumber(stats.completedGoals, language)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.completedGoals}
@@ -115,7 +150,7 @@ export default function StatisticsScreen() {
 
           <View style={[cardStyle, styles.statCard]}>
             <Text style={[styles.statNumber, { color: '#f59e0b' }]}>
-              {stats.totalPoints}
+              {formatNumber(stats.lifetimePointsEarned, language)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.totalPoints}
@@ -124,7 +159,7 @@ export default function StatisticsScreen() {
 
           <View style={[cardStyle, styles.statCard]}>
             <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-              🔥 {stats.currentStreak}
+              🔥 {formatNumber(stats.currentStreak, language)}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.currentStreak}
@@ -248,11 +283,45 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 20,
+    flexDirection: 'column',
+    gap: 12,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
     letterSpacing: -0.5,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  headerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  headerButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  reviewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  reviewButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   quoteCard: {
     padding: 20,
@@ -344,16 +413,16 @@ const styles = StyleSheet.create({
   achievementsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    justifyContent: 'space-between',
   },
   achievementItem: {
-    flex: 1,
-    minWidth: Platform.OS === 'web' ? 180 : 150,
-    maxWidth: Platform.OS === 'web' ? 250 : '48%',
+    width: '48%',
+    minHeight: 160,
     padding: 16,
     borderRadius: 12,
     backgroundColor: 'rgba(34, 197, 94, 0.1)',
     alignItems: 'center',
+    marginBottom: 12,
   },
   lockedAchievement: {
     backgroundColor: 'rgba(0, 0, 0, 0.05)',

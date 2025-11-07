@@ -109,16 +109,22 @@ export const isGoalCompleted = (progress: number): boolean => {
  * @param periodStartDate - Start date timestamp
  * @param period - Time period type
  * @param customPeriodDays - Number of days for custom period
- * @returns End date timestamp
+ * @returns End date timestamp (set to 23:59:59.999 of the final day)
  */
 export const calculatePeriodEndDate = (
   periodStartDate: number,
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom',
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing',
   customPeriodDays?: number
 ): number => {
+  // Ongoing goals never expire
+  if (period === 'ongoing') {
+    return Infinity;
+  }
+
   const startDate = new Date(periodStartDate);
   const endDate = new Date(startDate);
 
+  // Add the period duration
   switch (period) {
     case 'daily':
       endDate.setDate(endDate.getDate() + 1);
@@ -137,6 +143,10 @@ export const calculatePeriodEndDate = (
       break;
   }
 
+  // Set time to end of day (23:59:59.999) to include the full last day
+  // Subtract 1 millisecond so the deadline is just before midnight
+  endDate.setHours(23, 59, 59, 999);
+
   return endDate.getTime();
 };
 
@@ -150,7 +160,7 @@ export const calculatePeriodEndDate = (
  */
 export const calculateTimeRemaining = (
   periodStartDate: number | undefined,
-  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom',
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing',
   customPeriodDays?: number,
   isRecurring?: boolean
 ): {
@@ -160,6 +170,11 @@ export const calculateTimeRemaining = (
   isExpired: boolean;
   totalMs: number;
 } => {
+  // Ongoing goals never expire
+  if (period === 'ongoing') {
+    return { days: Infinity, hours: 0, minutes: 0, isExpired: false, totalMs: Infinity };
+  }
+
   if (!periodStartDate) {
     return { days: 0, hours: 0, minutes: 0, isExpired: false, totalMs: 0 };
   }
@@ -168,16 +183,25 @@ export const calculateTimeRemaining = (
   const now = Date.now();
   const diff = endDate - now;
 
+  // Goal is expired if time has passed
   if (diff <= 0) {
     // For recurring goals, "expired" means "will reset", not failed
     return { days: 0, hours: 0, minutes: 0, isExpired: !isRecurring, totalMs: 0 };
   }
 
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  // Calculate time components, ensuring no negative values
+  const totalMinutes = Math.floor(diff / (1000 * 60));
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  const minutes = totalMinutes % 60;
 
-  return { days, hours, minutes, isExpired: false, totalMs: diff };
+  return { 
+    days: Math.max(0, days), 
+    hours: Math.max(0, hours), 
+    minutes: Math.max(0, minutes), 
+    isExpired: false, 
+    totalMs: diff 
+  };
 };
 
 /**
@@ -216,6 +240,11 @@ export const formatTimeRemaining = (
   }
 
   const { days, hours, minutes } = timeRemaining;
+  
+  // Handle ongoing goals (infinite time)
+  if (days === Infinity) {
+    return ''; // Return empty string for ongoing goals
+  }
   const parts: string[] = [];
 
   // Helper function to get the correct form based on number (handles Arabic dual/plural)
@@ -256,4 +285,44 @@ export const formatTimeRemaining = (
   }
   
   return `${timeString} ${suffix}`;
+};
+
+/**
+ * Format the exact end date/time for display
+ * @param periodStartDate - Start date timestamp
+ * @param period - Time period type
+ * @param customPeriodDays - Number of days for custom period
+ * @param language - Language for date formatting ('en' or 'ar')
+ * @returns Formatted string like "Oct 30, 11:59 PM" or "٣٠ أكتوبر، ١١:٥٩ م"
+ */
+export const formatEndDateTime = (
+  periodStartDate: number | undefined,
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing',
+  customPeriodDays?: number,
+  language: 'en' | 'ar' = 'en'
+): string => {
+  // Ongoing goals have no end date
+  if (period === 'ongoing') {
+    return '';
+  }
+
+  if (!periodStartDate) {
+    return '';
+  }
+
+  const endDate = new Date(calculatePeriodEndDate(periodStartDate, period, customPeriodDays));
+  
+  // Format date based on language
+  const locale = language === 'ar' ? 'ar-SA' : 'en-US';
+  
+  // Format: "Oct 30, 11:59 PM" or "٣٠ أكتوبر، ١١:٥٩ م"
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  };
+  
+  return endDate.toLocaleString(locale, dateOptions);
 };

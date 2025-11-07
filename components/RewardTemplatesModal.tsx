@@ -11,6 +11,7 @@ import React, { useMemo, useState } from 'react';
 import {
     Dimensions,
     Modal,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -56,8 +57,8 @@ export default function RewardTemplatesModal({ visible, onClose, onSelectTemplat
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable style={[styles.modalContent, { backgroundColor: theme.colors.background }]} onPress={(e) => e.stopPropagation()}>
           {/* Header */}
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
@@ -155,8 +156,8 @@ export default function RewardTemplatesModal({ visible, onClose, onSelectTemplat
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
