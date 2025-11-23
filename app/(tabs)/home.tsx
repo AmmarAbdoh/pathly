@@ -10,6 +10,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Goal, TimePeriod } from '@/src/types';
 import { calculateTimeRemaining, formatEndDateTime, formatTimeRemaining } from '@/src/utils/goal-calculations';
+import { isGoalActiveOnDate } from '@/src/utils/goal-scheduling';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo } from 'react';
@@ -59,6 +60,9 @@ export default function HomeScreen() {
   // Filter to show only parent goals (not subgoals, not archived) and organize by sections
   const goalSections = useMemo(() => {
     let parentGoals = goals.filter(goal => !goal.parentId && !goal.isArchived);
+
+    // Apply schedule filter - only show goals active today
+    parentGoals = parentGoals.filter(goal => isGoalActiveOnDate(goal));
 
     // Apply search filter
     if (searchQuery.trim()) {
@@ -318,6 +322,7 @@ export default function HomeScreen() {
           canMoveDown={canMoveDown}
           currentStreak={goal.currentStreak}
           isBlocked={isBlocked}
+          schedule={goal.schedule}
         />
       );
     },

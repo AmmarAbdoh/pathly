@@ -4,7 +4,7 @@
  */
 
 import { STORAGE_KEYS } from '@/src/constants/storage-keys';
-import { Goal, GoalDirection, TimePeriod } from '@/src/types';
+import { Goal, GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
 import { calculateGoalProgress, calculateProgress } from '@/src/utils/goal-calculations';
 import { goalsStorage } from '@/src/utils/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,7 +29,10 @@ interface GoalsContextType {
     isUltimate?: boolean,
     isRecurring?: boolean,
     description?: string,
-    icon?: string
+    icon?: string,
+    linkedRewardId?: number,
+    subgoalsAwardPoints?: boolean,
+    schedule?: GoalSchedule
   ) => Promise<void>;
   addSubgoal: (
     parentId: number,
@@ -194,7 +197,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       description?: string,
       icon?: string,
       linkedRewardId?: number,
-      subgoalsAwardPoints?: boolean
+      subgoalsAwardPoints?: boolean,
+      schedule?: GoalSchedule
     ) => {
       try {
         const progress = calculateProgress(current, target, direction, current);
@@ -223,6 +227,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           completionHistory: [],
           linkedRewardId,
           subgoalsAwardPoints: subgoalsAwardPoints ?? (isUltimate ? false : undefined), // Default false for ultimate goals
+          schedule,
         };
 
         let updatedGoals = [...goals, newGoal];

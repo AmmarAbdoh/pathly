@@ -8,6 +8,16 @@ export type TimePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 
 
 export type GoalCategory = 'health' | 'fitness' | 'learning' | 'work' | 'finance' | 'personal' | 'social' | 'hobby' | 'other';
 
+export interface GoalSchedule {
+  // For weekly recurring goals: specific days of the week (0 = Sunday, 1 = Monday, etc.)
+  daysOfWeek?: number[];
+  // For monthly recurring goals: specific dates (1-31)
+  datesOfMonth?: number[];
+  // For date range in month: e.g., "20-25" means days 20 through 25
+  dateRangeStart?: number;
+  dateRangeEnd?: number;
+}
+
 export interface GoalNote {
   id: string;
   text: string;
@@ -104,6 +114,7 @@ export interface Goal {
   notificationTime?: number; // Time in minutes from midnight (e.g., 540 = 9:00 AM)
   notificationDays?: number[]; // Days of week for notifications (0 = Sunday, 6 = Saturday)
   notificationIds?: string[]; // Array of scheduled notification IDs for cleanup
+  schedule?: GoalSchedule; // Schedule configuration for when goal should be active
 }
 
 export interface GoalFormData {

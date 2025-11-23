@@ -5,6 +5,8 @@
 
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { GoalSchedule } from '@/src/types';
+import { getScheduleDescription } from '@/src/utils/goal-scheduling';
 import { formatNumber } from '@/src/utils/number-formatting';
 import React, { memo, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -30,12 +32,13 @@ interface GoalCardProps {
   canMoveDown?: boolean; // Whether the goal can be moved down
   currentStreak?: number; // Current streak for recurring goals
   isBlocked?: boolean; // Whether the goal is blocked by dependencies
+  schedule?: GoalSchedule; // Goal schedule configuration
 }
 
 /**
  * Goal card component with memoization for performance
  */
-const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCount = 0, completedSubgoalCount = 0, isUltimate = false, onPress, timeRemaining, isExpired = false, isRecurring = false, isComplete = false, isPaused = false, onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false, currentStreak = 0, isBlocked = false }) => {
+const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCount = 0, completedSubgoalCount = 0, isUltimate = false, onPress, timeRemaining, isExpired = false, isRecurring = false, isComplete = false, isPaused = false, onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false, currentStreak = 0, isBlocked = false, schedule }) => {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
 
@@ -45,6 +48,7 @@ const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCo
   const formattedPoints = useMemo(() => formatNumber(points, language), [points, language]);
   const formattedSubgoalCount = useMemo(() => formatNumber(subgoalCount, language), [subgoalCount, language]);
   const formattedCompletedSubgoalCount = useMemo(() => formatNumber(completedSubgoalCount, language), [completedSubgoalCount, language]);
+  const scheduleText = useMemo(() => schedule ? getScheduleDescription(schedule) : null, [schedule]);
   
   const cardStyle = useMemo(
     () => [
@@ -182,6 +186,14 @@ const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCo
               <Text style={styles.streakIcon}>🔥</Text>
               <Text style={[styles.streakText, { color: '#f59e0b' }]}>
                 {formatNumber(currentStreak, language)} {t.goalCard.weekStreak}
+              </Text>
+            </View>
+          )}
+          {scheduleText && scheduleText !== 'Every day' && (
+            <View style={[styles.scheduleContainer, { backgroundColor: theme.colors.primary + '15' }]}>
+              <Text style={styles.scheduleIcon}>📅</Text>
+              <Text style={[styles.scheduleText, { color: theme.colors.primary }]}>
+                {scheduleText}
               </Text>
             </View>
           )}
@@ -378,6 +390,23 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   streakText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  scheduleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  scheduleIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  scheduleText: {
     fontSize: 12,
     fontWeight: '700',
   },

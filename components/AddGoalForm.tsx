@@ -7,12 +7,13 @@ import { DEFAULT_GOAL_ICON, ICON_CATEGORIES } from '@/src/constants/icons';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { GoalDirection, GoalTemplate, TimePeriod } from '@/src/types';
+import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import ConfirmationModal from './ConfirmationModal';
+import GoalSchedulePicker from './GoalSchedulePicker';
 
 interface AddGoalFormProps {
   onAddGoal: (
@@ -30,7 +31,8 @@ interface AddGoalFormProps {
     description?: string,
     icon?: string,
     linkedRewardId?: number,
-    subgoalsAwardPoints?: boolean
+    subgoalsAwardPoints?: boolean,
+    schedule?: GoalSchedule
   ) => void;
   parentId?: number; // If set, this is a subgoal form
   parentTitle?: string; // Parent goal title for display
@@ -74,6 +76,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
   const [customPeriodDays, setCustomPeriodDays] = useState(initialValues?.customPeriodDays?.toString() || '');
   const [isUltimate, setIsUltimate] = useState(initialValues?.isUltimate || false);
   const [isRecurring, setIsRecurring] = useState(initialValues?.isRecurring || false);
+  const [schedule, setSchedule] = useState<GoalSchedule | undefined>(undefined);
   const [subgoalsAwardPoints, setSubgoalsAwardPoints] = useState(false); // Default: subgoals don't award points
   const [selectedIcon, setSelectedIcon] = useState(initialValues?.icon || DEFAULT_GOAL_ICON);
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -227,13 +230,14 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       icon: selectedIcon,
       linkedRewardId,
       subgoalsAwardPoints: isUltimate ? subgoalsAwardPoints : undefined, // Only set for ultimate goals
+      schedule,
     };
 
     // Clear errors and show confirmation
     setErrors({});
     setPendingGoalData(formData);
     setShowConfirmModal(true);
-  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, t]);
+  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, schedule, t]);
 
   /**
    * Confirm and add goal
@@ -256,7 +260,8 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       pendingGoalData.description,
       pendingGoalData.icon,
       pendingGoalData.linkedRewardId,
-      pendingGoalData.subgoalsAwardPoints
+      pendingGoalData.subgoalsAwardPoints,
+      pendingGoalData.schedule
     );
 
     resetForm();
@@ -698,6 +703,15 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
             </Text>
           </View>
         </Pressable>
+      )}
+
+      {/* Goal Schedule Picker (only if recurring) */}
+      {!parentId && !isUltimate && (
+        <GoalSchedulePicker
+          schedule={schedule}
+          onScheduleChange={setSchedule}
+          isRecurring={isRecurring}
+        />
       )}
 
       {/* Linked Reward Dropdown */}

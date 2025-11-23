@@ -8,7 +8,7 @@ import TemplatesModal from '@/components/TemplatesModal';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { GoalDirection, GoalTemplate, TimePeriod } from '@/src/types';
+import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -45,10 +45,11 @@ export default function AddGoalScreen() {
       description?: string,
       icon?: string,
       linkedRewardId?: number,
-      subgoalsAwardPoints?: boolean
+      subgoalsAwardPoints?: boolean,
+      schedule?: GoalSchedule
     ) => {
       try {
-        await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description, icon, linkedRewardId, subgoalsAwardPoints);
+        await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description, icon, linkedRewardId, subgoalsAwardPoints, schedule);
         // Navigate back to home after successful creation
         router.push('/home');
       } catch (err) {
