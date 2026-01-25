@@ -11,15 +11,17 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { Reward } from '@/src/types';
 import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     Alert,
     Modal,
     Pressable,
     RefreshControl,
     ScrollView,
+    SectionList,
     StyleSheet,
     Text,
     TextInput,
@@ -56,10 +58,24 @@ export default function RewardsScreen() {
   const [selectedIcon, setSelectedIcon] = useState(DEFAULT_REWARD_ICON);
 
   // Calculate statistics
-  const stats = calculateStatistics(goals, rewards, lifetimePointsEarned);
+  const stats = useMemo(
+    () => calculateStatistics(goals, rewards, lifetimePointsEarned),
+    [goals, rewards, lifetimePointsEarned]
+  );
   const availablePoints = stats.lifetimePointsEarned - stats.spentPoints;
   const availableRewards = getAvailableRewards();
   const redeemedRewards = getRedeemedRewards();
+
+  const rewardSections = useMemo(() => {
+    const sections: Array<{ title: string; data: Reward[] }> = [];
+    if (availableRewards.length > 0) {
+      sections.push({ title: t.rewards.availableRewards, data: availableRewards });
+    }
+    if (redeemedRewards.length > 0) {
+      sections.push({ title: t.rewards.redeemedRewards, data: redeemedRewards });
+    }
+    return sections;
+  }, [availableRewards, redeemedRewards, t]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -159,7 +175,7 @@ export default function RewardsScreen() {
     setShowIconPicker(false);
   };
 
-  const renderRewardCard = ({ item }: { item: any }) => {
+  const renderRewardItem = ({ item }: { item: Reward }) => {
     const canAfford = availablePoints >= item.pointsCost;
     const isRedeemed = item.isRedeemed;
 
@@ -232,77 +248,68 @@ export default function RewardsScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <SectionList
+        sections={rewardSections}
+        keyExtractor={(item) => `reward-${item.id}`}
+        renderItem={renderRewardItem}
+        renderSectionHeader={({ section }) => (
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            {section.title}
+          </Text>
+        )}
+        ListHeaderComponent={
+          <>
+            {/* Templates Button */}
+            <TouchableOpacity
+              style={[styles.templatesButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+              onPress={() => setShowTemplates(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="albums-outline" size={24} color={theme.colors.primary} />
+              <View style={styles.templatesButtonText}>
+                <Text style={[styles.templatesButtonTitle, { color: theme.colors.text }]}>
+                  {t.rewards.useTemplate}
+                </Text>
+                <Text style={[styles.templatesButtonSubtitle, { color: theme.colors.textSecondary }]}>
+                  {t.rewards.quickRewards}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+
+            {/* Points Info Card */}
+            <View style={[styles.infoCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.totalEarned}</Text>
+                <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{stats.totalPoints}</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.spent}</Text>
+                <Text style={[styles.infoValue, { color: '#ef4444' }]}>{stats.spentPoints}</Text>
+              </View>
+              <View style={[styles.infoRow, styles.infoRowBorder, { borderTopColor: theme.colors.border }]}>
+                <Text style={[styles.infoLabel, { color: theme.colors.text, fontWeight: '700' }]}>{t.rewards.available}</Text>
+                <Text style={[styles.infoValue, { color: '#10b981', fontWeight: '700' }]}>{availablePoints}</Text>
+              </View>
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          rewards.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>🎁</Text>
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t.rewards.noRewards}</Text>
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                {t.rewards.createRewards}
+              </Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={<View style={{ height: 100 }} />}
         style={styles.scrollView}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Templates Button */}
-        <TouchableOpacity
-          style={[styles.templatesButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-          onPress={() => setShowTemplates(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="albums-outline" size={24} color={theme.colors.primary} />
-          <View style={styles.templatesButtonText}>
-            <Text style={[styles.templatesButtonTitle, { color: theme.colors.text }]}>
-              {t.rewards.useTemplate}
-            </Text>
-            <Text style={[styles.templatesButtonSubtitle, { color: theme.colors.textSecondary }]}>
-              {t.rewards.quickRewards}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
-        </TouchableOpacity>
-
-        {/* Points Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.totalEarned}</Text>
-            <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{stats.totalPoints}</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.spent}</Text>
-            <Text style={[styles.infoValue, { color: '#ef4444' }]}>{stats.spentPoints}</Text>
-          </View>
-          <View style={[styles.infoRow, styles.infoRowBorder, { borderTopColor: theme.colors.border }]}>
-            <Text style={[styles.infoLabel, { color: theme.colors.text, fontWeight: '700' }]}>{t.rewards.available}</Text>
-            <Text style={[styles.infoValue, { color: '#10b981', fontWeight: '700' }]}>{availablePoints}</Text>
-          </View>
-        </View>
-
-        {/* Available Rewards */}
-        {availableRewards.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t.rewards.availableRewards}</Text>
-            {availableRewards.map((reward) => (
-              <View key={reward.id}>{renderRewardCard({ item: reward })}</View>
-            ))}
-          </>
-        )}
-
-        {/* Redeemed Rewards */}
-        {redeemedRewards.length > 0 && (
-          <>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{t.rewards.redeemedRewards}</Text>
-            {redeemedRewards.map((reward) => (
-              <View key={reward.id}>{renderRewardCard({ item: reward })}</View>
-            ))}
-          </>
-        )}
-
-        {/* Empty State */}
-        {rewards.length === 0 && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🎁</Text>
-            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t.rewards.noRewards}</Text>
-            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-              {t.rewards.createRewards}
-            </Text>
-          </View>
-        )}
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
+        stickySectionHeadersEnabled={false}
+      />
 
       {/* Floating Add Button */}
       <TouchableOpacity
@@ -762,3 +769,4 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+

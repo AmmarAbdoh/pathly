@@ -9,7 +9,7 @@ import GoalCard from '@/components/GoalCard';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { GoalDirection, TimePeriod } from '@/src/types';
+import { Goal, GoalDirection, TimePeriod } from '@/src/types';
 import { calculateTimeRemaining, formatEndDateTime, formatProgressText, formatTimeRemaining } from '@/src/utils/goal-calculations';
 import { formatNumber } from '@/src/utils/number-formatting';
 import { customTemplatesStorage } from '@/src/utils/storage';
@@ -19,6 +19,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
+    FlatList,
     Modal,
     Pressable,
     ScrollView,
@@ -51,6 +52,7 @@ export default function GoalDetail() {
     () => goal ? getSubgoals(goal.id) : [],
     [goal, getSubgoals]
   );
+  const subgoalsScrollable = subgoals.length > 6;
 
   // Check if goal is expired
   const isGoalExpired = useMemo(() => {
@@ -761,6 +763,22 @@ export default function GoalDetail() {
     router.push(`/goal/${subgoalId}`);
   }, [router]);
 
+  const renderSubgoalItem = useCallback(
+    ({ item }: { item: Goal }) => (
+      <GoalCard
+        title={item.title}
+        progress={item.progress}
+        points={item.points}
+        subgoalCount={item.subGoals?.length || 0}
+        isUltimate={item.isUltimate}
+        onPress={() => handleSubgoalPress(item.id)}
+      />
+    ),
+    [handleSubgoalPress]
+  );
+
+  const subgoalKeyExtractor = useCallback((item: Goal) => `subgoal-${item.id}`, []);
+
   /**
    * Handle goal deletion - show confirmation modal
    */
@@ -1446,19 +1464,19 @@ export default function GoalDetail() {
                 {t.goalDetail.noSubgoals}
               </Text>
             ) : (
-              <View style={styles.subgoalsList}>
-                {subgoals.map((subgoal) => (
-                  <GoalCard
-                    key={subgoal.id}
-                    title={subgoal.title}
-                    progress={subgoal.progress}
-                    points={subgoal.points}
-                    subgoalCount={subgoal.subGoals?.length || 0}
-                    isUltimate={subgoal.isUltimate}
-                    onPress={() => handleSubgoalPress(subgoal.id)}
-                  />
-                ))}
-              </View>
+              <FlatList
+                data={subgoals}
+                renderItem={renderSubgoalItem}
+                keyExtractor={subgoalKeyExtractor}
+                contentContainerStyle={styles.subgoalsList}
+                scrollEnabled={subgoalsScrollable}
+                nestedScrollEnabled={subgoalsScrollable}
+                style={subgoalsScrollable ? styles.subgoalsListScrollable : undefined}
+                showsVerticalScrollIndicator={subgoalsScrollable}
+                initialNumToRender={6}
+                windowSize={5}
+                removeClippedSubviews={subgoalsScrollable}
+              />
             )}
           </View>
         )}
@@ -2313,6 +2331,9 @@ const styles = StyleSheet.create({
   },
   subgoalsList: {
     gap: 12,
+  },
+  subgoalsListScrollable: {
+    maxHeight: 420,
   },
   deleteButton: {
     flexDirection: 'row',

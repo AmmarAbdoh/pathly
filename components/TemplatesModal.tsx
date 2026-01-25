@@ -3,6 +3,7 @@
  * Quick selection of pre-defined goal templates
  */
 
+import TemplateModal from '@/components/TemplateModal';
 import { getGoalTemplates } from '@/src/constants/goal-templates';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -10,18 +11,7 @@ import { GoalCategory, GoalTemplate } from '@/src/types';
 import { customTemplatesStorage } from '@/src/utils/storage';
 import { Ionicons } from '@expo/vector-icons';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import {
-    Dimensions,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-
-const { width, height } = Dimensions.get('window');
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface TemplatesModalProps {
   visible: boolean;
@@ -39,6 +29,7 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
         ...theme.shadows.small,
       },
     ]}
+    renderToHardwareTextureAndroid={Platform.OS === 'android'}
     onPress={onSelect}
     activeOpacity={0.7}
   >
@@ -97,15 +88,7 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
 function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalProps) {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState<GoalCategory | 'all' | 'custom'>('all');
   const [customTemplates, setCustomTemplates] = useState<GoalTemplate[]>([]);
-
-  // Load custom templates when modal opens
-  useEffect(() => {
-    if (visible) {
-      loadCustomTemplates();
-    }
-  }, [visible]);
 
   const loadCustomTemplates = useCallback(async () => {
     try {
@@ -115,6 +98,17 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
       console.error('Failed to load custom templates:', error);
     }
   }, []);
+
+  // Load custom templates when modal opens
+  useEffect(() => {
+    if (visible) {
+      loadCustomTemplates();
+    }
+  }, [visible, loadCustomTemplates]);
+
+  useEffect(() => {
+    loadCustomTemplates();
+  }, [loadCustomTemplates]);
 
   const CATEGORIES: { key: GoalCategory | 'custom'; label: string; icon: string }[] = useMemo(() => [
     { key: 'custom' as const, label: 'My Templates', icon: '⭐' },
@@ -131,11 +125,25 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
 
   const GOAL_TEMPLATES = useMemo(() => getGoalTemplates(language), [language]);
 
-  const filteredTemplates = useMemo(() => {
-    if (selectedCategory === 'custom') return customTemplates;
-    if (selectedCategory === 'all') return [...customTemplates, ...GOAL_TEMPLATES];
-    return GOAL_TEMPLATES.filter(t => t.category === selectedCategory);
-  }, [selectedCategory, GOAL_TEMPLATES, customTemplates]);
+  const templatesByCategory = useMemo(() => {
+    const map = {
+      all: [] as GoalTemplate[],
+      custom: customTemplates,
+    } as Record<GoalCategory | 'custom' | 'all', GoalTemplate[]>;
+
+    for (const template of GOAL_TEMPLATES) {
+      if (!map[template.category]) {
+        map[template.category] = [];
+      }
+      map[template.category].push(template);
+    }
+
+    map.all = customTemplates.length > 0
+      ? [...customTemplates, ...GOAL_TEMPLATES]
+      : GOAL_TEMPLATES;
+
+    return map;
+  }, [customTemplates, GOAL_TEMPLATES]);
 
   const handleSelectTemplate = useCallback((template: GoalTemplate) => {
     onSelectTemplate(template);
@@ -151,146 +159,47 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
     }
   }, [loadCustomTemplates]);
 
+  const getSearchText = useCallback(
+    (template: GoalTemplate) => `${template.title} ${template.description} ${template.unit}`,
+    []
+  );
+
+  const getItemsForCategory = useCallback(
+    (category: GoalCategory | 'custom' | 'all') => templatesByCategory[category] ?? [],
+    [templatesByCategory]
+  );
+
+  const renderTemplateItem = useCallback(({ item }: { item: GoalTemplate }) => (
+    <TemplateCard
+      template={item}
+      theme={theme}
+      t={t}
+      onSelect={() => handleSelectTemplate(item)}
+      isCustom={item.id.startsWith('custom_')}
+      onDelete={() => handleDeleteTemplate(item.id)}
+    />
+  ), [handleSelectTemplate, handleDeleteTemplate, theme, t]);
+
   return (
-    <Modal
+    <TemplateModal<GoalTemplate, GoalCategory | 'custom'>
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={[styles.modalContent, { backgroundColor: theme.colors.background }]} onPress={(e) => e.stopPropagation()}>
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              {t.templates.title}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={28} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Category Filter */}
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoriesScroll}
-            contentContainerStyle={styles.categoriesContent}
-          >
-            <TouchableOpacity
-              style={[
-                styles.categoryChip,
-                selectedCategory === 'all' && { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={() => setSelectedCategory('all')}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  { color: selectedCategory === 'all' ? '#fff' : theme.colors.text },
-                ]}
-              >
-                {t.templates.all}
-              </Text>
-            </TouchableOpacity>
-            {CATEGORIES.map(cat => (
-              <TouchableOpacity
-                key={cat.key}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === cat.key && { backgroundColor: theme.colors.primary },
-                ]}
-                onPress={() => setSelectedCategory(cat.key)}
-              >
-                <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                <Text
-                  style={[
-                    styles.categoryText,
-                    { color: selectedCategory === cat.key ? '#fff' : theme.colors.text },
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Templates List */}
-          <ScrollView style={styles.templatesScroll}>
-            {filteredTemplates.map(template => (
-              <TemplateCard
-                key={template.id}
-                template={template}
-                theme={theme}
-                t={t}
-                onSelect={() => handleSelectTemplate(template)}
-                isCustom={template.id.startsWith('custom_')}
-                onDelete={() => handleDeleteTemplate(template.id)}
-              />
-            ))}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      onClose={onClose}
+      title={t.templates.title}
+      allLabel={t.templates.all}
+      categories={CATEGORIES}
+      getItemsForCategory={getItemsForCategory}
+      getSearchText={getSearchText}
+      renderItem={renderTemplateItem}
+      keyExtractor={(item) => item.id}
+      searchPlaceholder={`${t.common.search}...`}
+      estimatedItemSize={170}
+    />
   );
 }
 
 export default memo(TemplatesModal);
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    height: height * 0.85,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  categoriesScroll: {
-    maxHeight: 50,
-    marginBottom: 16,
-  },
-  categoriesContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  categoryIcon: {
-    fontSize: 16,
-  },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  templatesScroll: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   templateCard: {
     padding: 16,
     borderRadius: 16,

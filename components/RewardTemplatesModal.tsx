@@ -3,23 +3,13 @@
  * Quick selection of pre-defined reward templates
  */
 
+import TemplateModal from '@/components/TemplateModal';
 import { getRewardTemplates, RewardTemplate } from '@/src/constants/reward-templates';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
-import {
-    Dimensions,
-    Modal,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-
-const { height } = Dimensions.get('window');
+import React, { useCallback, useMemo } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface RewardTemplatesModalProps {
   visible: boolean;
@@ -30,7 +20,6 @@ interface RewardTemplatesModalProps {
 export default function RewardTemplatesModal({ visible, onClose, onSelectTemplate }: RewardTemplatesModalProps) {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
-  const [selectedCategory, setSelectedCategory] = useState<RewardTemplate['category'] | 'all'>('all');
 
   const CATEGORIES: { key: RewardTemplate['category']; label: string; icon: string }[] = [
     { key: 'food', label: t.rewards.categories.food, icon: '🍕' },
@@ -45,182 +34,85 @@ export default function RewardTemplatesModal({ visible, onClose, onSelectTemplat
 
   const REWARD_TEMPLATES = useMemo(() => getRewardTemplates(language), [language]);
 
-  const filteredTemplates = useMemo(() => {
-    if (selectedCategory === 'all') return REWARD_TEMPLATES;
-    return REWARD_TEMPLATES.filter(t => t.category === selectedCategory);
-  }, [selectedCategory, REWARD_TEMPLATES]);
+  const templatesByCategory = useMemo(() => {
+    const map = { all: [] as RewardTemplate[] } as Record<RewardTemplate['category'] | 'all', RewardTemplate[]>;
+    for (const template of REWARD_TEMPLATES) {
+      if (!map[template.category]) {
+        map[template.category] = [];
+      }
+      map.all.push(template);
+      map[template.category].push(template);
+    }
+    return map;
+  }, [REWARD_TEMPLATES]);
+
+  const getItemsForCategory = useCallback(
+    (category: RewardTemplate['category'] | 'all') => templatesByCategory[category] ?? [],
+    [templatesByCategory]
+  );
+
+  const handleSelectTemplate = useCallback((template: RewardTemplate) => {
+    onSelectTemplate(template);
+    onClose();
+  }, [onSelectTemplate, onClose]);
+
+  const getSearchText = useCallback(
+    (template: RewardTemplate) => `${template.title} ${template.description}`,
+    []
+  );
+
+  const renderTemplateItem = useCallback(({ item }: { item: RewardTemplate }) => (
+    <TouchableOpacity
+      style={[
+        styles.templateCard,
+        {
+          backgroundColor: theme.colors.card,
+          ...theme.shadows.small,
+        },
+      ]}
+      renderToHardwareTextureAndroid={Platform.OS === 'android'}
+      onPress={() => handleSelectTemplate(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.templateHeader}>
+        <Text style={styles.templateIcon}>{item.icon}</Text>
+        <View style={styles.templateInfo}>
+          <Text style={[styles.templateTitle, { color: theme.colors.text }]}>
+            {item.title}
+          </Text>
+          <Text style={[styles.templateDesc, { color: theme.colors.textSecondary }]}>
+            {item.description}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.templateFooter}>
+        <View style={[styles.pointsBadge, { backgroundColor: theme.colors.primary }]}>
+          <Ionicons name="star" size={16} color="#fff" />
+          <Text style={styles.pointsText}>{item.pointsCost}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  ), [handleSelectTemplate, theme]);
 
   return (
-    <Modal
+    <TemplateModal<RewardTemplate, RewardTemplate['category']>
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
-        <Pressable style={[styles.modalContent, { backgroundColor: theme.colors.background }]} onPress={(e) => e.stopPropagation()}>
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-              {t.rewards.title}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons name="close" size={28} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {t.rewards.subtitle}
-          </Text>
-
-          {/* Category Filter */}
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoriesScroll}
-            contentContainerStyle={styles.categoriesContent}
-          >
-            <TouchableOpacity
-              style={[
-                styles.categoryChip,
-                selectedCategory === 'all' && { backgroundColor: theme.colors.primary },
-              ]}
-              onPress={() => setSelectedCategory('all')}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  { color: selectedCategory === 'all' ? '#fff' : theme.colors.text },
-                ]}
-              >
-                {t.rewards.all}
-              </Text>
-            </TouchableOpacity>
-            {CATEGORIES.map(cat => (
-              <TouchableOpacity
-                key={cat.key}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === cat.key && { backgroundColor: theme.colors.primary },
-                ]}
-                onPress={() => setSelectedCategory(cat.key)}
-              >
-                <Text style={styles.categoryIcon}>{cat.icon}</Text>
-                <Text
-                  style={[
-                    styles.categoryText,
-                    { color: selectedCategory === cat.key ? '#fff' : theme.colors.text },
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Templates List */}
-          <ScrollView style={styles.templatesScroll}>
-            {filteredTemplates.map(template => (
-              <TouchableOpacity
-                key={template.id}
-                style={[
-                  styles.templateCard,
-                  {
-                    backgroundColor: theme.colors.card,
-                    ...theme.shadows.small,
-                  },
-                ]}
-                onPress={() => {
-                  onSelectTemplate(template);
-                  onClose();
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={styles.templateHeader}>
-                  <Text style={styles.templateIcon}>{template.icon}</Text>
-                  <View style={styles.templateInfo}>
-                    <Text style={[styles.templateTitle, { color: theme.colors.text }]}>
-                      {template.title}
-                    </Text>
-                    <Text style={[styles.templateDesc, { color: theme.colors.textSecondary }]}>
-                      {template.description}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.templateFooter}>
-                  <View style={[styles.pointsBadge, { backgroundColor: theme.colors.primary }]}>
-                    <Ionicons name="star" size={16} color="#fff" />
-                    <Text style={styles.pointsText}>{template.pointsCost}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      onClose={onClose}
+      title={t.rewards.title}
+      subtitle={t.rewards.subtitle}
+      allLabel={t.rewards.all}
+      categories={CATEGORIES}
+      getItemsForCategory={getItemsForCategory}
+      getSearchText={getSearchText}
+      renderItem={renderTemplateItem}
+      keyExtractor={(item) => item.id}
+      searchPlaceholder={`${t.common.search}...`}
+      estimatedItemSize={140}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    height: height * 0.85,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 8,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  closeButton: {
-    padding: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  categoriesScroll: {
-    maxHeight: 50,
-    marginBottom: 16,
-  },
-  categoriesContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  categoryIcon: {
-    fontSize: 16,
-  },
-  categoryText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  templatesScroll: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
   templateCard: {
     padding: 16,
     borderRadius: 16,

@@ -37,7 +37,7 @@ interface GoalSection {
  * Home screen component
  */
 export default function HomeScreen() {
-  const { goals, reorderGoals, checkDependencies } = useGoals();
+  const { goals, reorderGoals } = useGoals();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -46,6 +46,45 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [filterStatus, setFilterStatus] = React.useState<'all' | 'active' | 'paused' | 'completed' | 'expired'>('all');
   const [showFilters, setShowFilters] = React.useState(false);
+
+  // Derived lookup maps to avoid repeated scans in render.
+  const { completedSubgoalCountById, isBlockedById } = useMemo(() => {
+    const goalMap = new Map<number, Goal>();
+    const completedCounts: Record<number, number> = {};
+    const blockedMap: Record<number, boolean> = {};
+
+    goals.forEach((goal) => {
+      goalMap.set(goal.id, goal);
+    });
+
+    goals.forEach((goal) => {
+      if (goal.subGoals && goal.subGoals.length > 0) {
+        let completed = 0;
+        goal.subGoals.forEach((subId) => {
+          if (goalMap.get(subId)?.isComplete) {
+            completed += 1;
+          }
+        });
+        completedCounts[goal.id] = completed;
+      }
+
+      if (goal.dependsOn && goal.dependsOn.length > 0) {
+        let isBlocked = false;
+        for (const depId of goal.dependsOn) {
+          const depGoal = goalMap.get(depId);
+          if (!depGoal || !depGoal.isComplete) {
+            isBlocked = true;
+            break;
+          }
+        }
+        if (isBlocked) {
+          blockedMap[goal.id] = true;
+        }
+      }
+    });
+
+    return { completedSubgoalCountById: completedCounts, isBlockedById: blockedMap };
+  }, [goals]);
 
   // Period labels - use translations
   const PERIOD_LABELS: Record<TimePeriod, string> = useMemo(() => ({
@@ -260,7 +299,6 @@ export default function HomeScreen() {
       // Goal item
       const goal = item.data as Goal;
       const section = item.section;
-      const sectionIndex = item.sectionIndex;
 
       const timeRemainingData = calculateTimeRemaining(
         goal.periodStartDate,
@@ -286,11 +324,8 @@ export default function HomeScreen() {
         : timeRemainingText;
 
       // Calculate completed subgoals count for ultimate goals
-      const completedSubgoalCount = goal.isUltimate && goal.subGoals
-        ? goal.subGoals.filter(subgoalId => {
-            const subgoal = goals.find(g => g.id === subgoalId);
-            return subgoal?.isComplete;
-          }).length
+      const completedSubgoalCount = goal.isUltimate
+        ? (completedSubgoalCountById[goal.id] || 0)
         : 0;
       
       // Determine if goal can move up/down in its section
@@ -299,7 +334,7 @@ export default function HomeScreen() {
       const canMoveDown = section ? goalIndexInSection < section.data.length - 1 : false;
 
       // Check if goal is blocked by dependencies
-      const isBlocked = !checkDependencies(goal.id);
+      const isBlocked = Boolean(isBlockedById[goal.id]);
 
       return (
         <GoalCard
@@ -326,7 +361,7 @@ export default function HomeScreen() {
         />
       );
     },
-    [handleGoalPress, handleMoveGoalUp, handleMoveGoalDown, theme, t, goals, language, checkDependencies]
+    [handleGoalPress, handleMoveGoalUp, handleMoveGoalDown, theme, t, language, completedSubgoalCountById, isBlockedById]
   );
 
   /**

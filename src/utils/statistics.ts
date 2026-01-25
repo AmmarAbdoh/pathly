@@ -7,6 +7,12 @@ import { ACHIEVEMENTS, checkAchievement } from '../constants/achievements';
 import { Goal, Reward, Statistics } from '../types';
 import { getTotalPointsEarned } from './recurring-goals';
 
+const getDayStart = (timestamp: number): number => {
+  const date = new Date(timestamp);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
+
 /**
  * Calculate statistics from goals and rewards
  * @param lifetimePointsEarned - Total points earned across all time (never decreases)
@@ -41,36 +47,35 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifet
   
   let currentStreak = 0;
   let longestStreak = 0;
-  let checkDate = new Date(todayTimestamp);
   let lastActivityDate = 0;
   
-  // Sort goals by completion date
-  const completedGoalsByDate = goals
-    .filter(g => g.completedAt)
-    .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
+  const completedGoalsByDate = goals.filter(g => g.completedAt);
+  const completedDaySet = new Set<number>();
   
-  if (completedGoalsByDate.length > 0) {
-    lastActivityDate = completedGoalsByDate[0].completedAt || 0;
+  for (const goal of completedGoalsByDate) {
+    const completedAt = goal.completedAt;
+    if (!completedAt) continue;
     
+    if (completedAt > lastActivityDate) {
+      lastActivityDate = completedAt;
+    }
+    
+    completedDaySet.add(getDayStart(completedAt));
+  }
+  
+  if (completedDaySet.size > 0) {
+    const checkDate = new Date(todayTimestamp);
+
     // Calculate current streak (consecutive days with completed goals)
-    for (let i = 0; i < 365; i++) {
-      const dayStart = checkDate.getTime();
-      const dayEnd = dayStart + 24 * 60 * 60 * 1000;
-      
-      const hasActivityThisDay = completedGoalsByDate.some(
-        g => g.completedAt && g.completedAt >= dayStart && g.completedAt < dayEnd
-      );
-      
-      if (hasActivityThisDay) {
-        currentStreak++;
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
-      } else if (i > 0) {
-        // Streak broken
-        break;
+    if (!completedDaySet.has(checkDate.getTime())) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    while (completedDaySet.has(checkDate.getTime())) {
+      currentStreak++;
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
       }
-      
       checkDate.setDate(checkDate.getDate() - 1);
     }
   }
