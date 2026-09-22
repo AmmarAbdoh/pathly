@@ -9,7 +9,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { generateAnalyticsInsights, getInsightsSummary } from '@/src/utils/analytics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -24,6 +24,18 @@ export default function AnalyticsScreen() {
   const { theme } = useTheme();
   const { t, isRTL } = useLanguage();
   const router = useRouter();
+
+  /**
+   * These screens are reachable by deep link, where there is no history to pop;
+   * router.back() would no-op and strand the user.
+   */
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/home');
+    }
+  }, [router]);
 
   // Generate analytics insights
   const analytics = useMemo(() => generateAnalyticsInsights(goals), [goals]);
@@ -64,7 +76,7 @@ export default function AnalyticsScreen() {
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={handleBack}
             accessibilityRole="button"
             accessibilityLabel={t.common.back}
           >

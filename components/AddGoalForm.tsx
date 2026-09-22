@@ -893,7 +893,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 9,
   },
   errorText: {

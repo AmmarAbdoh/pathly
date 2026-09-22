@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-Pathly is a React Native + Expo (SDK 54, New Architecture) goal-tracking app. Offline-first:
+Pathly is a React Native + Expo (SDK 57, New Architecture) goal-tracking app. Offline-first:
 all state lives in AsyncStorage, there is no backend. English + Arabic with RTL, light/dark/system
 theming.
 
@@ -27,7 +27,9 @@ npm run verify       # typecheck + lint + test together
 
 1. **Zero TypeScript errors.** The repo was at 6 for months because nobody ran `tsc`. Don't add
    to it, don't silence it with `any` or `@ts-expect-error`. Fix the type.
-2. **Zero ESLint errors.** Warnings are tolerated; errors are not.
+2. **Zero ESLint errors.** Warnings are tolerated; errors are not. The React Compiler's
+   `set-state-in-effect` rule is deliberately set to `warn` in `eslint.config.js` — the
+   remaining hits are intentional prop-to-state mirrors. Don't add new ones.
 3. **Never call a hook outside a component body.** This repo has already shipped one
    `useGoals()`-inside-a-`useCallback` crash. Destructure from the top-level hook call.
 4. **No dead routes.** Every file in `app/` is a live route. If nothing navigates to it, delete it
@@ -138,8 +140,17 @@ nice-to-have, not required.
 
 ## Gotchas
 
-- `expo-navigation-bar`'s `setVisibilityAsync` / `setBehaviorAsync` are **no-ops** when
-  `edgeToEdgeEnabled` is true (it is). Don't call them.
+- Android edge-to-edge is **always on** from SDK 55 (the `edgeToEdgeEnabled` flag was removed
+  from the config schema), so the system bars overlay the app and
+  `expo-navigation-bar`'s `setVisibilityAsync` / `setBehaviorAsync` are no-ops. Don't call them.
+- **Never import from `@react-navigation/*`.** Since SDK 56 expo-router forbids it. Use the
+  `expo-router/js-*` entrypoints — the tab bar imports `createMaterialTopTabNavigator` from
+  `expo-router/js-top-tabs`. That entrypoint needs `react-native-tab-view` installed, which
+  nothing else pulls in; removing it breaks the app at runtime with no build-time error.
+- `expo-router` types `MaterialTopTabBarProps` as `any & {...}`, which collapses to `any`.
+  `app/(tabs)/_layout.tsx` declares the props it uses locally to keep the file checked.
+- Guard optional strings with a ternary, not `&&` — `{icon && <Text/>}` renders a bare `''`
+  into a View when the string is empty, which throws on native.
 - `app.json` ships a real bundle id / package name. Changing them after a store release breaks
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications

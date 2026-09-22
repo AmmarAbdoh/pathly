@@ -267,7 +267,6 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    */
   const loadGoals = useCallback(async () => {
     try {
-      setIsLoading(true);
       setError(null);
 
       const savedGoals = await goalsStorage.loadGoals();
@@ -367,6 +366,9 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   );
 
   const refreshGoals = useCallback(async () => {
+    // Only an explicit refresh flips the spinner back on; the initial load
+    // starts with isLoading already true.
+    setIsLoading(true);
     await loadGoals();
   }, [loadGoals]);
 

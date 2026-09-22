@@ -10,10 +10,7 @@ import { DURATION, SPRING } from '@/src/constants/animation';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  createMaterialTopTabNavigator,
-  type MaterialTopTabBarProps,
-} from '@react-navigation/material-top-tabs';
+import { createMaterialTopTabNavigator } from 'expo-router/js-top-tabs';
 import React, { memo, useCallback } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
@@ -31,6 +28,29 @@ import SettingsScreen from './settings';
 import StatisticsScreen from './statistics';
 
 const Tab = createMaterialTopTabNavigator();
+
+/**
+ * The slice of the tab bar props this component actually uses.
+ *
+ * expo-router re-exports MaterialTopTabBarProps as `any & {...}`, which
+ * collapses to plain `any` and loses every check. Declaring the shape locally
+ * keeps this file type-safe and documents exactly what it depends on.
+ */
+interface TabBarProps {
+  state: {
+    index: number;
+    routes: { key: string; name: string }[];
+  };
+  descriptors: Record<string, { options: { title?: string } }>;
+  navigation: {
+    emit: (event: {
+      type: 'tabPress';
+      target: string;
+      canPreventDefault: true;
+    }) => { defaultPrevented: boolean };
+    navigate: (name: string) => void;
+  };
+}
 
 /** Icons per route, so the tab bar doesn't smuggle them through `options`. */
 const TAB_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -128,7 +148,7 @@ TabButton.displayName = 'TabButton';
  * Adds the bottom safe-area inset so the bar clears the gesture pill on
  * edge-to-edge devices instead of sitting underneath it.
  */
-function CustomTabBar({ state, descriptors, navigation }: MaterialTopTabBarProps) {
+function CustomTabBar({ state, descriptors, navigation }: TabBarProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
@@ -178,7 +198,7 @@ export default function TabLayout() {
   const { t } = useLanguage();
 
   const renderTabBar = useCallback(
-    (props: MaterialTopTabBarProps) => <CustomTabBar {...props} />,
+    (props: TabBarProps) => <CustomTabBar {...props} />,
     []
   );
 

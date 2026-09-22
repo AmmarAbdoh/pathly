@@ -195,7 +195,9 @@ const GoalCard = memo<GoalCardProps>(
             )}
 
             <View style={styles.headerRow}>
-              {icon && <Text style={styles.iconText}>{icon}</Text>}
+              {/* Ternary, not `&&`: an empty-string icon would otherwise render
+                  the bare string '' into a View, which throws on native. */}
+              {icon ? <Text style={styles.iconText}>{icon}</Text> : null}
 
               <View style={styles.titleContainer}>
                 <Text
@@ -228,14 +230,14 @@ const GoalCard = memo<GoalCardProps>(
                   {subgoalCount > 0 && !isUltimate && `${formatted.subgoals} ${t.goalCard.subgoals}`}
                 </Text>
 
-                {timeRemaining && (
+                {timeRemaining ? (
                   <View style={styles.pillRow}>
                     <Text style={styles.pillIcon}>{isRecurring ? '🔄' : '⏱️'}</Text>
                     <Text style={[styles.pillText, { color: timeRemainingColor }]}>
                       {timeRemaining}
                     </Text>
                   </View>
-                )}
+                ) : null}
 
                 {isRecurring && currentStreak > 0 && (
                   <View style={[styles.pill, { backgroundColor: `${STATUS_COLORS.blocked}20` }]}>
@@ -246,14 +248,14 @@ const GoalCard = memo<GoalCardProps>(
                   </View>
                 )}
 
-                {scheduleText && (
+                {scheduleText ? (
                   <View style={[styles.pill, { backgroundColor: `${theme.colors.primary}15` }]}>
                     <Text style={styles.pillIcon}>📅</Text>
                     <Text style={[styles.pillText, { color: theme.colors.primary }]}>
                       {scheduleText}
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
 
               {(onMoveUp || onMoveDown) && (

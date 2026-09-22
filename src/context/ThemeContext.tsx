@@ -31,15 +31,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load saved theme preference on mount
-  useEffect(() => {
-    loadThemeMode();
-  }, []);
-
   /**
    * Load theme mode from storage
    */
-  const loadThemeMode = async () => {
+  const loadThemeMode = useCallback(async () => {
     try {
       const savedMode = await themeStorage.loadThemeMode();
       if (savedMode && isValidThemeMode(savedMode)) {
@@ -50,7 +45,12 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Load saved theme preference on mount
+  useEffect(() => {
+    void loadThemeMode();
+  }, [loadThemeMode]);
 
   /**
    * Update theme mode and persist to storage

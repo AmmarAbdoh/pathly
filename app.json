@@ -7,7 +7,6 @@
     "icon": "./assets/images/logo.png",
     "scheme": "pathly",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pathly.app"
@@ -17,7 +16,6 @@
         "backgroundColor": "#6C63FF",
         "foregroundImage": "./assets/images/logo.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "pan",
       "package": "com.pathly.app"
@@ -46,7 +44,9 @@
           "color": "#6C63FF",
           "defaultChannel": "goal-reminders"
         }
-      ]
+      ],
+      "expo-font",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

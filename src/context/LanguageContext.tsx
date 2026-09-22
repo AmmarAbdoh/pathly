@@ -29,15 +29,10 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
   const [language, setLanguageState] = useState<Language>('en');
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load saved language preference on mount
-  useEffect(() => {
-    loadLanguage();
-  }, []);
-
   /**
    * Load language from storage
    */
-  const loadLanguage = async () => {
+  const loadLanguage = useCallback(async () => {
     try {
       const savedLanguage = await themeStorage.loadLanguage();
       if (savedLanguage && isValidLanguage(savedLanguage)) {
@@ -52,7 +47,13 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Load saved language preference on mount
+  useEffect(() => {
+    void loadLanguage();
+  }, [loadLanguage]);
+
 
   /**
    * Update language and persist to storage
