@@ -3,7 +3,11 @@
  * Handle scheduled goals that appear only on specific days/dates
  */
 
+import type { Translations } from '../i18n/translations';
 import { Goal, GoalSchedule } from '../types';
+
+/** The slice of translations the schedule formatters need. */
+export type ScheduleTranslations = Translations['schedule'];
 
 /**
  * Check if a goal should be active/visible on a given date
@@ -46,32 +50,58 @@ export function filterActiveGoals(goals: Goal[], date: Date = new Date()): Goal[
 }
 
 /**
- * Get human-readable description of goal schedule
+ * True when a schedule places no restriction on which days the goal appears.
+ *
+ * Callers use this to decide whether a schedule is worth surfacing in the UI,
+ * rather than string-comparing against a localized "Every day" label.
  */
-export function getScheduleDescription(schedule?: GoalSchedule): string {
+export function isEveryDaySchedule(schedule?: GoalSchedule): boolean {
+  if (!schedule) return true;
+
+  return (
+    !schedule.daysOfWeek?.length &&
+    !schedule.datesOfMonth?.length &&
+    (schedule.dateRangeStart === undefined || schedule.dateRangeEnd === undefined)
+  );
+}
+
+/**
+ * Get a human-readable, localized description of a goal schedule.
+ *
+ * Takes the translation slice rather than importing it, so this stays pure and
+ * testable in both languages.
+ */
+export function getScheduleDescription(
+  schedule: GoalSchedule | undefined,
+  t: ScheduleTranslations
+): string {
   if (!schedule) {
-    return 'Every day';
+    return t.everyDay;
   }
 
   // Days of week schedule
   if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const days = schedule.daysOfWeek.map(d => dayNames[d]).join(', ');
-    return `Every ${days}`;
+    const days = schedule.daysOfWeek
+      .map((d) => t.weekdayShort[d] ?? String(d))
+      .join(', ');
+    return t.everyDays.replace('{days}', days);
   }
 
-  // Specific dates of month
+  // Specific dates of month. Copy before sorting - the array belongs to the
+  // stored goal and must not be mutated.
   if (schedule.datesOfMonth && schedule.datesOfMonth.length > 0) {
-    const dates = schedule.datesOfMonth.sort((a, b) => a - b).join(', ');
-    return `Monthly on day ${dates}`;
+    const dates = [...schedule.datesOfMonth].sort((a, b) => a - b).join(', ');
+    return t.monthlyOnDays.replace('{dates}', dates);
   }
 
   // Date range
   if (schedule.dateRangeStart !== undefined && schedule.dateRangeEnd !== undefined) {
-    return `Monthly from day ${schedule.dateRangeStart} to ${schedule.dateRangeEnd}`;
+    return t.monthlyFromTo
+      .replace('{start}', String(schedule.dateRangeStart))
+      .replace('{end}', String(schedule.dateRangeEnd));
   }
 
-  return 'Every day';
+  return t.everyDay;
 }
 
 /**

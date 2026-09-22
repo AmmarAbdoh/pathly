@@ -1,56 +1,69 @@
 /**
  * ProgressBar component
- * Visual progress indicator for goals
+ * Visual progress indicator for goals.
+ *
+ * The fill animates on the UI thread via Reanimated, so a progress change
+ * costs no React renders and stays smooth even while a list is scrolling.
  */
 
+import { DURATION, EASING } from '@/src/constants/animation';
 import { useTheme } from '@/src/context/ThemeContext';
-import React, { memo, useMemo } from 'react';
+import React, { memo, useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 interface ProgressBarProps {
+  /** Progress as a percentage, 0-100. Values outside the range are clamped. */
   progress: number;
+  /** Override the fill duration. Pass 0 to snap without animating. */
+  animationDuration?: number;
+  /** Bar thickness in points. */
+  height?: number;
 }
 
-/**
- * Progress bar component with memoization
- */
-const ProgressBar = memo<ProgressBarProps>(({ progress }) => {
-  const { theme } = useTheme();
+const ProgressBar = memo<ProgressBarProps>(
+  ({ progress, animationDuration = DURATION.normal, height = 8 }) => {
+    const { theme } = useTheme();
+    const isReducedMotion = useReducedMotion();
 
-  // Convert progress from 0-100 to 0-1 and clamp
-  const clampedProgress = useMemo(() => {
-    const normalized = progress / 100;
-    return Math.max(0, Math.min(1, normalized));
-  }, [progress]);
+    const clamped = Math.max(0, Math.min(100, progress));
+    const width = useSharedValue(clamped);
 
-  const containerStyle = useMemo(
-    () => [styles.container, { backgroundColor: theme.colors.border }],
-    [theme]
-  );
+    useEffect(() => {
+      const duration = isReducedMotion ? 0 : animationDuration;
+      width.value = withTiming(clamped, { duration, easing: EASING.standard });
+    }, [clamped, animationDuration, isReducedMotion, width]);
 
-  const fillStyle = useMemo(
-    () => ({
-      ...styles.fill,
-      width: `${clampedProgress * 100}%` as const,
-      backgroundColor: theme.colors.primary,
-    }),
-    [clampedProgress, theme]
-  );
+    const fillStyle = useAnimatedStyle(() => ({
+      width: `${width.value}%`,
+    }));
 
-  return (
-    <View
-      style={containerStyle}
-      accessibilityRole="progressbar"
-      accessibilityValue={{
-        min: 0,
-        max: 100,
-        now: clampedProgress * 100,
-      }}
-    >
-      <View style={fillStyle} />
-    </View>
-  );
-});
+    const containerStyle = useMemo(
+      () => [styles.container, { backgroundColor: theme.colors.border, height }],
+      [theme, height]
+    );
+
+    const fillColorStyle = useMemo(
+      () => [styles.fill, { backgroundColor: theme.colors.primary }],
+      [theme]
+    );
+
+    return (
+      <View
+        style={containerStyle}
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped) }}
+      >
+        <Animated.View style={[fillColorStyle, fillStyle]} />
+      </View>
+    );
+  }
+);
 
 ProgressBar.displayName = 'ProgressBar';
 
@@ -58,7 +71,6 @@ export default ProgressBar;
 
 const styles = StyleSheet.create({
   container: {
-    height: 8,
     borderRadius: 8,
     overflow: 'hidden',
   },

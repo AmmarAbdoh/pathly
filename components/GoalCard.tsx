@@ -1,251 +1,318 @@
 /**
  * GoalCard component
- * Displays a single goal with its progress
+ * Displays a single goal with its progress.
+ *
+ * Takes the goal's `id` and id-taking callbacks rather than pre-bound closures.
+ * That keeps every prop referentially stable across parent renders, so the
+ * memo() below actually holds and scrolling the home list stays at 60fps.
  */
 
+import { DURATION } from '@/src/constants/animation';
 import { useLanguage } from '@/src/context/LanguageContext';
-import { useTheme } from '@/src/context/ThemeContext';
+import { usePressAnimation } from '@/src/hooks/use-app-animations';
 import { GoalSchedule } from '@/src/types';
-import { getScheduleDescription } from '@/src/utils/goal-scheduling';
+import { useTheme } from '@/src/context/ThemeContext';
+import { getScheduleDescription, isEveryDaySchedule } from '@/src/utils/goal-scheduling';
 import { formatNumber } from '@/src/utils/number-formatting';
-import React, { memo, useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { memo, useCallback, useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 import ProgressBar from './ProgressBar';
 
+/** Status accent colors, shared between the card border and its badge. */
+const STATUS_COLORS = {
+  ultimate: '#FFD700',
+  complete: '#22c55e',
+  paused: '#f59e0b',
+  blocked: '#fbbf24',
+} as const;
+
 interface GoalCardProps {
+  id: number;
   title: string;
   progress: number;
   points: number;
   icon?: string;
   subgoalCount?: number;
-  completedSubgoalCount?: number; // Number of completed subgoals
+  completedSubgoalCount?: number;
   isUltimate?: boolean;
-  onPress?: () => void;
-  timeRemaining?: string; // Formatted time remaining string
-  isExpired?: boolean; // Whether the goal period has expired
-  isRecurring?: boolean; // Whether the goal is recurring
-  isComplete?: boolean; // Whether the goal is completed
-  isPaused?: boolean; // Whether the goal is paused
-  onMoveUp?: () => void; // Callback to move goal up in the list
-  onMoveDown?: () => void; // Callback to move goal down in the list
-  canMoveUp?: boolean; // Whether the goal can be moved up
-  canMoveDown?: boolean; // Whether the goal can be moved down
-  currentStreak?: number; // Current streak for recurring goals
-  isBlocked?: boolean; // Whether the goal is blocked by dependencies
-  schedule?: GoalSchedule; // Goal schedule configuration
+  /** Receives the goal id, so the parent can pass one stable function. */
+  onPress?: (id: number) => void;
+  timeRemaining?: string;
+  /** Drives the time-remaining color; computed by the parent, not parsed from text. */
+  urgency?: 'none' | 'normal' | 'soon' | 'critical';
+  isExpired?: boolean;
+  isRecurring?: boolean;
+  isComplete?: boolean;
+  isPaused?: boolean;
+  onMoveUp?: (id: number) => void;
+  onMoveDown?: (id: number) => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  currentStreak?: number;
+  isBlocked?: boolean;
+  schedule?: GoalSchedule;
 }
 
-/**
- * Goal card component with memoization for performance
- */
-const GoalCard = memo<GoalCardProps>(({ title, progress, points, icon, subgoalCount = 0, completedSubgoalCount = 0, isUltimate = false, onPress, timeRemaining, isExpired = false, isRecurring = false, isComplete = false, isPaused = false, onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false, currentStreak = 0, isBlocked = false, schedule }) => {
-  const { theme } = useTheme();
-  const { t, language } = useLanguage();
+const GoalCard = memo<GoalCardProps>(
+  ({
+    id,
+    title,
+    progress,
+    points,
+    icon,
+    subgoalCount = 0,
+    completedSubgoalCount = 0,
+    isUltimate = false,
+    onPress,
+    timeRemaining,
+    urgency = 'normal',
+    isExpired = false,
+    isRecurring = false,
+    isComplete = false,
+    isPaused = false,
+    onMoveUp,
+    onMoveDown,
+    canMoveUp = false,
+    canMoveDown = false,
+    currentStreak = 0,
+    isBlocked = false,
+    schedule,
+  }) => {
+    const { theme } = useTheme();
+    const { t, language } = useLanguage();
+    const { animatedStyle, onPressIn, onPressOut } = usePressAnimation();
 
-  // Memoize computed values
-  const percent = useMemo(() => Math.round(progress), [progress]);
-  const formattedPercent = useMemo(() => formatNumber(percent, language), [percent, language]);
-  const formattedPoints = useMemo(() => formatNumber(points, language), [points, language]);
-  const formattedSubgoalCount = useMemo(() => formatNumber(subgoalCount, language), [subgoalCount, language]);
-  const formattedCompletedSubgoalCount = useMemo(() => formatNumber(completedSubgoalCount, language), [completedSubgoalCount, language]);
-  const scheduleText = useMemo(() => schedule ? getScheduleDescription(schedule) : null, [schedule]);
-  
-  const cardStyle = useMemo(
-    () => [
-      styles.card,
-      {
-        backgroundColor: theme.colors.card,
-        ...theme.shadows.small,
-      },
-      isUltimate && {
-        borderWidth: 2,
-        borderColor: '#FFD700',
-        shadowColor: '#FFD700',
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
-      },
-      isExpired && !isRecurring && {
-        borderWidth: 2,
-        borderColor: theme.colors.danger,
-        opacity: 0.85,
-      },
-      isComplete && {
-        borderWidth: 2,
-        borderColor: '#22c55e',
-        opacity: 0.9,
-      },
-      isPaused && {
-        borderWidth: 2,
-        borderColor: '#f59e0b',
-        opacity: 0.75,
-      },
-      isBlocked && {
-        borderWidth: 2,
-        borderColor: '#fbbf24',
-        opacity: 0.7,
-      },
-    ],
-    [theme, isUltimate, isExpired, isRecurring, isComplete, isPaused, isBlocked]
-  );
+    const percent = Math.round(progress);
 
-  return (
-    <TouchableOpacity
-      style={cardStyle}
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`${title} goal, ${percent}% complete, ${points} points`}
-      accessibilityHint="Tap to view and edit goal details"
-    >
-      {/* Ultimate Badge */}
-      {isUltimate && (
-        <View style={styles.ultimateBadge}>
-          <Text style={styles.ultimateBadgeText}>{t.goalCard.ultimate}</Text>
-        </View>
-      )}
-      
-      {/* Completed Badge */}
-      {isComplete && (
-        <View style={[styles.completedBadge, { backgroundColor: '#22c55e' }]}>
-          <Text style={styles.completedBadgeText}>✓ {t.goalCard.completed || 'Completed'}</Text>
-        </View>
-      )}
-      
-      {/* Expired Badge */}
-      {isExpired && !isRecurring && !isComplete && (
-        <View style={[styles.expiredBadge, { backgroundColor: theme.colors.danger }]}>
-          <Text style={styles.expiredBadgeText}>⚠️ {t.time.expired}</Text>
-        </View>
-      )}
-      
-      {/* Paused Badge */}
-      {isPaused && !isComplete && (
-        <View style={[styles.pausedBadge, { backgroundColor: '#f59e0b' }]}>
-          <Text style={styles.pausedBadgeText}>⏸️ Paused</Text>
-        </View>
-      )}
-      
-      {/* Blocked Badge */}
-      {isBlocked && !isComplete && (
-        <View style={[styles.blockedBadge, { backgroundColor: '#fbbf24' }]}>
-          <Text style={styles.blockedBadgeText}>🔒 Blocked</Text>
-        </View>
-      )}
-      
-      <View style={styles.headerRow}>
-        {icon && (
-          <Text style={styles.iconText}>{icon}</Text>
-        )}
-        <View style={styles.titleContainer}>
-          <Text
-            style={[styles.title, { color: theme.colors.text }, isUltimate && styles.ultimateTitle]}
-            numberOfLines={3}
-            ellipsizeMode="tail"
+    const formatted = useMemo(
+      () => ({
+        percent: formatNumber(percent, language),
+        points: formatNumber(points, language),
+        subgoals: formatNumber(subgoalCount, language),
+        completedSubgoals: formatNumber(completedSubgoalCount, language),
+        streak: formatNumber(currentStreak, language),
+      }),
+      [percent, points, subgoalCount, completedSubgoalCount, currentStreak, language]
+    );
+
+    const scheduleText = useMemo(
+      () => (isEveryDaySchedule(schedule) ? null : getScheduleDescription(schedule, t.schedule)),
+      [schedule, t.schedule]
+    );
+
+    /**
+     * Which status border the card wears. Only one applies, in priority order.
+     */
+    const statusBorder = useMemo(() => {
+      if (isComplete) {
+        return { borderWidth: 2, borderColor: STATUS_COLORS.complete, opacity: 0.9 };
+      }
+      if (isPaused) {
+        return { borderWidth: 2, borderColor: STATUS_COLORS.paused, opacity: 0.75 };
+      }
+      if (isBlocked) {
+        return { borderWidth: 2, borderColor: STATUS_COLORS.blocked, opacity: 0.7 };
+      }
+      if (isExpired && !isRecurring) {
+        return { borderWidth: 2, borderColor: theme.colors.danger, opacity: 0.85 };
+      }
+      if (isUltimate) {
+        return {
+          borderWidth: 2,
+          borderColor: STATUS_COLORS.ultimate,
+          shadowColor: STATUS_COLORS.ultimate,
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 8,
+        };
+      }
+      return null;
+    }, [isComplete, isPaused, isBlocked, isExpired, isRecurring, isUltimate, theme]);
+
+    const cardStyle = useMemo(
+      () => [
+        styles.card,
+        { backgroundColor: theme.colors.card, ...theme.shadows.small },
+        statusBorder,
+      ],
+      [theme, statusBorder]
+    );
+
+    const timeRemainingColor = useMemo(() => {
+      if (isExpired && !isRecurring) return theme.colors.danger;
+      if (urgency === 'critical') return '#ef4444';
+      if (urgency === 'soon') return '#f59e0b';
+      return theme.colors.textSecondary;
+    }, [isExpired, isRecurring, urgency, theme]);
+
+    const handlePress = useCallback(() => onPress?.(id), [onPress, id]);
+    const handleMoveUp = useCallback(() => onMoveUp?.(id), [onMoveUp, id]);
+    const handleMoveDown = useCallback(() => onMoveDown?.(id), [onMoveDown, id]);
+
+    // No `entering` animation: this card lives in a virtualized list, so a row
+    // scrolled out and back in would remount and replay it, which reads as
+    // flicker rather than polish.
+    return (
+      <Animated.View style={animatedStyle}>
+        <Pressable
+            style={cardStyle}
+            onPress={handlePress}
+            onPressIn={onPressIn}
+            onPressOut={onPressOut}
+            accessibilityRole="button"
+            accessibilityLabel={`${title} goal, ${percent}% complete, ${points} points`}
+            accessibilityHint={t.goalCard.openHint}
           >
-            {title}
-          </Text>
-          <Text
-            style={[styles.points, { color: theme.colors.textSecondary }]}
-            accessibilityLabel={points > 0 ? `${points} reward points` : undefined}
-          >
-            {points > 0 && `${formattedPoints} ${t.goalCard.points}`}
-            {points > 0 && (subgoalCount > 0 || (subgoalCount > 0 && !isUltimate)) && ' • '}
-            {subgoalCount > 0 && isUltimate && (
-              <Text style={{ color: completedSubgoalCount === subgoalCount ? '#22c55e' : theme.colors.textSecondary }}>
-                {`${formattedCompletedSubgoalCount}/${formattedSubgoalCount} ${t.goalCard.subgoals}`}
-              </Text>
+            {isUltimate && !isComplete && (
+              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.ultimate }]}>
+                <Text style={[styles.badgeText, styles.badgeTextDark]}>{t.goalCard.ultimate}</Text>
+              </View>
             )}
-            {subgoalCount > 0 && !isUltimate && `${formattedSubgoalCount} ${t.goalCard.subgoals}`}
-          </Text>
-          {timeRemaining && (
-            <View style={styles.timeRemainingContainer}>
-              <Text style={styles.timeRemainingIcon}>
-                {isRecurring ? '🔄' : '⏱️'}
-              </Text>
+
+            {isComplete && (
+              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.complete }]}>
+                <Text style={styles.badgeText}>✓ {t.goalCard.completed}</Text>
+              </View>
+            )}
+
+            {isExpired && !isRecurring && !isComplete && (
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: theme.colors.danger }]}>
+                <Text style={styles.badgeText}>⚠️ {t.time.expired}</Text>
+              </View>
+            )}
+
+            {isPaused && !isComplete && (
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.paused }]}>
+                <Text style={styles.badgeText}>⏸️ {t.goalCard.paused}</Text>
+              </View>
+            )}
+
+            {isBlocked && !isComplete && (
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.blocked }]}>
+                <Text style={[styles.badgeText, styles.badgeTextAmber]}>🔒 {t.goalCard.blocked}</Text>
+              </View>
+            )}
+
+            <View style={styles.headerRow}>
+              {icon && <Text style={styles.iconText}>{icon}</Text>}
+
+              <View style={styles.titleContainer}>
+                <Text
+                  style={[
+                    styles.title,
+                    { color: theme.colors.text },
+                    isUltimate && styles.ultimateTitle,
+                  ]}
+                  numberOfLines={3}
+                  ellipsizeMode="tail"
+                >
+                  {title}
+                </Text>
+
+                <Text style={[styles.points, { color: theme.colors.textSecondary }]}>
+                  {points > 0 && `${formatted.points} ${t.goalCard.points}`}
+                  {points > 0 && subgoalCount > 0 && ' • '}
+                  {subgoalCount > 0 && isUltimate && (
+                    <Text
+                      style={{
+                        color:
+                          completedSubgoalCount === subgoalCount
+                            ? STATUS_COLORS.complete
+                            : theme.colors.textSecondary,
+                      }}
+                    >
+                      {`${formatted.completedSubgoals}/${formatted.subgoals} ${t.goalCard.subgoals}`}
+                    </Text>
+                  )}
+                  {subgoalCount > 0 && !isUltimate && `${formatted.subgoals} ${t.goalCard.subgoals}`}
+                </Text>
+
+                {timeRemaining && (
+                  <View style={styles.pillRow}>
+                    <Text style={styles.pillIcon}>{isRecurring ? '🔄' : '⏱️'}</Text>
+                    <Text style={[styles.pillText, { color: timeRemainingColor }]}>
+                      {timeRemaining}
+                    </Text>
+                  </View>
+                )}
+
+                {isRecurring && currentStreak > 0 && (
+                  <View style={[styles.pill, { backgroundColor: `${STATUS_COLORS.blocked}20` }]}>
+                    <Text style={styles.pillIcon}>🔥</Text>
+                    <Text style={[styles.pillText, { color: STATUS_COLORS.paused }]}>
+                      {formatted.streak} {t.goalCard.weekStreak}
+                    </Text>
+                  </View>
+                )}
+
+                {scheduleText && (
+                  <View style={[styles.pill, { backgroundColor: `${theme.colors.primary}15` }]}>
+                    <Text style={styles.pillIcon}>📅</Text>
+                    <Text style={[styles.pillText, { color: theme.colors.primary }]}>
+                      {scheduleText}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {(onMoveUp || onMoveDown) && (
+                <View style={styles.reorderButtons}>
+                  {onMoveUp && (
+                    <Pressable
+                      onPress={handleMoveUp}
+                      style={[styles.reorderButton, !canMoveUp && styles.reorderButtonDisabled]}
+                      disabled={!canMoveUp}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel={t.goalCard.moveUp}
+                    >
+                      <Text
+                        style={[
+                          styles.reorderButtonText,
+                          !canMoveUp && styles.reorderButtonTextDisabled,
+                        ]}
+                      >
+                        ▲
+                      </Text>
+                    </Pressable>
+                  )}
+                  {onMoveDown && (
+                    <Pressable
+                      onPress={handleMoveDown}
+                      style={[styles.reorderButton, !canMoveDown && styles.reorderButtonDisabled]}
+                      disabled={!canMoveDown}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel={t.goalCard.moveDown}
+                    >
+                      <Text
+                        style={[
+                          styles.reorderButtonText,
+                          !canMoveDown && styles.reorderButtonTextDisabled,
+                        ]}
+                      >
+                        ▼
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
+
               <Text
-                style={[
-                  styles.timeRemainingText,
-                  {
-                    color: isExpired && !isRecurring
-                      ? theme.colors.danger
-                      : timeRemaining.toLowerCase().includes('day') || timeRemaining.includes('يوم') || timeRemaining.includes('أيام')
-                      ? theme.colors.textSecondary
-                      : timeRemaining.toLowerCase().includes('hour') || timeRemaining.includes('ساعة') || timeRemaining.includes('ساعات')
-                      ? '#f59e0b'
-                      : '#ef4444',
-                  },
-                ]}
+                style={[styles.percent, { color: theme.colors.primary }]}
+                accessibilityLabel={`${percent} percent complete`}
               >
-                {timeRemaining}
+                {formatted.percent}%
               </Text>
             </View>
-          )}
-          {isRecurring && currentStreak > 0 && (
-            <View style={[styles.streakContainer, { backgroundColor: '#fbbf24' + '20' }]}>
-              <Text style={styles.streakIcon}>🔥</Text>
-              <Text style={[styles.streakText, { color: '#f59e0b' }]}>
-                {formatNumber(currentStreak, language)} {t.goalCard.weekStreak}
-              </Text>
-            </View>
-          )}
-          {scheduleText && scheduleText !== 'Every day' && (
-            <View style={[styles.scheduleContainer, { backgroundColor: theme.colors.primary + '15' }]}>
-              <Text style={styles.scheduleIcon}>📅</Text>
-              <Text style={[styles.scheduleText, { color: theme.colors.primary }]}>
-                {scheduleText}
-              </Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Reorder Buttons */}
-        {(onMoveUp || onMoveDown) && (
-          <View style={styles.reorderButtons}>
-            {onMoveUp && (
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onMoveUp();
-                }}
-                style={[styles.reorderButton, !canMoveUp && styles.reorderButtonDisabled]}
-                disabled={!canMoveUp}
-                accessibilityLabel="Move goal up"
-              >
-                <Text style={[styles.reorderButtonText, !canMoveUp && styles.reorderButtonTextDisabled]}>
-                  ▲
-                </Text>
-              </TouchableOpacity>
-            )}
-            {onMoveDown && (
-              <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onMoveDown();
-                }}
-                style={[styles.reorderButton, !canMoveDown && styles.reorderButtonDisabled]}
-                disabled={!canMoveDown}
-                accessibilityLabel="Move goal down"
-              >
-                <Text style={[styles.reorderButtonText, !canMoveDown && styles.reorderButtonTextDisabled]}>
-                  ▼
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-        
-        <Text
-          style={[styles.percent, { color: theme.colors.primary }]}
-          accessibilityLabel={`${percent} percent complete`}
-        >
-          {formattedPercent}%
-        </Text>
-      </View>
-      <ProgressBar progress={progress} />
-    </TouchableOpacity>
-  );
-});
+
+          <ProgressBar progress={progress} animationDuration={DURATION.normal} />
+        </Pressable>
+      </Animated.View>
+    );
+  }
+);
 
 GoalCard.displayName = 'GoalCard';
 
@@ -257,34 +324,30 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 16,
   },
-  ultimateBadge: {
+  badge: {
     position: 'absolute',
     top: -6,
-    right: 12,
-    backgroundColor: '#FFD700',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
     zIndex: 1,
   },
-  ultimateBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1a1a1a',
-  },
-  completedBadge: {
-    position: 'absolute',
-    top: -6,
+  badgeRight: {
     right: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 1,
   },
-  completedBadgeText: {
+  badgeLeft: {
+    left: 12,
+  },
+  badgeText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#fff',
+  },
+  badgeTextDark: {
+    color: '#1a1a1a',
+  },
+  badgeTextAmber: {
+    color: '#78350f',
   },
   ultimateTitle: {
     fontWeight: '700',
@@ -320,95 +383,28 @@ const styles = StyleSheet.create({
     minWidth: 50,
     textAlign: 'right',
   },
-  expiredBadge: {
-    position: 'absolute',
-    top: -6,
-    left: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 1,
-  },
-  expiredBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  pausedBadge: {
-    position: 'absolute',
-    top: -6,
-    left: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 1,
-  },
-  pausedBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  blockedBadge: {
-    position: 'absolute',
-    top: -6,
-    left: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    zIndex: 1,
-  },
-  blockedBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#78350f',
-  },
-  timeRemainingContainer: {
+  pillRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 4,
     paddingTop: 4,
   },
-  timeRemainingIcon: {
-    fontSize: 12,
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  pillIcon: {
+    fontSize: 13,
     marginRight: 4,
   },
-  timeRemainingText: {
+  pillText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  streakContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  streakIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  streakText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  scheduleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-  },
-  scheduleIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  scheduleText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   reorderButtons: {
     flexDirection: 'column',

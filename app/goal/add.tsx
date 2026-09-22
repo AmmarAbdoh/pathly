@@ -1,80 +1,245 @@
-import { useGoals } from "@/src/context/GoalsContext";
-import { Picker } from '@react-native-picker/picker';
-import { useRouter } from "expo-router";
-import { useState } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+/**
+ * Quick add goal screen
+ *
+ * A minimal alternative to the full AddGoalForm, reachable at /goal/add.
+ * Captures only the essentials and fills the rest with defaults.
+ */
 
-export default function AddGoal() {
+import { useGoals } from '@/src/context/GoalsContext';
+import { useLanguage } from '@/src/context/LanguageContext';
+import { useTheme } from '@/src/context/ThemeContext';
+import { GoalDirection } from '@/src/types';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+/** Defaults for the quick form; the full AddGoalForm asks for these. */
+const DEFAULT_POINTS = 10;
+const DEFAULT_PERIOD = 'ongoing' as const;
+
+export default function QuickAddGoal() {
   const { addGoal } = useGoals();
+  const { theme } = useTheme();
+  const { t } = useLanguage();
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [targetValue, setTargetValue] = useState("");
-  const [currentValue, setCurrentValue] = useState("");
-  const [unit, setUnit] = useState("");
-  const [direction, setDirection] = useState<'increase' | 'decrease'>('increase');
 
-  const handleSave = () => {
-    addGoal(title, parseFloat(targetValue), parseFloat(currentValue), unit, direction);
-    router.back();
-  };
+  const [title, setTitle] = useState('');
+  const [targetValue, setTargetValue] = useState('');
+  const [currentValue, setCurrentValue] = useState('');
+  const [unit, setUnit] = useState('');
+  const [direction, setDirection] = useState<GoalDirection>('increase');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const canSave =
+    title.trim().length > 0 &&
+    targetValue.trim().length > 0 &&
+    !Number.isNaN(parseFloat(targetValue));
+
+  const handleSave = useCallback(async () => {
+    if (!canSave || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await addGoal(
+        title,
+        parseFloat(targetValue),
+        parseFloat(currentValue) || 0,
+        unit,
+        direction,
+        DEFAULT_POINTS,
+        DEFAULT_PERIOD
+      );
+      router.back();
+    } catch {
+      Alert.alert(t.common.error, t.goalForm.addError);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [canSave, isSaving, addGoal, title, targetValue, currentValue, unit, direction, router, t]);
+
+  const inputStyle = useMemo(
+    () => [
+      styles.input,
+      {
+        backgroundColor: theme.colors.card,
+        color: theme.colors.text,
+        borderColor: theme.colors.border,
+      },
+    ],
+    [theme]
+  );
+
+  const labelStyle = useMemo(
+    () => [styles.label, { color: theme.colors.textSecondary }],
+    [theme]
+  );
 
   return (
-    <View className="flex-1 bg-gray-50 px-4 pt-10">
-      <Text className="text-2xl font-bold mb-6 text-indigo-600">New Goal</Text>
-
-      <Text className="text-gray-600 mb-2">Goal Title</Text>
-      <TextInput
-        className="bg-white p-3 rounded-xl mb-4 shadow-sm"
-        value={title}
-        onChangeText={setTitle}
-        placeholder="e.g. Lose Weight"
-      />
-
-      <Text className="text-gray-600 mb-2">Current Value</Text>
-      <TextInput
-        className="bg-white p-3 rounded-xl mb-4 shadow-sm"
-        value={currentValue}
-        onChangeText={setCurrentValue}
-        placeholder="e.g. 80"
-        keyboardType="numeric"
-      />
-
-      <Text className="text-gray-600 mb-2">Target Value</Text>
-      <TextInput
-        className="bg-white p-3 rounded-xl mb-4 shadow-sm"
-        value={targetValue}
-        onChangeText={setTargetValue}
-        placeholder="e.g. 70"
-        keyboardType="numeric"
-      />
-
-      <Text className="text-gray-600 mb-2">Unit</Text>
-      <TextInput
-        className="bg-white p-3 rounded-xl mb-4 shadow-sm"
-        value={unit}
-        onChangeText={setUnit}
-        placeholder="e.g. kg"
-      />
-
-      <Text className="text-gray-600 mb-2">Progress Direction</Text>
-      <View className="bg-white p-3 rounded-xl mb-6 shadow-sm">
-        <Picker
-          selectedValue={direction}
-          onValueChange={(itemValue: 'increase' | 'decrease') => setDirection(itemValue)}
-        >
-          <Picker.Item label="Increasing (e.g., Books Read)" value="increase" />
-          <Picker.Item label="Decreasing (e.g., Weight Loss)" value="decrease" />
-        </Picker>
-      </View>
-
-      <TouchableOpacity
-        className="bg-indigo-600 py-3 rounded-xl"
-        onPress={handleSave}
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      edges={['top']}
+    >
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
-        <Text className="text-center text-white font-semibold text-lg">
-          Save Goal
+        <Text style={[styles.heading, { color: theme.colors.primary }]}>
+          {t.goalForm.title}
         </Text>
-      </TouchableOpacity>
-    </View>
+
+        <Text style={labelStyle}>{t.goalForm.titleLabel}</Text>
+        <TextInput
+          style={inputStyle}
+          value={title}
+          onChangeText={setTitle}
+          placeholder={t.goalForm.titlePlaceholder}
+          placeholderTextColor={theme.colors.textSecondary}
+          accessibilityLabel={t.goalForm.titleLabel}
+        />
+
+        <Text style={labelStyle}>{t.goalForm.currentLabel}</Text>
+        <TextInput
+          style={inputStyle}
+          value={currentValue}
+          onChangeText={setCurrentValue}
+          placeholder="0"
+          placeholderTextColor={theme.colors.textSecondary}
+          keyboardType="numeric"
+          accessibilityLabel={t.goalForm.currentLabel}
+        />
+
+        <Text style={labelStyle}>{t.labels.target}</Text>
+        <TextInput
+          style={inputStyle}
+          value={targetValue}
+          onChangeText={setTargetValue}
+          placeholder="100"
+          placeholderTextColor={theme.colors.textSecondary}
+          keyboardType="numeric"
+          accessibilityLabel={t.labels.target}
+        />
+
+        <Text style={labelStyle}>{t.goalForm.unit}</Text>
+        <TextInput
+          style={inputStyle}
+          value={unit}
+          onChangeText={setUnit}
+          placeholder={t.goalForm.unitPlaceholder}
+          placeholderTextColor={theme.colors.textSecondary}
+          accessibilityLabel={t.goalForm.unit}
+        />
+
+        <Text style={labelStyle}>{t.goalForm.direction}</Text>
+        <View style={styles.segmented}>
+          {(['increase', 'decrease'] as const).map((option) => {
+            const isActive = direction === option;
+            return (
+              <Pressable
+                key={option}
+                onPress={() => setDirection(option)}
+                style={[
+                  styles.segment,
+                  {
+                    backgroundColor: isActive ? theme.colors.primary : theme.colors.card,
+                    borderColor: theme.colors.border,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text
+                  style={[
+                    styles.segmentText,
+                    { color: isActive ? '#FFF' : theme.colors.text },
+                  ]}
+                >
+                  {option === 'increase'
+                    ? t.goalForm.directionIncrease
+                    : t.goalForm.directionDecrease}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Pressable
+          style={[
+            styles.saveButton,
+            { backgroundColor: canSave ? theme.colors.primary : theme.colors.border },
+          ]}
+          onPress={handleSave}
+          disabled={!canSave || isSaving}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canSave || isSaving }}
+        >
+          <Text style={styles.saveButtonText}>{t.common.save}</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  heading: {
+    fontSize: 26,
+    fontWeight: '700',
+    marginBottom: 24,
+    letterSpacing: -0.4,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 18,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 28,
+  },
+  segment: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  saveButton: {
+    borderRadius: 14,
+    paddingVertical: 15,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+});

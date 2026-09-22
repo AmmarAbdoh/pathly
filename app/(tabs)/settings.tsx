@@ -218,9 +218,11 @@ export default function SettingsScreen() {
         const response = await fetch(file.uri);
         content = await response.text();
       } else {
-        // For native, read from file system
-        const FileSystem = require('expo-file-system');
-        content = await FileSystem.readAsStringAsync(file.uri);
+        // Native: read through expo-file-system's File API. `readAsStringAsync`
+        // moved to the legacy entrypoint in SDK 54, so the old top-level call
+        // resolved to undefined at runtime.
+        const { File } = await import('expo-file-system');
+        content = await new File(file.uri).text();
       }
 
       // Parse the import
@@ -241,7 +243,7 @@ export default function SettingsScreen() {
         return;
       }
 
-      const { goals: importedGoals, rewards: importedRewards, lifetimePoints } = importResult.data;
+      const { goals: importedGoals, rewards: importedRewards } = importResult.data;
 
       // Show confirmation dialog
       Alert.alert(

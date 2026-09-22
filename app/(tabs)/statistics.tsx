@@ -3,16 +3,16 @@
  * Display user progress, achievements, and motivational content
  */
 
+import AnimatedCounter from '@/components/AnimatedCounter';
+import { DURATION, staggerDelay } from '@/src/constants/animation';
 import ProgressBar from '@/components/ProgressBar';
 import { getAchievements, getRandomQuote } from '@/src/constants/achievements';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { formatNumber } from '@/src/utils/number-formatting';
 import { calculateStatistics, getAchievementProgress } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -24,6 +24,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
@@ -37,19 +38,16 @@ export default function StatisticsScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [currentQuote, setCurrentQuote] = useState(getRandomQuote(language));
-  const [focusKey, setFocusKey] = useState(0);
+  // Stats derive entirely from goals/rewards/points, which the context keeps
+  // current, so no focus-triggered recalculation is needed.
 
-  // Force recalculation when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      setFocusKey(prev => prev + 1);
-    }, [])
+  const stats = useMemo(
+    () => calculateStatistics(goals, rewards, lifetimePointsEarned),
+    [goals, rewards, lifetimePointsEarned]
   );
-
-  const stats = useMemo(() => calculateStatistics(goals, rewards, lifetimePointsEarned), [goals, rewards, lifetimePointsEarned, focusKey]);
   const ACHIEVEMENTS = useMemo(() => getAchievements(language), [language]);
 
-  const onRefresh = React.useCallback(() => {
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     setCurrentQuote(getRandomQuote(language));
     setTimeout(() => setRefreshing(false), 500);
@@ -121,50 +119,74 @@ export default function StatisticsScreen() {
         </View>
 
         {/* Motivational Quote */}
-        <View style={[cardStyle, styles.quoteCard]}>
+        <Animated.View
+          entering={FadeInDown.duration(DURATION.normal).delay(staggerDelay(0))}
+          style={[cardStyle, styles.quoteCard]}
+        >
           <Ionicons name="bulb-outline" size={24} color={theme.colors.primary} />
           <Text style={[styles.quote, { color: theme.colors.text }]}>
             {currentQuote}
           </Text>
-        </View>
+        </Animated.View>
 
         {/* Quick Stats Grid */}
         <View style={styles.statsGrid}>
-          <View style={[cardStyle, styles.statCard]}>
-            <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
-              {formatNumber(stats.totalGoals, language)}
-            </Text>
+          <Animated.View
+            entering={FadeInDown.duration(DURATION.normal).delay(staggerDelay(1))}
+            style={[cardStyle, styles.statCard]}
+          >
+            <AnimatedCounter
+              value={stats.totalGoals}
+              language={language}
+              style={[styles.statNumber, { color: theme.colors.primary }]}
+            />
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.totalGoals}
             </Text>
-          </View>
+          </Animated.View>
 
-          <View style={[cardStyle, styles.statCard]}>
-            <Text style={[styles.statNumber, { color: '#22c55e' }]}>
-              {formatNumber(stats.completedGoals, language)}
-            </Text>
+          <Animated.View
+            entering={FadeInDown.duration(DURATION.normal).delay(staggerDelay(2))}
+            style={[cardStyle, styles.statCard]}
+          >
+            <AnimatedCounter
+              value={stats.completedGoals}
+              language={language}
+              style={[styles.statNumber, { color: '#22c55e' }]}
+            />
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.completedGoals}
             </Text>
-          </View>
+          </Animated.View>
 
-          <View style={[cardStyle, styles.statCard]}>
-            <Text style={[styles.statNumber, { color: '#f59e0b' }]}>
-              {formatNumber(stats.lifetimePointsEarned, language)}
-            </Text>
+          <Animated.View
+            entering={FadeInDown.duration(DURATION.normal).delay(staggerDelay(3))}
+            style={[cardStyle, styles.statCard]}
+          >
+            <AnimatedCounter
+              value={stats.lifetimePointsEarned}
+              language={language}
+              style={[styles.statNumber, { color: '#f59e0b' }]}
+            />
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.totalPoints}
             </Text>
-          </View>
+          </Animated.View>
 
-          <View style={[cardStyle, styles.statCard]}>
-            <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-              🔥 {formatNumber(stats.currentStreak, language)}
-            </Text>
+          <Animated.View
+            entering={FadeInDown.duration(DURATION.normal).delay(staggerDelay(4))}
+            style={[cardStyle, styles.statCard]}
+          >
+            <AnimatedCounter
+              value={stats.currentStreak}
+              language={language}
+              prefix="🔥 "
+              style={[styles.statNumber, { color: '#ef4444' }]}
+            />
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               {t.statistics.currentStreak}
             </Text>
-          </View>
+          </Animated.View>
         </View>
 
         {/* Completion Rate */}
@@ -173,9 +195,13 @@ export default function StatisticsScreen() {
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               {t.statistics.completionRate}
             </Text>
-            <Text style={[styles.percentage, { color: theme.colors.primary }]}>
-              {stats.completionRate.toFixed(1)}%
-            </Text>
+            <AnimatedCounter
+              value={stats.completionRate}
+              language={language}
+              decimals={1}
+              suffix="%"
+              style={[styles.percentage, { color: theme.colors.primary }]}
+            />
           </View>
           <ProgressBar progress={stats.completionRate} />
           <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>

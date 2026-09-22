@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "pathly",
+    "name": "Pathly",
     "slug": "pathly",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -9,17 +9,18 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pathly.app"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#6C63FF",
         "foregroundImage": "./assets/images/logo.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "pan",
-      "package": "com.anonymous.pathly"
+      "package": "com.pathly.app"
     },
     "web": {
       "output": "static",
@@ -33,10 +34,17 @@
           "image": "./assets/images/logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#F5F6FA",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#1A1A1A"
           }
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6C63FF",
+          "defaultChannel": "goal-reminders"
         }
       ]
     ],

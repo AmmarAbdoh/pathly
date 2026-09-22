@@ -1,503 +1,419 @@
 /**
  * Home screen
- * Main screen displaying all goals and add goal form
+ * Main screen displaying all goals, grouped into sections.
+ *
+ * Everything a row needs is precomputed once per goals/language change into
+ * `rows`. renderItem then does nothing but read a prebuilt object and hand it
+ * to a memoized card - no date math, no array scans, no closure allocation on
+ * the scroll path.
  */
 
 import GoalCard from '@/components/GoalCard';
-import Header from '@/components/Header';
+import GoalListHeader, { type FilterStatus } from '@/components/GoalListHeader';
+import { DURATION } from '@/src/constants/animation';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { useDebouncedValue } from '@/src/hooks/use-debounced-value';
 import { Goal, TimePeriod } from '@/src/types';
-import { calculateTimeRemaining, formatEndDateTime, formatTimeRemaining } from '@/src/utils/goal-calculations';
+import {
+  calculateTimeRemaining,
+  formatEndDateTime,
+  formatTimeRemaining,
+} from '@/src/utils/goal-calculations';
 import { isGoalActiveOnDate } from '@/src/utils/goal-scheduling';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-// Period order for sorting
-const PERIOD_ORDER: Record<TimePeriod, number> = {
-  'daily': 1,
-  'weekly': 2,
-  'monthly': 3,
-  'yearly': 4,
-  'custom': 5,
-  'ongoing': 6,
-};
+/** Period sections render in this order. */
+const PERIOD_ORDER: TimePeriod[] = [
+  'daily',
+  'weekly',
+  'monthly',
+  'yearly',
+  'custom',
+  'ongoing',
+];
 
-interface GoalSection {
-  title: string;
-  data: Goal[];
-  isUltimate?: boolean;
+/** Hours remaining below which the countdown turns amber, then red. */
+const URGENCY_SOON_HOURS = 24;
+const URGENCY_CRITICAL_HOURS = 6;
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+type Urgency = 'none' | 'normal' | 'soon' | 'critical';
+
+/** A fully-resolved row, ready to render with no further computation. */
+interface GoalRow {
+  kind: 'goal';
+  key: string;
+  goal: Goal;
+  timeRemaining: string;
+  urgency: Urgency;
+  isExpired: boolean;
+  completedSubgoalCount: number;
+  isBlocked: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }
 
+interface HeaderRow {
+  kind: 'header';
+  key: string;
+  title: string;
+  isFirst: boolean;
+}
+
+type ListRow = GoalRow | HeaderRow;
+
 /**
- * Home screen component
+ * Sort by explicit sortOrder when present, newest-first otherwise.
  */
+function compareGoals(a: Goal, b: Goal): number {
+  if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+    return a.sortOrder - b.sortOrder;
+  }
+  if (a.sortOrder !== undefined) return -1;
+  if (b.sortOrder !== undefined) return 1;
+  return b.createdAt - a.createdAt;
+}
+
 export default function HomeScreen() {
-  const { goals, reorderGoals } = useGoals();
+  const { goals, reorderGoals, isLoading } = useGoals();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
   const router = useRouter();
 
-  // Search and filter state
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [filterStatus, setFilterStatus] = React.useState<'all' | 'active' | 'paused' | 'completed' | 'expired'>('all');
-  const [showFilters, setShowFilters] = React.useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
 
-  // Derived lookup maps to avoid repeated scans in render.
-  const { completedSubgoalCountById, isBlockedById } = useMemo(() => {
-    const goalMap = new Map<number, Goal>();
-    const completedCounts: Record<number, number> = {};
-    const blockedMap: Record<number, boolean> = {};
+  // Keep the heavy grouping work off the keystroke path.
+  const debouncedQuery = useDebouncedValue(searchQuery, 200);
+
+  /**
+   * Per-goal derived data that depends only on the goals array.
+   *
+   * Built in a single pass so renderItem never has to scan the collection.
+   */
+  const { completedSubgoalCountById, blockedById } = useMemo(() => {
+    const completionById = new Map<number, boolean>();
+    goals.forEach((goal) => completionById.set(goal.id, goal.isComplete === true));
+
+    const completedCounts = new Map<number, number>();
+    const blocked = new Set<number>();
 
     goals.forEach((goal) => {
-      goalMap.set(goal.id, goal);
-    });
-
-    goals.forEach((goal) => {
-      if (goal.subGoals && goal.subGoals.length > 0) {
-        let completed = 0;
-        goal.subGoals.forEach((subId) => {
-          if (goalMap.get(subId)?.isComplete) {
-            completed += 1;
-          }
-        });
-        completedCounts[goal.id] = completed;
+      if (goal.subGoals?.length) {
+        const completed = goal.subGoals.reduce(
+          (count, subId) => count + (completionById.get(subId) ? 1 : 0),
+          0
+        );
+        completedCounts.set(goal.id, completed);
       }
 
-      if (goal.dependsOn && goal.dependsOn.length > 0) {
-        let isBlocked = false;
-        for (const depId of goal.dependsOn) {
-          const depGoal = goalMap.get(depId);
-          if (!depGoal || !depGoal.isComplete) {
-            isBlocked = true;
-            break;
-          }
-        }
-        if (isBlocked) {
-          blockedMap[goal.id] = true;
-        }
+      if (goal.dependsOn?.length) {
+        const isBlocked = goal.dependsOn.some((depId) => completionById.get(depId) !== true);
+        if (isBlocked) blocked.add(goal.id);
       }
     });
 
-    return { completedSubgoalCountById: completedCounts, isBlockedById: blockedMap };
+    return { completedSubgoalCountById: completedCounts, blockedById: blocked };
   }, [goals]);
 
-  // Period labels - use translations
-  const PERIOD_LABELS: Record<TimePeriod, string> = useMemo(() => ({
-    'daily': t.home.dailyGoals,
-    'weekly': t.home.weeklyGoals,
-    'monthly': t.home.monthlyGoals,
-    'yearly': t.home.yearlyGoals,
-    'custom': t.home.customGoals,
-    'ongoing': t.home.ongoingGoals,
-  }), [t]);
+  const periodLabels = useMemo<Record<TimePeriod, string>>(
+    () => ({
+      daily: t.home.dailyGoals,
+      weekly: t.home.weeklyGoals,
+      monthly: t.home.monthlyGoals,
+      yearly: t.home.yearlyGoals,
+      custom: t.home.customGoals,
+      ongoing: t.home.ongoingGoals,
+    }),
+    [t]
+  );
 
-  // Filter to show only parent goals (not subgoals, not archived) and organize by sections
-  const goalSections = useMemo(() => {
-    let parentGoals = goals.filter(goal => !goal.parentId && !goal.isArchived);
+  /**
+   * The flat list of rows, fully resolved.
+   */
+  const rows = useMemo<ListRow[]>(() => {
+    let parentGoals = goals.filter(
+      (goal) => !goal.parentId && !goal.isArchived && isGoalActiveOnDate(goal)
+    );
 
-    // Apply schedule filter - only show goals active today
-    parentGoals = parentGoals.filter(goal => isGoalActiveOnDate(goal));
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      parentGoals = parentGoals.filter(goal =>
-        goal.title.toLowerCase().includes(query) ||
-        goal.description?.toLowerCase().includes(query) ||
-        goal.unit.toLowerCase().includes(query)
-      );
-    }
-
-    // Apply status filter
-    if (filterStatus !== 'all') {
-      parentGoals = parentGoals.filter(goal => {
-        const timeRemaining = calculateTimeRemaining(
+    // Time remaining is needed for both the status filter and the row itself,
+    // so compute it once per goal here.
+    const timeById = new Map<number, ReturnType<typeof calculateTimeRemaining>>();
+    parentGoals.forEach((goal) => {
+      timeById.set(
+        goal.id,
+        calculateTimeRemaining(
           goal.periodStartDate,
           goal.period,
           goal.customPeriodDays,
           goal.isRecurring
-        );
-        
+        )
+      );
+    });
+
+    const query = debouncedQuery.trim().toLowerCase();
+    if (query) {
+      parentGoals = parentGoals.filter(
+        (goal) =>
+          goal.title.toLowerCase().includes(query) ||
+          goal.description?.toLowerCase().includes(query) ||
+          goal.unit.toLowerCase().includes(query)
+      );
+    }
+
+    if (filterStatus !== 'all') {
+      parentGoals = parentGoals.filter((goal) => {
+        const time = timeById.get(goal.id);
         switch (filterStatus) {
           case 'active':
-            return !goal.isComplete && !goal.isPaused && !timeRemaining.isExpired;
+            return !goal.isComplete && !goal.isPaused && !time?.isExpired;
           case 'paused':
-            return goal.isPaused;
+            return goal.isPaused === true;
           case 'completed':
-            return goal.isComplete;
+            return goal.isComplete === true;
           case 'expired':
-            return !goal.isComplete && !goal.isRecurring && timeRemaining.isExpired;
+            return !goal.isComplete && !goal.isRecurring && time?.isExpired === true;
           default:
             return true;
         }
       });
     }
 
-    const sections: GoalSection[] = [];
+    const active = parentGoals.filter((g) => !g.isComplete);
+    const completed = parentGoals.filter((g) => g.isComplete);
 
-    // Separate completed and active goals
-    const activeGoals = parentGoals.filter(g => !g.isComplete);
-    const completedGoals = parentGoals.filter(g => g.isComplete);
+    // Assemble sections: ultimate goals, then one per period, then completed.
+    const sections: { title: string; data: Goal[] }[] = [];
 
-    // Sort function: by sortOrder if defined, then by creation date
-    const sortGoals = (goalsToSort: Goal[]) => {
-      return [...goalsToSort].sort((a, b) => {
-        // If both have sortOrder, use it
-        if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
-          return a.sortOrder - b.sortOrder;
+    const ultimate = active.filter((g) => g.isUltimate).sort(compareGoals);
+    if (ultimate.length) {
+      sections.push({ title: t.home.ultimateGoals, data: ultimate });
+    }
+
+    const byPeriod = new Map<TimePeriod, Goal[]>();
+    active
+      .filter((g) => !g.isUltimate)
+      .forEach((goal) => {
+        const bucket = byPeriod.get(goal.period);
+        if (bucket) {
+          bucket.push(goal);
+        } else {
+          byPeriod.set(goal.period, [goal]);
         }
-        // If only one has sortOrder, prioritize it
-        if (a.sortOrder !== undefined) return -1;
-        if (b.sortOrder !== undefined) return 1;
-        // Otherwise, sort by creation date (newest first)
-        return b.createdAt - a.createdAt;
       });
-    };
 
-    // 1. Ultimate Goals Section (active only)
-    const ultimateGoals = activeGoals.filter(g => g.isUltimate);
-    if (ultimateGoals.length > 0) {
-      sections.push({
-        title: t.home.ultimateGoals,
-        data: sortGoals(ultimateGoals),
-        isUltimate: true,
-      });
-    }
-
-    // 2. Regular Goals by Period (active only)
-    const regularGoals = activeGoals.filter(g => !g.isUltimate);
-    
-    // Group by period
-    const groupedByPeriod: Record<TimePeriod, Goal[]> = {
-      daily: [],
-      weekly: [],
-      monthly: [],
-      yearly: [],
-      custom: [],
-      ongoing: [],
-    };
-
-    regularGoals.forEach(goal => {
-      if (groupedByPeriod[goal.period]) {
-        groupedByPeriod[goal.period].push(goal);
+    PERIOD_ORDER.forEach((period) => {
+      const bucket = byPeriod.get(period);
+      if (bucket?.length) {
+        sections.push({ title: periodLabels[period], data: bucket.sort(compareGoals) });
       }
     });
 
-    // Add period sections in order
-    (['daily', 'weekly', 'monthly', 'yearly', 'custom', 'ongoing'] as TimePeriod[]).forEach(period => {
-      if (groupedByPeriod[period].length > 0) {
-        sections.push({
-          title: PERIOD_LABELS[period],
-          data: sortGoals(groupedByPeriod[period]),
-        });
-      }
-    });
-
-    // 3. Completed Goals Section (at the end)
-    if (completedGoals.length > 0) {
-      sections.push({
-        title: t.home.completedGoals || 'Completed Goals',
-        data: sortGoals(completedGoals),
-      });
+    if (completed.length) {
+      sections.push({ title: t.home.completedGoals, data: completed.sort(compareGoals) });
     }
 
-    return sections;
-  }, [goals, t, PERIOD_LABELS, searchQuery, filterStatus]);
+    // Flatten into rows, resolving everything each card needs.
+    const result: ListRow[] = [];
 
-  // Flatten for FlatList with section headers
-  const flattenedData = useMemo(() => {
-    const items: Array<{ type: 'header' | 'goal'; data: any; section?: GoalSection; sectionIndex?: number }> = [];
-    
-    goalSections.forEach((section, sectionIndex) => {
-      // Add section header
-      items.push({
-        type: 'header',
-        data: { title: section.title, isFirst: sectionIndex === 0 },
+    sections.forEach((section, sectionIndex) => {
+      result.push({
+        kind: 'header',
+        key: `header-${sectionIndex}-${section.title}`,
+        title: section.title,
+        isFirst: sectionIndex === 0,
       });
-      
-      // Add goals with section reference for reordering
-      section.data.forEach(goal => {
-        items.push({
-          type: 'goal',
-          data: goal,
-          section: section,
-          sectionIndex: sectionIndex,
+
+      section.data.forEach((goal, indexInSection) => {
+        const time = timeById.get(goal.id);
+        const isExpired = time?.isExpired === true;
+
+        const timeText = time ? formatTimeRemaining(time, t.time, goal.isRecurring) : '';
+        const endDateTime = formatEndDateTime(
+          goal.periodStartDate,
+          goal.period,
+          goal.customPeriodDays,
+          language
+        );
+
+        const timeRemaining =
+          !goal.isComplete && !isExpired && endDateTime
+            ? `${timeText} (${t.time.endsAt}: ${endDateTime})`
+            : timeText;
+
+        // Derive urgency from the numbers rather than by substring-matching the
+        // formatted string, which never worked correctly in Arabic.
+        //
+        // Only a goal with a live deadline can be urgent. totalMs is 0 both for
+        // an expired goal and for one with no periodStartDate, and Infinity for
+        // an 'ongoing' goal - none of which should read as running out of time.
+        let urgency: Urgency = 'normal';
+        if (goal.isComplete || goal.isRecurring || isExpired) {
+          urgency = 'none';
+        } else if (time && time.totalMs > 0 && Number.isFinite(time.totalMs)) {
+          const hoursLeft = time.totalMs / MS_PER_HOUR;
+          if (hoursLeft <= URGENCY_CRITICAL_HOURS) {
+            urgency = 'critical';
+          } else if (hoursLeft <= URGENCY_SOON_HOURS) {
+            urgency = 'soon';
+          }
+        }
+
+        result.push({
+          kind: 'goal',
+          key: `goal-${goal.id}`,
+          goal,
+          timeRemaining,
+          urgency,
+          isExpired,
+          completedSubgoalCount: goal.isUltimate
+            ? completedSubgoalCountById.get(goal.id) ?? 0
+            : 0,
+          isBlocked: blockedById.has(goal.id),
+          canMoveUp: indexInSection > 0,
+          canMoveDown: indexInSection < section.data.length - 1,
         });
       });
     });
-    
-    return items;
-  }, [goalSections]);
+
+    return result;
+  }, [
+    goals,
+    debouncedQuery,
+    filterStatus,
+    t,
+    language,
+    periodLabels,
+    completedSubgoalCountById,
+    blockedById,
+  ]);
 
   /**
-   * Handle navigation to goal detail screen
+   * Ordered goal ids per section, so a reorder is an O(1) lookup rather than a
+   * findIndex inside renderItem.
    */
+  const sectionOrderByGoalId = useMemo(() => {
+    const map = new Map<number, { ids: number[]; index: number }>();
+    let currentIds: number[] = [];
+
+    rows.forEach((row) => {
+      if (row.kind === 'header') {
+        currentIds = [];
+        return;
+      }
+      currentIds.push(row.goal.id);
+      map.set(row.goal.id, { ids: currentIds, index: currentIds.length - 1 });
+    });
+
+    return map;
+  }, [rows]);
+
   const handleGoalPress = useCallback(
-    (id: number) => {
-      router.push(`/goal/${id}`);
-    },
+    (id: number) => router.push(`/goal/${id}`),
     [router]
   );
 
-
-
   /**
-   * Handle moving a goal up in its section
+   * Swap a goal with its neighbour and persist the new order.
    */
-  const handleMoveGoalUp = useCallback(
-    (goalId: number, section: GoalSection) => {
-      const goalIndex = section.data.findIndex(g => g.id === goalId);
-      if (goalIndex <= 0) return; // Can't move up if first
+  const moveGoal = useCallback(
+    (id: number, offset: -1 | 1) => {
+      const entry = sectionOrderByGoalId.get(id);
+      if (!entry) return;
 
-      // Get IDs of all goals in this section in their new order
-      const sectionGoalIds = [...section.data.map(g => g.id)];
-      [sectionGoalIds[goalIndex - 1], sectionGoalIds[goalIndex]] = [sectionGoalIds[goalIndex], sectionGoalIds[goalIndex - 1]];
-      
-      reorderGoals(sectionGoalIds);
+      const target = entry.index + offset;
+      if (target < 0 || target >= entry.ids.length) return;
+
+      const reordered = [...entry.ids];
+      [reordered[entry.index], reordered[target]] = [reordered[target], reordered[entry.index]];
+      void reorderGoals(reordered);
     },
-    [reorderGoals]
+    [sectionOrderByGoalId, reorderGoals]
   );
 
-  /**
-   * Handle moving a goal down in its section
-   */
-  const handleMoveGoalDown = useCallback(
-    (goalId: number, section: GoalSection) => {
-      const goalIndex = section.data.findIndex(g => g.id === goalId);
-      if (goalIndex < 0 || goalIndex >= section.data.length - 1) return; // Can't move down if last
+  const handleMoveUp = useCallback((id: number) => moveGoal(id, -1), [moveGoal]);
+  const handleMoveDown = useCallback((id: number) => moveGoal(id, 1), [moveGoal]);
 
-      // Get IDs of all goals in this section in their new order
-      const sectionGoalIds = [...section.data.map(g => g.id)];
-      [sectionGoalIds[goalIndex], sectionGoalIds[goalIndex + 1]] = [sectionGoalIds[goalIndex + 1], sectionGoalIds[goalIndex]];
-      
-      reorderGoals(sectionGoalIds);
-    },
-    [reorderGoals]
-  );
-
-  /**
-   * Render individual item (goal or section header)
-   */
   const renderItem = useCallback(
-    ({ item, index }: { item: { type: 'header' | 'goal'; data: any; section?: GoalSection; sectionIndex?: number }; index: number }) => {
-      if (item.type === 'header') {
+    ({ item }: { item: ListRow }) => {
+      if (item.kind === 'header') {
         return (
-          <View style={[styles.sectionHeader, item.data.isFirst && styles.firstSectionHeader]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              {item.data.title}
-            </Text>
+          <View style={[styles.sectionHeader, item.isFirst && styles.firstSectionHeader]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{item.title}</Text>
             <View style={[styles.separator, { backgroundColor: theme.colors.border }]} />
           </View>
         );
       }
-      
-      // Goal item
-      const goal = item.data as Goal;
-      const section = item.section;
 
-      const timeRemainingData = calculateTimeRemaining(
-        goal.periodStartDate,
-        goal.period,
-        goal.customPeriodDays,
-        goal.isRecurring
-      );
-      const timeRemainingText = formatTimeRemaining(
-        timeRemainingData,
-        t.time,
-        goal.isRecurring
-      );
-      const endDateTime = formatEndDateTime(
-        goal.periodStartDate,
-        goal.period,
-        goal.customPeriodDays,
-        language
-      );
-      
-      // Add end date to time remaining display (if not expired and not completed)
-      const displayTimeRemaining = !goal.isComplete && !timeRemainingData.isExpired && endDateTime
-        ? `${timeRemainingText} (${t.time.endsAt}: ${endDateTime})`
-        : timeRemainingText;
-
-      // Calculate completed subgoals count for ultimate goals
-      const completedSubgoalCount = goal.isUltimate
-        ? (completedSubgoalCountById[goal.id] || 0)
-        : 0;
-      
-      // Determine if goal can move up/down in its section
-      const goalIndexInSection = section ? section.data.findIndex(g => g.id === goal.id) : -1;
-      const canMoveUp = goalIndexInSection > 0;
-      const canMoveDown = section ? goalIndexInSection < section.data.length - 1 : false;
-
-      // Check if goal is blocked by dependencies
-      const isBlocked = Boolean(isBlockedById[goal.id]);
+      const { goal } = item;
 
       return (
         <GoalCard
+          id={goal.id}
           title={goal.title}
           progress={goal.progress}
           points={goal.points}
           icon={goal.icon}
-          subgoalCount={goal.subGoals?.length || 0}
-          completedSubgoalCount={completedSubgoalCount}
+          subgoalCount={goal.subGoals?.length ?? 0}
+          completedSubgoalCount={item.completedSubgoalCount}
           isUltimate={goal.isUltimate}
-          onPress={() => handleGoalPress(goal.id)}
-          timeRemaining={displayTimeRemaining}
-          isExpired={timeRemainingData.isExpired}
+          onPress={handleGoalPress}
+          timeRemaining={item.timeRemaining}
+          urgency={item.urgency}
+          isExpired={item.isExpired}
           isRecurring={goal.isRecurring}
           isComplete={goal.isComplete}
           isPaused={goal.isPaused}
-          onMoveUp={section ? () => handleMoveGoalUp(goal.id, section) : undefined}
-          onMoveDown={section ? () => handleMoveGoalDown(goal.id, section) : undefined}
-          canMoveUp={canMoveUp}
-          canMoveDown={canMoveDown}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          canMoveUp={item.canMoveUp}
+          canMoveDown={item.canMoveDown}
           currentStreak={goal.currentStreak}
-          isBlocked={isBlocked}
+          isBlocked={item.isBlocked}
           schedule={goal.schedule}
         />
       );
     },
-    [handleGoalPress, handleMoveGoalUp, handleMoveGoalDown, theme, t, language, completedSubgoalCountById, isBlockedById]
+    [theme, handleGoalPress, handleMoveUp, handleMoveDown]
   );
 
-  /**
-   * Extract unique key for each item
-   */
-  const keyExtractor = useCallback(
-    (item: { type: 'header' | 'goal'; data: any }, index: number) => {
-      if (item.type === 'header') {
-        return `header-${item.data.title}`;
-      }
-      return `goal-${item.data.id}`;
-    },
-    []
-  );
+  const keyExtractor = useCallback((item: ListRow) => item.key, []);
 
-  /**
-   * Render header with search and filters
-   */
-  const renderListHeader = useCallback(() => (
-    <>
-      <Header />
-      
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: theme.colors.card, ...theme.shadows.small }]}>
-        <Ionicons name="search" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
-        <TextInput
-          style={[styles.searchInput, { color: theme.colors.text }]}
-          placeholder={t.home.searchPlaceholder}
-          placeholderTextColor={theme.colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={20} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Filter Buttons */}
-      <View style={styles.filtersContainer}>
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            { backgroundColor: filterStatus === 'all' ? theme.colors.primary : theme.colors.card },
-            theme.shadows.small
-          ]}
-          onPress={() => setFilterStatus('all')}
-        >
-          <Text style={[styles.filterButtonText, { color: filterStatus === 'all' ? '#FFF' : theme.colors.text }]}>
-            {t.home.filterAll}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            { backgroundColor: filterStatus === 'active' ? theme.colors.primary : theme.colors.card },
-            theme.shadows.small
-          ]}
-          onPress={() => setFilterStatus('active')}
-        >
-          <Text style={[styles.filterButtonText, { color: filterStatus === 'active' ? '#FFF' : theme.colors.text }]}>
-            {t.home.filterActive}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            { backgroundColor: filterStatus === 'paused' ? theme.colors.primary : theme.colors.card },
-            theme.shadows.small
-          ]}
-          onPress={() => setFilterStatus('paused')}
-        >
-          <Text style={[styles.filterButtonText, { color: filterStatus === 'paused' ? '#FFF' : theme.colors.text }]}>
-            {t.home.filterPaused}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            { backgroundColor: filterStatus === 'completed' ? theme.colors.primary : theme.colors.card },
-            theme.shadows.small
-          ]}
-          onPress={() => setFilterStatus('completed')}
-        >
-          <Text style={[styles.filterButtonText, { color: filterStatus === 'completed' ? '#FFF' : theme.colors.text }]}>
-            {t.home.filterCompleted}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.filterButton,
-            { backgroundColor: filterStatus === 'expired' ? theme.colors.primary : theme.colors.card },
-            theme.shadows.small
-          ]}
-          onPress={() => setFilterStatus('expired')}
-        >
-          <Text style={[styles.filterButtonText, { color: filterStatus === 'expired' ? '#FFF' : theme.colors.text }]}>
-            {t.home.filterExpired}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  ), [theme, t, searchQuery, filterStatus]);
-
-  /**
-   * Render empty state
-   */
-  const renderEmptyComponent = useMemo(
+  const listHeader = useMemo(
     () => (
-      <View style={styles.emptyContainer}>
+      <GoalListHeader
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        filterStatus={filterStatus}
+        onFilterChange={setFilterStatus}
+      />
+    ),
+    [searchQuery, filterStatus]
+  );
+
+  const listEmpty = useMemo(() => {
+    if (isLoading) {
+      return (
+        <View style={styles.stateContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      );
+    }
+
+    return (
+      <Animated.View entering={FadeIn.duration(DURATION.normal)} style={styles.stateContainer}>
         <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
           {searchQuery || filterStatus !== 'all' ? t.home.noResults : t.home.noGoals}
         </Text>
-      </View>
-    ),
-    [theme, t, searchQuery, filterStatus]
-  );
-
-  /**
-   * Render loading state
-   */
-  const renderLoadingComponent = useMemo(
-    () => (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </View>
-    ),
-    [theme]
-  );
-
-
+      </Animated.View>
+    );
+  }, [isLoading, theme, t, searchQuery, filterStatus]);
 
   return (
     <SafeAreaView
@@ -505,13 +421,20 @@ export default function HomeScreen() {
       edges={['top']}
     >
       <FlatList
-        data={flattenedData}
+        data={rows}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={renderListHeader}
-        ListEmptyComponent={renderEmptyComponent}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        removeClippedSubviews
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        windowSize={11}
       />
     </SafeAreaView>
   );
@@ -525,11 +448,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
-  loadingContainer: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  emptyContainer: {
+  stateContainer: {
     paddingVertical: 40,
     paddingHorizontal: 20,
     alignItems: 'center',
@@ -538,17 +457,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
-  },
-  errorContainer: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 75, 75, 0.1)',
-  },
-  errorText: {
-    fontSize: 14,
-    textAlign: 'center',
   },
   sectionHeader: {
     marginTop: 24,
@@ -567,39 +475,5 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 1,
     opacity: 0.2,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
-  },
-  clearButton: {
-    padding: 4,
-  },
-  filtersContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  filterButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

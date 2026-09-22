@@ -316,7 +316,8 @@ describe('Statistics Utilities', () => {
   });
 
   describe('isConsistent - edge cases', () => {
-    const mockRecurringGoal: Goal = {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const mockRecurringGoal: Goal = {
       id: 1,
       title: 'Test Goal',
       target: 100,

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Shared icon constants for goals and rewards
  * Curated collection of commonly used emojis
  */

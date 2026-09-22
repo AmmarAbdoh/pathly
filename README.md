@@ -2,211 +2,155 @@
 
 **Track your progress, step by step**
 
-Pathly is a beautiful, feature-rich goal tracking mobile application built with React Native and Expo. Set goals, track progress, earn rewards, and achieve your dreams with an intuitive and motivating interface.
+Pathly is a goal-tracking mobile app built with React Native and Expo. Set goals, break them into
+subgoals, track progress, earn points, and cash them in for rewards you set yourself. Fully offline —
+your data never leaves your device.
 
 ![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
-![React Native](https://img.shields.io/badge/React%20Native-0.76.3-61DAFB?logo=react)
-![Expo](https://img.shields.io/badge/Expo-52.0.11-000020?logo=expo)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.3.3-3178C6?logo=typescript)
+![React Native](https://img.shields.io/badge/React%20Native-0.81.5-61DAFB?logo=react)
+![Expo](https://img.shields.io/badge/Expo-SDK%2054-000020?logo=expo)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)
 
 ---
 
 ## ✨ Features
 
 ### 🎯 Goal Management
-- **Ultimate Goals**: Long-term objectives that serve as your north star
-- **Recurring Goals**: Daily, weekly, monthly, yearly, or custom period goals that reset automatically
-- **Goal Templates**: 50+ pre-built templates across 9 categories (Health, Fitness, Learning, Work, Finance, Personal, Social, Hobby, Other)
-- **Subgoals**: Break down complex goals into manageable steps
-- **Custom Icons**: 500+ emojis to personalize your goals
-- **Progress Tracking**: Visual progress bars and percentage completion
-- **Flexible Units**: Track anything - books, km, workouts, hours, and 30+ more units
+- **Ultimate Goals** — long-term objectives that act as your north star
+- **Recurring Goals** — daily, weekly, monthly, yearly or custom periods that reset automatically
+- **Scheduling** — have a goal appear only on chosen weekdays, dates, or a monthly date range
+- **Goal Templates** — 50+ pre-built templates across 9 categories
+- **Subgoals** — break a big goal into steps; parent progress rolls up automatically
+- **Dependencies** — block a goal until its prerequisites are complete
+- **Notes** — keep a running log against any goal
+- **Reminders** — local notifications on the days and time you pick
+- **Custom Icons** — 500+ emoji
+- **Flexible Units** — books, km, workouts, hours and 30+ more
+- **Increase or decrease** — track weight loss just as easily as books read
 
-### 🏆 Gamification & Motivation
-- **Points System**: Earn points for completing goals and subgoals
-- **Rewards Store**: Create custom rewards and redeem them with earned points
-- **Achievements**: 10 unique achievements to unlock as you progress
-- **Streak Tracking**: Monitor daily, weekly, and all-time streaks
-- **Motivational Quotes**: Daily inspiration to keep you going
+### 🏆 Gamification
+- **Points** for completing goals and (optionally) subgoals
+- **Rewards Store** — define your own rewards and redeem them with earned points
+- **Linked rewards** — auto-redeem a reward when its goal completes
+- **Achievements** — 10 to unlock
+- **Streaks** — current and longest, for recurring goals
 
-### 📊 Statistics & Insights
-- **Progress Dashboard**: Overview of all your goals and achievements
-- **Completion Rate**: Track your success percentage
-- **Total Points**: See your lifetime earnings
-- **Active vs Completed**: Monitor your current workload
-- **Streak Stats**: Current and longest streak tracking
+### 📊 Insights
+- Progress dashboard with completion rate and lifetime points
+- Analytics screen with generated insights
+- Weekly and monthly review screens
 
 ### 🌍 Internationalization
-- **Bilingual Support**: Full English and Arabic translations
-- **RTL Support**: Proper right-to-left layout for Arabic
-- **Localized Content**: Templates, achievements, and quotes in both languages
+- Full English and Arabic translations, including RTL layout
+- Arabic-Indic numerals throughout
 
-### 🎨 Theming
-- **Dark Mode**: Easy on the eyes for night owls
-- **Light Mode**: Clean and bright for daytime use
-- **System Mode**: Automatically matches your device settings
-- **Custom Color Schemes**: Beautiful, consistent design across all screens
+### 🎨 Theming & Motion
+- Light, dark and system themes
+- Spring press feedback, animated progress fills, staggered entrances
+- Honours the OS "reduce motion" setting
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v16 or higher)
-- npm or yarn
-- Expo CLI
-- iOS Simulator (for macOS) or Android Emulator
+- Node.js 20+
+- An Android emulator / iOS simulator, or the Expo Go app
 
-### Installation
+### Setup
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/ammarabdoh/pathly.git
-   cd pathly
-   ```
+```bash
+git clone https://github.com/ammarabdoh/pathly.git
+cd pathly
+npm install
+npx expo start
+```
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+Then press `a` for Android, `i` for iOS, or scan the QR code with Expo Go.
 
-3. **Start the development server**
-   ```bash
-   npx expo start
-   ```
-
-4. **Run on your device**
-   - Scan the QR code with Expo Go app (iOS/Android)
-   - Press `i` for iOS simulator
-   - Press `a` for Android emulator
+> **Note on notifications:** Expo Go no longer supports remote push. The local scheduled reminders
+> this app uses do work there, but test them in a development build if you're changing that code.
 
 ---
 
-## 📱 App Structure
+## 🧰 Scripts
+
+| Script | What it does |
+|---|---|
+| `npm start` | Expo dev server |
+| `npm run android` / `npm run ios` | native build and run |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint via `expo lint` |
+| `npm test` | Jest suite |
+| `npm run test:coverage` | Jest with coverage |
+| `npm run verify` | typecheck + lint + test — run before committing |
+
+---
+
+## 📱 Project Structure
 
 ```
 pathly/
-├── app/                      # Expo Router screens
-│   ├── (tabs)/              # Tab navigation screens
-│   │   ├── home.tsx         # Main dashboard
-│   │   ├── add-goal.tsx     # Goal creation
-│   │   ├── statistics.tsx   # Stats & achievements
-│   │   ├── rewards.tsx      # Rewards store
-│   │   └── settings.tsx     # App settings
-│   └── goal/                # Goal detail screens
-├── components/              # Reusable UI components
+├── app/                     # Expo Router screens (file-based routes)
+│   ├── (tabs)/              # home, add-goal, statistics, rewards, settings
+│   ├── goal/[id].tsx        # goal detail & management hub
+│   ├── analytics.tsx        # deeper insights
+│   └── review.tsx           # weekly / monthly review
+├── components/              # reusable UI
+├── constants/               # theme definitions
 ├── src/
-│   ├── constants/          # App constants & templates
-│   ├── context/            # React Context providers
-│   ├── i18n/               # Translations
-│   ├── types/              # TypeScript interfaces
-│   └── utils/              # Helper functions
-└── assets/                 # Images & static files
+│   ├── constants/           # templates, icons, achievements, animation tokens
+│   ├── context/             # Goals, Rewards, Theme, Language providers
+│   ├── hooks/               # shared hooks (debounce, animations)
+│   ├── i18n/                # translations
+│   ├── types/               # TypeScript interfaces
+│   └── utils/               # pure business logic (unit-tested)
+└── __tests__/integration/   # cross-context integration tests
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Core
-- **React Native** - Cross-platform mobile framework
-- **Expo** - Development platform and tooling
-- **TypeScript** - Type-safe JavaScript
-
-### Navigation
-- **Expo Router** - File-based routing system
-
-### State Management
-- **React Context API** - Global state management
-- **AsyncStorage** - Persistent local storage
-
-### UI/UX
-- **React Native Elements** - UI component library
-- **Custom Theming** - Dark/Light mode support
-- **RTL Support** - Right-to-left layout for Arabic
+- **React Native 0.81** + **Expo SDK 54** (New Architecture enabled)
+- **TypeScript** in strict mode
+- **Expo Router** for file-based navigation
+- **React Context** + **AsyncStorage** for state and persistence
+- **Reanimated 4** for UI-thread animations
+- **Jest** + **@testing-library/react-native** — 303 tests
 
 ---
 
-## 📦 Key Dependencies
+## 🏗️ Architecture Notes
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `expo` | ^52.0.11 | Development platform |
-| `react-native` | 0.76.3 | Mobile framework |
-| `@react-navigation/native` | ^7.0.12 | Navigation |
-| `@react-native-async-storage/async-storage` | ^2.1.0 | Persistent storage |
-| `expo-router` | ^4.0.9 | File-based routing |
+State lives in two contexts, `GoalsContext` and `RewardsContext`, both backed by AsyncStorage.
+Business logic is kept in pure functions under `src/utils/` so it can be unit-tested without
+mounting components.
 
----
+Writes to storage are **debounced** — mutations update state immediately and persist shortly after,
+coalescing bursts like slider drags into a single write. Pending writes are flushed when the app
+backgrounds.
 
-## 🎯 Usage Examples
-
-### Creating a Goal
-```typescript
-// Using a template
-const template = GOAL_TEMPLATES.find(t => t.id === 'read_books');
-addGoal({ ...template, icon: '📚' });
-
-// Creating from scratch
-addGoal({
-  title: 'Learn TypeScript',
-  description: 'Master TypeScript fundamentals',
-  target: 100,
-  current: 0,
-  unit: 'hours',
-  period: 'monthly',
-  points: 50,
-  icon: '💻',
-  isUltimate: false
-});
-```
-
-### Adding a Reward
-```typescript
-addReward({
-  title: 'Movie Night',
-  description: 'Watch a movie of your choice',
-  cost: 100,
-  icon: '🎬',
-  category: 'entertainment'
-});
-```
-
----
-
-## 🌟 Screenshots
+See [CLAUDE.md](CLAUDE.md) for the performance and styling conventions this codebase follows.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 1. Fork the project
 2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+3. Make your changes and run `npm run verify`
+4. Commit (`git commit -m 'feat: add amazing feature'`)
+5. Push and open a Pull Request
 
 ---
 
 ## 👨‍💻 Author
 
-**Your Name**
-- GitHub: [@ammarabdoh](https://github.com/ammarabdoh)
-
----
-
-## 🙏 Acknowledgments
-
-- Icons from the emoji unicode standard
-- Inspired by modern productivity apps
-- Built with ❤️ using React Native and Expo
+**Ammar Abdo** — [@ammarabdoh](https://github.com/ammarabdoh)
 
 ---
 
 ## 📞 Support
 
-If you like this project, please give it a ⭐ on GitHub!
-
-For issues and feature requests, please use the [Issues](https://github.com/ammarabdoh/pathly/issues) page.
+For issues and feature requests, use the [Issues](https://github.com/ammarabdoh/pathly/issues) page.

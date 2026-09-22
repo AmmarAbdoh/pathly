@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  ListRenderItem,
   InteractionManager,
   Modal,
   Pressable,
@@ -32,6 +31,18 @@ export interface TemplateModalCategory<TCategory extends string> {
   icon?: string;
 }
 
+/**
+ * The common subset of FlatList's and FlashList's row renderer.
+ *
+ * FlatList's own ListRenderItem requires a `separators` argument that FlashList
+ * does not supply, so neither library's type is assignable to the other. This
+ * narrower signature is accepted by both.
+ */
+export type TemplateRenderItem<TItem> = (info: {
+  item: TItem;
+  index: number;
+}) => React.ReactElement | null;
+
 export interface TemplateModalProps<TItem, TCategory extends string> {
   visible: boolean;
   onClose: () => void;
@@ -41,9 +52,10 @@ export interface TemplateModalProps<TItem, TCategory extends string> {
   categories: TemplateModalCategory<TCategory>[];
   getItemsForCategory: (category: TCategory | 'all') => TItem[];
   getSearchText?: (item: TItem) => string;
-  renderItem: ListRenderItem<TItem>;
+  renderItem: TemplateRenderItem<TItem>;
   keyExtractor: (item: TItem, index: number) => string;
   initialCategory?: TCategory | 'all';
+  /** Row height hint for the FlatList fallback's getItemLayout. FlashList v2 measures rows itself. */
   estimatedItemSize?: number;
   searchPlaceholder?: string;
 }
@@ -218,12 +230,7 @@ function TemplateModal<TItem, TCategory extends string>({
               data={filteredItems}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
-              style={styles.templatesScroll}
               contentContainerStyle={styles.templatesContent}
-              initialNumToRender={6}
-              maxToRenderPerBatch={6}
-              updateCellsBatchingPeriod={50}
-              estimatedItemSize={estimatedItemSize}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             />

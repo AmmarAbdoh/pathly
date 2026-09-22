@@ -114,6 +114,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         onClearTemplate();
       }
     }
+  // Intentionally keyed on the template's identity only: re-running whenever the
+  // templateData object changes would overwrite edits made after it was applied.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateData?.id, templateData?.icon, onClearTemplate]);
 
   // Dropdown items
@@ -203,9 +206,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     }
     
     if (period === 'custom' && !customPeriodDays.trim()) {
-      newErrors.customPeriodDays = 'Custom period days is required';
+      newErrors.customPeriodDays = t.validation.customPeriodRequired;
     } else if (period === 'custom' && (isNaN(parseFloat(customPeriodDays)) || parseFloat(customPeriodDays) <= 0)) {
-      newErrors.customPeriodDays = 'Custom period must be a positive number';
+      newErrors.customPeriodDays = t.validation.customPeriodPositive;
     }
     
     if (Object.keys(newErrors).length > 0) {
@@ -237,7 +240,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     setErrors({});
     setPendingGoalData(formData);
     setShowConfirmModal(true);
-  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, schedule, t]);
+  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t]);
 
   /**
    * Confirm and add goal
@@ -631,7 +634,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
             {t.goalForm.points} (Optional)
           </Text>
           <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
-            Leave at 0 if you don't want this subgoal to award points
+            {t.goalForm.subgoalPointsHelper}
           </Text>
           <TextInput
             style={inputStyle('points')}

@@ -17,6 +17,8 @@ export interface Translations {
     error: string;
     close: string;
     search: string;
+    clear: string;
+    apply: string;
   };
   tabs: {
     home: string;
@@ -93,6 +95,9 @@ export interface Translations {
     redeemConfirmMessage: string;
     redeemSuccess: string;
     notEnoughPoints: string;
+    saveError: string;
+    redeemError: string;
+    deleteError: string;
     categories: {
       food: string;
       entertainment: string;
@@ -175,6 +180,8 @@ export interface Translations {
     noTrend: string;
   };
   goalForm: {
+    subgoalPointsHelper: string;
+    addError: string;
     title: string;
     titlePlaceholder: string;
     titleLabel: string;
@@ -243,6 +250,11 @@ export interface Translations {
     completed: string;
     streak: string;
     weekStreak: string;
+    paused: string;
+    blocked: string;
+    openHint: string;
+    moveUp: string;
+    moveDown: string;
   };
   goalDetail: {
     notFound: string;
@@ -453,6 +465,8 @@ export interface Translations {
     pointsValid: string;
     pointsMin: string;
     pointsMax: string;
+    customPeriodRequired: string;
+    customPeriodPositive: string;
   };
   achievements: {
     first_goal: { title: string; description: string };
@@ -548,6 +562,26 @@ export interface Translations {
     category: string;
     description: string;
   };
+  schedule: {
+    title: string;
+    everyDay: string;
+    specificDays: string;
+    specificDates: string;
+    dateRange: string;
+    from: string;
+    to: string;
+    everyDays: string;
+    monthlyOnDays: string;
+    monthlyFromTo: string;
+    weekdayShort: string[];
+    weekdayLong: string[];
+    monthlyDates: string;
+    selectWeekdays: string;
+    selectDates: string;
+    selectRange: string;
+    monthlyShort: string;
+    monthlyRangeShort: string;
+  };
 }
 
 export const translations: Record<Language, Translations> = {
@@ -563,6 +597,8 @@ export const translations: Record<Language, Translations> = {
       error: 'Error',
       close: 'Close',
       search: 'Search',
+      clear: 'Clear',
+      apply: 'Apply',
     },
     tabs: {
       home: 'Home',
@@ -639,6 +675,9 @@ export const translations: Record<Language, Translations> = {
       redeemConfirmMessage: 'Are you sure you want to redeem this reward? Points will be deducted from your balance.',
       redeemSuccess: 'Success! 🎉\nReward redeemed! Enjoy your treat!',
       notEnoughPoints: 'Not Enough Points',
+      saveError: 'Failed to save reward',
+      redeemError: 'Failed to redeem reward',
+      deleteError: 'Failed to delete reward',
       categories: {
         food: 'Food',
         entertainment: 'Fun',
@@ -721,6 +760,8 @@ export const translations: Record<Language, Translations> = {
       noTrend: 'No completion trend data yet',
     },
     goalForm: {
+      subgoalPointsHelper: 'Leave at 0 if you do not want this subgoal to award points',
+      addError: 'Failed to add goal',
       title: 'Add a new goal',
       titlePlaceholder: 'Goal title (e.g. Lose Weight)',
       titleLabel: 'Goal title',
@@ -789,6 +830,11 @@ export const translations: Record<Language, Translations> = {
       completed: 'Completed',
       streak: 'streak',
       weekStreak: 'week streak',
+      paused: 'Paused',
+      blocked: 'Blocked',
+      openHint: 'Tap to view and edit goal details',
+      moveUp: 'Move goal up',
+      moveDown: 'Move goal down',
     },
     goalDetail: {
       notFound: 'Goal not found',
@@ -982,6 +1028,8 @@ export const translations: Record<Language, Translations> = {
     },
     validation: {
       invalidNumber: 'Please enter a valid number',
+      customPeriodRequired: 'Custom period days is required',
+      customPeriodPositive: 'Custom period must be a positive number',
       requiredField: 'This field is required',
       titleRequired: 'Title is required',
       titleTooLong: 'Title must be less than 100 characters',
@@ -1115,6 +1163,34 @@ export const translations: Record<Language, Translations> = {
       category: 'Category',
       description: 'Description',
     },
+    schedule: {
+      title: 'Schedule',
+      everyDay: 'Every day',
+      specificDays: 'Specific days',
+      specificDates: 'Specific dates',
+      dateRange: 'Date range',
+      from: 'From',
+      to: 'To',
+      everyDays: 'Every {days}',
+      monthlyOnDays: 'Monthly on day {dates}',
+      monthlyFromTo: 'Monthly from day {start} to {end}',
+      weekdayShort: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+      weekdayLong: [
+        'Sunday',
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+      ],
+      monthlyDates: 'Monthly dates',
+      selectWeekdays: 'Select days of the week:',
+      selectDates: 'Select dates of the month:',
+      selectRange: 'Select date range (e.g., 20-25):',
+      monthlyShort: 'Monthly: day {dates}',
+      monthlyRangeShort: 'Monthly: days {start}-{end}',
+    },
   },
   ar: {
     common: {
@@ -1128,6 +1204,8 @@ export const translations: Record<Language, Translations> = {
       error: 'خطأ',
       close: 'إغلاق',
       search: 'بحث',
+      clear: 'مسح',
+      apply: 'تطبيق',
     },
     tabs: {
       home: 'الرئيسية',
@@ -1204,6 +1282,9 @@ export const translations: Record<Language, Translations> = {
       redeemConfirmMessage: 'هل أنت متأكد أنك تريد استبدال هذه المكافأة؟ سيتم خصم النقاط من رصيدك.',
       redeemSuccess: 'نجح! 🎉\nتم استبدال المكافأة! استمتع بها!',
       notEnoughPoints: 'نقاط غير كافية',
+      saveError: 'فشل حفظ المكافأة',
+      redeemError: 'فشل استبدال المكافأة',
+      deleteError: 'فشل حذف المكافأة',
       categories: {
         food: 'طعام',
         entertainment: 'ترفيه',
@@ -1286,6 +1367,8 @@ export const translations: Record<Language, Translations> = {
       noTrend: 'لا توجد بيانات اتجاه الإنجاز بعد',
     },
     goalForm: {
+      subgoalPointsHelper: 'اتركه 0 إذا كنت لا تريد أن يمنح هذا الهدف الفرعي نقاطاً',
+      addError: 'فشل إضافة الهدف',
       title: 'إضافة هدف جديد',
       titlePlaceholder: 'عنوان الهدف (مثال: فقدان الوزن)',
       titleLabel: 'عنوان الهدف',
@@ -1354,6 +1437,11 @@ export const translations: Record<Language, Translations> = {
       completed: 'مكتمل',
       streak: 'سلسلة',
       weekStreak: 'سلسلة أسبوعية',
+      paused: 'متوقف',
+      blocked: 'محجوب',
+      openHint: 'اضغط لعرض وتعديل تفاصيل الهدف',
+      moveUp: 'تحريك الهدف لأعلى',
+      moveDown: 'تحريك الهدف لأسفل',
     },
     goalDetail: {
       notFound: 'الهدف غير موجود',
@@ -1546,6 +1634,8 @@ export const translations: Record<Language, Translations> = {
       version: 'الإصدار',
     },
     validation: {
+      customPeriodRequired: 'عدد أيام الفترة المخصصة مطلوب',
+      customPeriodPositive: 'يجب أن تكون الفترة المخصصة رقماً موجباً',
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',
@@ -1679,6 +1769,34 @@ export const translations: Record<Language, Translations> = {
       target: 'الهدف',
       category: 'الفئة',
       description: 'الوصف',
+    },
+    schedule: {
+      title: 'الجدول',
+      everyDay: 'كل يوم',
+      specificDays: 'أيام محددة',
+      specificDates: 'تواريخ محددة',
+      dateRange: 'نطاق التواريخ',
+      from: 'من',
+      to: 'إلى',
+      everyDays: 'كل {days}',
+      monthlyOnDays: 'شهرياً في يوم {dates}',
+      monthlyFromTo: 'شهرياً من يوم {start} إلى {end}',
+      weekdayShort: ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'],
+      weekdayLong: [
+        'الأحد',
+        'الإثنين',
+        'الثلاثاء',
+        'الأربعاء',
+        'الخميس',
+        'الجمعة',
+        'السبت',
+      ],
+      monthlyDates: 'تواريخ شهرية',
+      selectWeekdays: 'اختر أيام الأسبوع:',
+      selectDates: 'اختر أيام الشهر:',
+      selectRange: 'اختر نطاق التواريخ (مثال: 20-25):',
+      monthlyShort: 'شهرياً: يوم {dates}',
+      monthlyRangeShort: 'شهرياً: أيام {start}-{end}',
     },
   },
 };

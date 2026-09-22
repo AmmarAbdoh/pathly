@@ -28,6 +28,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function RewardsScreen() {
   const { theme } = useTheme();
@@ -67,7 +68,7 @@ export default function RewardsScreen() {
   const redeemedRewards = getRedeemedRewards();
 
   const rewardSections = useMemo(() => {
-    const sections: Array<{ title: string; data: Reward[] }> = [];
+    const sections: { title: string; data: Reward[] }[] = [];
     if (availableRewards.length > 0) {
       sections.push({ title: t.rewards.availableRewards, data: availableRewards });
     }
@@ -134,8 +135,8 @@ export default function RewardsScreen() {
         await addReward(title, description, cost, selectedIcon);
       }
       closeModal();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save reward');
+    } catch {
+      Alert.alert(t.common.error, t.rewards.saveError);
     }
   };
 
@@ -151,9 +152,9 @@ export default function RewardsScreen() {
     if (confirmRedeemId) {
       try {
         await redeemReward(confirmRedeemId);
-        Alert.alert('Success! 🎉', 'Reward redeemed! Enjoy your treat!');
-      } catch (error) {
-        Alert.alert('Error', 'Failed to redeem reward');
+        Alert.alert(t.common.success, t.rewards.redeemSuccess);
+      } catch {
+        Alert.alert(t.common.error, t.rewards.redeemError);
       }
       setConfirmRedeemId(null);
     }
@@ -163,8 +164,8 @@ export default function RewardsScreen() {
     if (confirmDeleteId) {
       try {
         await removeReward(confirmDeleteId);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to delete reward');
+      } catch {
+        Alert.alert(t.common.error, t.rewards.deleteError);
       }
       setConfirmDeleteId(null);
     }
@@ -238,7 +239,10 @@ export default function RewardsScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      edges={['top']}
+    >
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.colors.card, borderBottomColor: theme.colors.border }]}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t.rewards.title}</Text>
@@ -456,7 +460,7 @@ export default function RewardsScreen() {
         onClose={() => setShowTemplates(false)}
         onSelectTemplate={handleSelectTemplate}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -470,7 +474,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    paddingTop: 60,
     borderBottomWidth: 1,
   },
   headerTitle: {

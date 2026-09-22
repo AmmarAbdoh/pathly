@@ -11,7 +11,7 @@ import { GoalCategory, GoalTemplate } from '@/src/types';
 import { customTemplatesStorage } from '@/src/utils/storage';
 import { Ionicons } from '@expo/vector-icons';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface TemplatesModalProps {
   visible: boolean;
@@ -29,7 +29,6 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
         ...theme.shadows.small,
       },
     ]}
-    renderToHardwareTextureAndroid={Platform.OS === 'android'}
     onPress={onSelect}
     activeOpacity={0.7}
   >
@@ -84,6 +83,8 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
     </View>
   </TouchableOpacity>
 ));
+
+TemplateCard.displayName = 'TemplateCard';
 
 function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalProps) {
   const { theme } = useTheme();

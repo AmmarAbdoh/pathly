@@ -3,6 +3,7 @@
  * Reusable modal for confirmation dialogs
  */
 
+import { DURATION, SPRING } from '@/src/constants/animation';
 import { useTheme } from '@/src/context/ThemeContext';
 import React, { memo } from 'react';
 import {
@@ -13,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut, ZoomIn, ZoomOut } from 'react-native-reanimated';
 
 interface ConfirmationModalProps {
   visible: boolean;
@@ -48,15 +50,26 @@ const ConfirmationModal = memo<ConfirmationModalProps>(({
       onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <Pressable 
-        style={styles.overlay}
-        onPress={onCancel}
-        accessibilityLabel="Close modal"
+      <Animated.View
+        entering={FadeIn.duration(DURATION.fast)}
+        exiting={FadeOut.duration(DURATION.instant)}
+        style={styles.overlayFill}
       >
-        <Pressable 
-          style={[styles.container, { backgroundColor: theme.colors.card }]}
-          onPress={(e) => e.stopPropagation()}
+        <Pressable
+          style={styles.overlay}
+          onPress={onCancel}
+          accessibilityLabel="Close modal"
         >
+          <Animated.View
+            entering={ZoomIn.springify()
+              .damping(SPRING.gentle.damping)
+              .stiffness(SPRING.gentle.stiffness)}
+            exiting={ZoomOut.duration(DURATION.instant)}
+          >
+            <Pressable
+              style={[styles.container, { backgroundColor: theme.colors.card }]}
+              onPress={(e) => e.stopPropagation()}
+            >
           {/* Title */}
           <Text style={[styles.title, { color: theme.colors.text }]}>
             {title}
@@ -107,9 +120,11 @@ const ConfirmationModal = memo<ConfirmationModalProps>(({
                 {confirmText}
               </Text>
             </TouchableOpacity>
-          </View>
+              </View>
+            </Pressable>
+          </Animated.View>
         </Pressable>
-      </Pressable>
+      </Animated.View>
     </Modal>
   );
 });
@@ -119,6 +134,9 @@ ConfirmationModal.displayName = 'ConfirmationModal';
 export default ConfirmationModal;
 
 const styles = StyleSheet.create({
+  overlayFill: {
+    flex: 1,
+  },
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

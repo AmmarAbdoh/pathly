@@ -38,7 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
  */
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, addGoal, editGoal, addSubgoal, extendDeadline, togglePause, addNote, deleteNote, addDependency, removeDependency, checkDependencies } = useGoals();
+  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, editGoal, addSubgoal, extendDeadline, togglePause, addNote, deleteNote, addDependency, removeDependency, checkDependencies, updateNotificationSettings } = useGoals();
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const router = useRouter();
@@ -47,6 +47,20 @@ export default function GoalDetail() {
     () => goals.find((g) => g.id === Number(id)),
     [goals, id]
   );
+
+  /**
+   * The range the progress slider spans.
+   *
+   * A 'decrease' goal counts down from its starting value to the target, so
+   * its bounds are inverted relative to an 'increase' goal.
+   */
+  const sliderBounds = useMemo(() => {
+    if (!goal) return { min: 0, max: 0 };
+
+    return goal.direction === 'decrease'
+      ? { min: goal.target, max: goal.initialValue || goal.target * 2 }
+      : { min: goal.initialValue || 0, max: goal.target };
+  }, [goal]);
 
   const subgoals = useMemo(
     () => goal ? getSubgoals(goal.id) : [],
@@ -102,9 +116,9 @@ export default function GoalDetail() {
   const [showAddNoteModal, setShowAddNoteModal] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [showDeleteNoteModal, setShowDeleteNoteModal] = useState(false);
-  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(goal?.notificationsEnabled || false);
-  const [notificationTime, setNotificationTime] = useState(goal?.notificationTime || 540); // Default: 9:00 AM
+  // Default: 9:00 AM. Fixed for now - there is no time picker in this screen yet.
+  const [notificationTime] = useState(goal?.notificationTime || 540);
   const [selectedDays, setSelectedDays] = useState<number[]>(goal?.notificationDays || []);
   const [hasNotificationPermission, setHasNotificationPermission] = useState(false);
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
@@ -301,9 +315,7 @@ export default function GoalDetail() {
   const handleIncrement = useCallback(async () => {
     if (!goal) return;
     
-    const minValue = goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0);
-    const maxValue = goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target;
-    const newValue = Math.min(sliderValue + 1, maxValue);
+    const newValue = Math.min(sliderValue + 1, sliderBounds.max);
     
     setSliderValue(newValue);
     setNewProgress(newValue.toString());
@@ -321,7 +333,7 @@ export default function GoalDetail() {
       console.error('Failed to update progress:', error);
       Alert.alert(t.common.error, t.goalDetail.updateError);
     }
-  }, [goal, sliderValue, updateGoal, t, wouldReach100Percent]);
+  }, [goal, sliderValue, sliderBounds, updateGoal, t, wouldReach100Percent]);
 
   /**
    * Handle decrement button (-1)
@@ -329,9 +341,7 @@ export default function GoalDetail() {
   const handleDecrement = useCallback(async () => {
     if (!goal) return;
     
-    const minValue = goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0);
-    const maxValue = goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target;
-    const newValue = Math.max(sliderValue - 1, minValue);
+    const newValue = Math.max(sliderValue - 1, sliderBounds.min);
     
     setSliderValue(newValue);
     setNewProgress(newValue.toString());
@@ -349,7 +359,7 @@ export default function GoalDetail() {
       console.error('Failed to update progress:', error);
       Alert.alert(t.common.error, t.goalDetail.updateError);
     }
-  }, [goal, sliderValue, updateGoal, t, wouldReach100Percent]);
+  }, [goal, sliderValue, sliderBounds, updateGoal, t, wouldReach100Percent]);
 
   /**
    * Handle jump by amount (for quick adjust buttons)
@@ -357,9 +367,7 @@ export default function GoalDetail() {
   const handleJump = useCallback(async (amount: number) => {
     if (!goal) return;
     
-    const minValue = goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0);
-    const maxValue = goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target;
-    const newValue = Math.max(minValue, Math.min(sliderValue + amount, maxValue));
+    const newValue = Math.max(sliderBounds.min, Math.min(sliderValue + amount, sliderBounds.max));
     
     setSliderValue(newValue);
     setNewProgress(newValue.toString());
@@ -377,7 +385,7 @@ export default function GoalDetail() {
       console.error('Failed to update progress:', error);
       Alert.alert(t.common.error, t.goalDetail.updateError);
     }
-  }, [goal, sliderValue, updateGoal, t, wouldReach100Percent]);
+  }, [goal, sliderValue, sliderBounds, updateGoal, t, wouldReach100Percent]);
 
   /**
    * Handle finish goal
@@ -766,12 +774,14 @@ export default function GoalDetail() {
   const renderSubgoalItem = useCallback(
     ({ item }: { item: Goal }) => (
       <GoalCard
+        id={item.id}
         title={item.title}
         progress={item.progress}
         points={item.points}
         subgoalCount={item.subGoals?.length || 0}
         isUltimate={item.isUltimate}
-        onPress={() => handleSubgoalPress(item.id)}
+        isComplete={item.isComplete}
+        onPress={handleSubgoalPress}
       />
     ),
     [handleSubgoalPress]
@@ -930,14 +940,6 @@ export default function GoalDetail() {
   }, [goal, notificationsEnabled, hasNotificationPermission, selectedDays, t]);
 
   /**
-   * Handle notification time change
-   */
-  const handleTimeChange = useCallback((hours: number, minutes: number) => {
-    const timeInMinutes = hours * 60 + minutes;
-    setNotificationTime(timeInMinutes);
-  }, []);
-
-  /**
    * Handle day selection toggle
    */
   const handleDayToggle = useCallback((dayIndex: number) => {
@@ -957,7 +959,6 @@ export default function GoalDetail() {
     if (!goal) return;
 
     try {
-      const { updateNotificationSettings } = useGoals();
       await updateNotificationSettings(
         goal.id,
         notificationsEnabled,
@@ -965,12 +966,11 @@ export default function GoalDetail() {
         selectedDays
       );
       Alert.alert(t.common.success, t.notifications.scheduleSuccess);
-      setShowNotificationSettings(false);
     } catch (error) {
       console.error('Failed to update notification settings:', error);
       Alert.alert(t.common.error, t.notifications.scheduleError);
     }
-  }, [goal, notificationsEnabled, notificationTime, selectedDays, t]);
+  }, [goal, notificationsEnabled, notificationTime, selectedDays, t, updateNotificationSettings]);
 
   /**
    * Test notification
@@ -1178,7 +1178,7 @@ export default function GoalDetail() {
             {progressText}
           </Text>
           <Text style={[styles.percentage, { color: theme.colors.primary }]}>
-            {progressPercentage}% {t.goalDetail.complete}
+            {formatNumber(progressPercentage, language)}% {t.goalDetail.complete}
           </Text>
           {goal.points > 0 && (
             <Text style={[styles.points, { color: theme.colors.primary }]}>
@@ -1386,8 +1386,8 @@ export default function GoalDetail() {
                 </TouchableOpacity>
                 <Slider
                   style={styles.slider}
-                  minimumValue={goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0)}
-                  maximumValue={goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target}
+                  minimumValue={sliderBounds.min}
+                  maximumValue={sliderBounds.max}
                   value={sliderValue}
                   onValueChange={handleSliderChange}
                   onSlidingComplete={handleSliderComplete}

@@ -7,79 +7,53 @@ import { GoalsProvider } from '@/src/context/GoalsContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
 import { RewardsProvider } from '@/src/context/RewardsContext';
 import { ThemeProvider } from '@/src/context/ThemeContext';
-import * as NavigationBar from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
-import React, { useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import React from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 /**
  * Root layout component
- * Wraps entire app with necessary providers
+ * Wraps entire app with necessary providers.
+ *
+ * Provider order matters: Theme reads the language for RTL, and both Goals and
+ * Rewards read the theme, so they must nest inside it.
  */
 export default function RootLayout() {
-  useEffect(() => {
-    // Hide Android navigation bar completely
-    const hideNavigationBar = () => {
-      if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('hidden');
-        NavigationBar.setBehaviorAsync('overlay-swipe');
-      }
-    };
-
-    // Hide immediately on mount
-    hideNavigationBar();
-
-    // Re-hide when app comes to foreground
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        hideNavigationBar();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
   return (
-    <SafeAreaProvider>
-      <LanguageProvider>
-        <ThemeProvider>
-          <GoalsProvider>
-            <RewardsProvider>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: { backgroundColor: 'transparent' },
-                  animation: 'slide_from_right',
-                }}
-              >
-                <Stack.Screen
-                  name="(tabs)"
-                  options={{
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <LanguageProvider>
+          <ThemeProvider>
+            <GoalsProvider>
+              <RewardsProvider>
+                <StatusBar style="auto" />
+                <Stack
+                  screenOptions={{
                     headerShown: false,
+                    contentStyle: { backgroundColor: 'transparent' },
+                    animation: 'slide_from_right',
+                    animationDuration: 220,
+                    gestureEnabled: true,
                   }}
-                />
-                <Stack.Screen
-                  name="goal/[id]"
-                  options={{
-                    headerShown: false,
-                    presentation: 'card',
-                  }}
-                />
-                <Stack.Screen
-                  name="goal/add"
-                  options={{
-                    headerShown: false,
-                    presentation: 'modal',
-                  }}
-                />
-              </Stack>
-            </RewardsProvider>
-          </GoalsProvider>
-        </ThemeProvider>
-      </LanguageProvider>
-    </SafeAreaProvider>
+                >
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="goal/[id]" options={{ presentation: 'card' }} />
+                  <Stack.Screen
+                    name="analytics"
+                    options={{ animation: 'slide_from_bottom' }}
+                  />
+                  <Stack.Screen
+                    name="review"
+                    options={{ animation: 'slide_from_bottom' }}
+                  />
+                </Stack>
+              </RewardsProvider>
+            </GoalsProvider>
+          </ThemeProvider>
+        </LanguageProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

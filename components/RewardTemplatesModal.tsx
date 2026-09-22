@@ -9,7 +9,7 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface RewardTemplatesModalProps {
   visible: boolean;
@@ -70,8 +70,7 @@ export default function RewardTemplatesModal({ visible, onClose, onSelectTemplat
           ...theme.shadows.small,
         },
       ]}
-      renderToHardwareTextureAndroid={Platform.OS === 'android'}
-      onPress={() => handleSelectTemplate(item)}
+        onPress={() => handleSelectTemplate(item)}
       activeOpacity={0.7}
     >
       <View style={styles.templateHeader}>

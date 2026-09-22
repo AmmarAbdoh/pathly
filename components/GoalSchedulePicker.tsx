@@ -16,15 +16,8 @@ interface GoalSchedulePickerProps {
   isRecurring: boolean;
 }
 
-const DAYS_OF_WEEK = [
-  { value: 0, label: 'Sun', fullName: 'Sunday' },
-  { value: 1, label: 'Mon', fullName: 'Monday' },
-  { value: 2, label: 'Tue', fullName: 'Tuesday' },
-  { value: 3, label: 'Wed', fullName: 'Wednesday' },
-  { value: 4, label: 'Thu', fullName: 'Thursday' },
-  { value: 5, label: 'Fri', fullName: 'Friday' },
-  { value: 6, label: 'Sat', fullName: 'Saturday' },
-];
+/** Weekday indices, matching JavaScript's Date.getDay(). Labels come from i18n. */
+const WEEKDAY_INDICES = [0, 1, 2, 3, 4, 5, 6] as const;
 
 export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecurring }: GoalSchedulePickerProps) {
   const { theme } = useTheme();
@@ -86,23 +79,24 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
   };
 
   const getScheduleText = () => {
-    if (!schedule) return 'Every day';
-    
+    if (!schedule) return t.schedule.everyDay;
+
     if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
-      const days = schedule.daysOfWeek.map(d => DAYS_OF_WEEK[d].label).join(', ');
-      return `Every ${days}`;
+      const days = schedule.daysOfWeek.map(d => t.schedule.weekdayShort[d]).join(', ');
+      return t.schedule.everyDays.replace('{days}', days);
     }
-    
+
     if (schedule.datesOfMonth && schedule.datesOfMonth.length > 0) {
-      const dates = schedule.datesOfMonth.join(', ');
-      return `Monthly: day ${dates}`;
+      return t.schedule.monthlyShort.replace('{dates}', schedule.datesOfMonth.join(', '));
     }
-    
+
     if (schedule.dateRangeStart !== undefined && schedule.dateRangeEnd !== undefined) {
-      return `Monthly: days ${schedule.dateRangeStart}-${schedule.dateRangeEnd}`;
+      return t.schedule.monthlyRangeShort
+        .replace('{start}', String(schedule.dateRangeStart))
+        .replace('{end}', String(schedule.dateRangeEnd));
     }
-    
-    return 'Every day';
+
+    return t.schedule.everyDay;
   };
 
   return (
@@ -129,7 +123,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Schedule</Text>
+              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.schedule.title}</Text>
               <TouchableOpacity onPress={() => setShowModal(false)}>
                 <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
@@ -146,7 +140,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                   onPress={() => setScheduleType('none')}
                 >
                   <Text style={[styles.typeButtonText, { color: scheduleType === 'none' ? '#fff' : theme.colors.text }]}>
-                    Every Day
+                    {t.schedule.everyDay}
                   </Text>
                 </TouchableOpacity>
 
@@ -158,7 +152,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                   onPress={() => setScheduleType('weekly')}
                 >
                   <Text style={[styles.typeButtonText, { color: scheduleType === 'weekly' ? '#fff' : theme.colors.text }]}>
-                    Specific Days
+                    {t.schedule.specificDays}
                   </Text>
                 </TouchableOpacity>
 
@@ -170,7 +164,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                   onPress={() => setScheduleType('monthly-dates')}
                 >
                   <Text style={[styles.typeButtonText, { color: scheduleType === 'monthly-dates' ? '#fff' : theme.colors.text }]}>
-                    Monthly Dates
+                    {t.schedule.monthlyDates}
                   </Text>
                 </TouchableOpacity>
 
@@ -182,7 +176,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                   onPress={() => setScheduleType('monthly-range')}
                 >
                   <Text style={[styles.typeButtonText, { color: scheduleType === 'monthly-range' ? '#fff' : theme.colors.text }]}>
-                    Date Range
+                    {t.schedule.dateRange}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -191,28 +185,31 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
               {scheduleType === 'weekly' && (
                 <View style={styles.section}>
                   <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                    Select days of the week:
+                    {t.schedule.selectWeekdays}
                   </Text>
                   <View style={styles.daysGrid}>
-                    {DAYS_OF_WEEK.map(day => (
+                    {WEEKDAY_INDICES.map(day => (
                       <TouchableOpacity
-                        key={day.value}
+                        key={day}
                         style={[
                           styles.dayButton,
                           {
-                            backgroundColor: selectedDays.includes(day.value) ? theme.colors.primary : theme.colors.card,
+                            backgroundColor: selectedDays.includes(day) ? theme.colors.primary : theme.colors.card,
                             borderColor: theme.colors.border,
                           },
                         ]}
-                        onPress={() => handleDayToggle(day.value)}
+                        onPress={() => handleDayToggle(day)}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: selectedDays.includes(day) }}
+                        accessibilityLabel={t.schedule.weekdayLong[day]}
                       >
                         <Text
                           style={[
                             styles.dayButtonText,
-                            { color: selectedDays.includes(day.value) ? '#fff' : theme.colors.text },
+                            { color: selectedDays.includes(day) ? '#fff' : theme.colors.text },
                           ]}
                         >
-                          {day.label}
+                          {t.schedule.weekdayShort[day]}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -224,7 +221,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
               {scheduleType === 'monthly-dates' && (
                 <View style={styles.section}>
                   <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                    Select dates of the month:
+                    {t.schedule.selectDates}
                   </Text>
                   <View style={styles.datesGrid}>
                     {Array.from({ length: 31 }, (_, i) => i + 1).map(date => (
@@ -257,11 +254,11 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
               {scheduleType === 'monthly-range' && (
                 <View style={styles.section}>
                   <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                    Select date range (e.g., 20-25):
+                    {t.schedule.selectRange}
                   </Text>
                   <View style={styles.rangeInputs}>
                     <View style={styles.rangeInput}>
-                      <Text style={[styles.rangeLabel, { color: theme.colors.textSecondary }]}>From</Text>
+                      <Text style={[styles.rangeLabel, { color: theme.colors.textSecondary }]}>{t.schedule.from}</Text>
                       <TextInput
                         style={[styles.rangeTextInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
                         value={rangeStart}
@@ -274,7 +271,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                     </View>
                     <Text style={[styles.rangeSeparator, { color: theme.colors.text }]}>-</Text>
                     <View style={styles.rangeInput}>
-                      <Text style={[styles.rangeLabel, { color: theme.colors.textSecondary }]}>To</Text>
+                      <Text style={[styles.rangeLabel, { color: theme.colors.textSecondary }]}>{t.schedule.to}</Text>
                       <TextInput
                         style={[styles.rangeTextInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
                         value={rangeEnd}
@@ -295,7 +292,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                 style={[styles.applyButton, { backgroundColor: theme.colors.primary }]}
                 onPress={handleApply}
               >
-                <Text style={styles.applyButtonText}>Apply</Text>
+                <Text style={styles.applyButtonText}>{t.common.apply}</Text>
               </TouchableOpacity>
             </View>
           </View>
