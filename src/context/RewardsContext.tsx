@@ -35,15 +35,10 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load rewards on mount
-  useEffect(() => {
-    loadRewards();
-  }, []);
-
   /**
    * Load rewards from storage
    */
-  const loadRewards = async () => {
+  const loadRewards = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -55,14 +50,20 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Load rewards on mount
+  useEffect(() => {
+    void loadRewards();
+  }, [loadRewards]);
+
 
   /**
    * Refresh rewards from storage
    */
   const refreshRewards = useCallback(async () => {
     await loadRewards();
-  }, []);
+  }, [loadRewards]);
 
   /**
    * Add a new reward

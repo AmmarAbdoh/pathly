@@ -58,7 +58,13 @@ export default function QuickAddGoal() {
         DEFAULT_POINTS,
         DEFAULT_PERIOD
       );
-      router.back();
+      // Deep-linking straight to /goal/add leaves nothing to go back to, and
+      // router.back() would silently no-op and strand the user on the form.
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)/home');
+      }
     } catch {
       Alert.alert(t.common.error, t.goalForm.addError);
     } finally {

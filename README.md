@@ -7,9 +7,9 @@ subgoals, track progress, earn points, and cash them in for rewards you set your
 your data never leaves your device.
 
 ![Platform](https://img.shields.io/badge/platform-iOS%20%7C%20Android-blue)
-![React Native](https://img.shields.io/badge/React%20Native-0.81.5-61DAFB?logo=react)
-![Expo](https://img.shields.io/badge/Expo-SDK%2054-000020?logo=expo)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)
+![React Native](https://img.shields.io/badge/React%20Native-0.86-61DAFB?logo=react)
+![Expo](https://img.shields.io/badge/Expo-SDK%2057-000020?logo=expo)
+![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript)
 
 ---
 
@@ -112,12 +112,12 @@ pathly/
 
 ## 🛠️ Tech Stack
 
-- **React Native 0.81** + **Expo SDK 54** (New Architecture enabled)
+- **React Native 0.86** + **Expo SDK 57** (New Architecture)
 - **TypeScript** in strict mode
 - **Expo Router** for file-based navigation
 - **React Context** + **AsyncStorage** for state and persistence
-- **Reanimated 4** for UI-thread animations
-- **Jest** + **@testing-library/react-native** — 303 tests
+- **Reanimated 4.5** for UI-thread animations
+- **Jest** + **@testing-library/react-native** — 322 tests
 
 ---
 

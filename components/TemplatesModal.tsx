@@ -100,16 +100,13 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
     }
   }, []);
 
-  // Load custom templates when modal opens
+  // Load custom templates when the modal opens. Deliberately gated on
+  // `visible` - there is no reason to hit storage while it is closed.
   useEffect(() => {
     if (visible) {
-      loadCustomTemplates();
+      void loadCustomTemplates();
     }
   }, [visible, loadCustomTemplates]);
-
-  useEffect(() => {
-    loadCustomTemplates();
-  }, [loadCustomTemplates]);
 
   const CATEGORIES: { key: GoalCategory | 'custom'; label: string; icon: string }[] = useMemo(() => [
     { key: 'custom' as const, label: 'My Templates', icon: '⭐' },

@@ -990,7 +990,11 @@ export default function GoalDetail() {
    * Navigate back
    */
   const handleBack = useCallback(() => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/home');
+    }
   }, [router]);
 
   // Memoized styles
