@@ -107,15 +107,13 @@ describe('GoalsContext: loading', () => {
   });
 
   it('reports a load failure and stops loading', async () => {
-    // goalsStorage swallows read errors, so fail the lifetime-points read,
-    // which the provider does itself.
     await seed([makeGoal()]);
-    getItem.mockImplementationOnce(async () => JSON.stringify([makeGoal()]));
-    getItem.mockRejectedValueOnce(disk);
+    getItem.mockRejectedValueOnce(disk); // the goals read
 
     const { result } = await renderGoals();
 
     expect(result.current.error).toBe('Failed to load goals');
+    expect(result.current.storageError).toBe('load');
   });
 
   it('refuses to be used outside its provider', () => {
@@ -236,35 +234,28 @@ describe('GoalsContext: malformed input', () => {
   });
 });
 
-describe('GoalsContext: linked rewards', () => {
-  it('still completes the goal when the linked reward cannot be redeemed', async () => {
-    await AsyncStorage.setItem(REWARDS_KEY, '{corrupt');
-    await seed([makeGoal({ linkedRewardId: 3 })]);
+// Linked-reward redemption is RewardsContext's job; see rewards-context.test.
+describe('GoalsContext: completion listeners', () => {
+  it('tells listeners about a first completion only, and survives one that throws', async () => {
+    await seed([makeGoal()]);
     const { result } = await renderGoals();
+    const failing = jest.fn(async () => {
+      throw disk;
+    });
+    const listener = jest.fn();
 
+    act(() => {
+      result.current.onGoalCompleted(failing);
+      result.current.onGoalCompleted(listener);
+    });
     await act(async () => {
+      await result.current.finishGoal(1);
       await result.current.finishGoal(1);
     });
 
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener.mock.calls[0][0]).toMatchObject({ id: 1 });
     expect(result.current.goals[0].isComplete).toBe(true);
-    expect(result.current.lifetimePointsEarned).toBe(50);
-  });
-
-  it('leaves an already-redeemed or missing linked reward alone', async () => {
-    await AsyncStorage.setItem(
-      REWARDS_KEY,
-      JSON.stringify([{ id: 3, title: 'r', isRedeemed: true, redeemedAt: 1 }])
-    );
-    await seed([makeGoal({ id: 1, linkedRewardId: 3 }), makeGoal({ id: 2, linkedRewardId: 99 })]);
-    const { result } = await renderGoals();
-
-    await act(async () => {
-      await result.current.finishGoal(1);
-      await result.current.finishGoal(2);
-    });
-
-    const rewards = JSON.parse((await AsyncStorage.getItem(REWARDS_KEY))!);
-    expect(rewards).toEqual([{ id: 3, title: 'r', isRedeemed: true, redeemedAt: 1 }]);
   });
 
   it('archives rather than deletes on removeGoal', async () => {
@@ -342,7 +333,11 @@ describe('GoalsContext: notification settings', () => {
 describe('RewardsContext: failures', () => {
   async function renderRewards() {
     const view = renderHook(() => useRewards(), {
-      wrapper: ({ children }) => <RewardsProvider>{children}</RewardsProvider>,
+      wrapper: ({ children }) => (
+        <GoalsProvider>
+          <RewardsProvider>{children}</RewardsProvider>
+        </GoalsProvider>
+      ),
     });
     await waitFor(() => expect(view.result.current.isLoading).toBe(false));
     return view;
@@ -361,7 +356,10 @@ describe('RewardsContext: failures', () => {
         REWARDS_KEY,
         JSON.stringify([{ id: 1, title: 'r', description: '', pointsCost: 1, icon: '🎁', createdAt: 1, isRedeemed: false }])
       );
+      // So GoalsProvider's first load has nothing to write.
+      await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '0');
       const { result } = await renderRewards();
+      const before = result.current.rewards;
       setItem.mockRejectedValueOnce(disk);
 
       await act(async () => {
@@ -369,6 +367,7 @@ describe('RewardsContext: failures', () => {
       });
 
       expect(result.current.error).toBe(message);
+      expect(result.current.rewards).toEqual(before);
     });
   }
 

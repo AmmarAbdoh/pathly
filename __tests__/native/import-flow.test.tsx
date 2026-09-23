@@ -6,9 +6,10 @@
 import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
 import { RewardsProvider, useRewards } from '@/src/context/RewardsContext';
+import { useImportBackup } from '@/src/hooks/use-import-backup';
 import type { Goal, Reward } from '@/src/types';
 import { generateJSONExport, parseJSONImport } from '@/src/utils/export-data';
-import { buildImport, type ImportMode } from '@/src/utils/import-data';
+import { type ImportMode } from '@/src/utils/import-data';
 import * as notifications from '@/src/utils/notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
@@ -23,7 +24,8 @@ const SAVE_DEBOUNCE_MS = 400;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const disk = new Error('disk full');
 const setItem = AsyncStorage.setItem as jest.Mock;
-const cancelled = notifications.cancelGoalNotifications as jest.Mock;
+const realSetItem = setItem.getMockImplementation()!;
+const cancelled= notifications.cancelGoalNotifications as jest.Mock;
 
 const goal = (overrides: Partial<Goal> = {}): Goal =>
   ({
@@ -63,13 +65,16 @@ async function seed(goals: Goal[], rewards: Reward[] = [], lifetime = 0) {
 }
 
 async function renderApp() {
-  const view = renderHook(() => ({ goals: useGoals(), rewards: useRewards() }), {
-    wrapper: ({ children }) => (
-      <GoalsProvider>
-        <RewardsProvider>{children}</RewardsProvider>
-      </GoalsProvider>
-    ),
-  });
+  const view = renderHook(
+    () => ({ goals: useGoals(), rewards: useRewards(), importBackup: useImportBackup() }),
+    {
+      wrapper: ({ children }) => (
+        <GoalsProvider>
+          <RewardsProvider>{children}</RewardsProvider>
+        </GoalsProvider>
+      ),
+    }
+  );
   await waitFor(() => {
     expect(view.result.current.goals.isLoading).toBe(false);
     expect(view.result.current.rewards.isLoading).toBe(false);
@@ -85,15 +90,8 @@ async function importFile(
 ) {
   const parsed = parseJSONImport(json);
   expect(parsed.success).toBe(true);
-  const { goals, rewards } = app.current;
-  const next = buildImport(
-    { goals: goals.goals, rewards: rewards.rewards, lifetimePoints: goals.lifetimePointsEarned },
-    parsed.data!,
-    mode
-  );
   await act(async () => {
-    await goals.replaceAllGoals(next.goals, next.lifetimePoints);
-    await rewards.replaceAllRewards(next.rewards);
+    await app.current.importBackup(parsed.data!, mode);
   });
 }
 
@@ -107,6 +105,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   consoleError.mockRestore();
+  setItem.mockImplementation(realSetItem);
 });
 
 describe('replaceAllGoals', () => {
@@ -294,6 +293,32 @@ describe('export, then import', () => {
     expect(find('Journal').linkedRewardId).toBe(treat.id);
 
     expect(target.result.current.goals.lifetimePointsEarned).toBe(215);
+  });
+
+  // Regression: goals (with points) were applied, then rewards; if the
+  // rewards write failed the user was told the import failed although half of
+  // it had landed - and a retried Merge then imported the goals twice.
+  it('applies all of a backup or none of it', async () => {
+    await seed([goal({ id: 1, title: 'Mine' })], [reward({ id: 2, title: 'My treat' })], 40);
+    const target = await renderApp();
+    const backup = generateJSONExport(
+      [goal({ id: 5, title: 'Backed up', isComplete: true })],
+      [reward({ id: 6, title: 'Backed-up treat' })],
+      100
+    );
+    setItem.mockImplementation(async (key: string, value: string) => {
+      if (key === STORAGE_KEYS.GOALS) throw disk;
+      return realSetItem(key, value);
+    });
+
+    await expect(importFile(target.result, backup, 'merge')).rejects.toThrow();
+
+    const { goals, rewards } = target.result.current;
+    expect(goals.goals.map((g) => g.title)).toEqual(['Mine']);
+    expect(goals.lifetimePointsEarned).toBe(40);
+    expect(rewards.rewards.map((r) => r.title)).toEqual(['My treat']);
+    const storedRewards: Reward[] = JSON.parse((await AsyncStorage.getItem(REWARDS_KEY))!);
+    expect(storedRewards.map((r) => r.title)).toEqual(['My treat']);
   });
 
   it('adds everything alongside existing data with Merge, keeping the balance additive', async () => {

@@ -161,10 +161,13 @@ export function getNextOccurrence(goal: Goal, fromDate: Date = new Date()): Date
     const currentDate = today.getDate();
     const sortedDates = [...schedule.datesOfMonth].sort((a, b) => a - b);
 
-    // Find next date in current month
-    const nextDateThisMonth = sortedDates.find(date => date > currentDate);
+    // Find next date in current month - one this month actually has. On
+    // Apr 20 with [10, 31], April has no 31st; taking it anyway meant "the next
+    // month with a 31st", May 31, passing over May 10.
+    const daysThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const nextDateThisMonth = sortedDates.find(date => date > currentDate && date <= daysThisMonth);
     if (nextDateThisMonth !== undefined) {
-      return nextDateWithDay(today.getFullYear(), today.getMonth(), nextDateThisMonth);
+      return new Date(today.getFullYear(), today.getMonth(), nextDateThisMonth);
     }
 
     // Otherwise, the earliest date in the next month that has it. Mutating

@@ -6,11 +6,16 @@
  * GoalsContext used to record these failures in state that nothing rendered,
  * so a failed write was invisible: the change looked saved, stayed in memory,
  * and was gone on the next launch.
+ *
+ * Covers both stores. Goals can fail to save (queued, retried) or to load;
+ * rewards only report a failed load here, because a failed reward write is
+ * undone and reported by the screen that made it.
  */
 
 import { DURATION } from '@/src/constants/animation';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
+import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useState } from 'react';
@@ -19,7 +24,13 @@ import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function StorageErrorBanner() {
-  const { storageError, retryStorage, dismissStorageError } = useGoals();
+  const { storageError: goalsError, retryStorage, dismissStorageError: dismissGoalsError } =
+    useGoals();
+  const {
+    storageError: rewardsError,
+    refreshRewards,
+    dismissStorageError: dismissRewardsError,
+  } = useRewards();
   const { t } = useLanguage();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -28,18 +39,34 @@ export default function StorageErrorBanner() {
   const handleRetry = useCallback(async () => {
     setIsRetrying(true);
     try {
-      await retryStorage();
+      // Independent stores: retry whichever failed.
+      await Promise.all([
+        goalsError ? retryStorage() : null,
+        rewardsError ? refreshRewards() : null,
+      ]);
     } finally {
       setIsRetrying(false);
     }
-  }, [retryStorage]);
+  }, [goalsError, rewardsError, retryStorage, refreshRewards]);
 
-  if (!storageError) {
+  const handleDismiss = useCallback(() => {
+    dismissGoalsError();
+    dismissRewardsError();
+  }, [dismissGoalsError, dismissRewardsError]);
+
+  // A failed load comes first: until it is fixed, nothing is being saved.
+  const message =
+    goalsError === 'load'
+      ? t.storageErrors.loadFailed
+      : rewardsError === 'load'
+        ? t.storageErrors.rewardsLoadFailed
+        : goalsError === 'save'
+          ? t.storageErrors.saveFailed
+          : null;
+
+  if (!message) {
     return null;
   }
-
-  const message =
-    storageError === 'load' ? t.storageErrors.loadFailed : t.storageErrors.saveFailed;
 
   return (
     <Animated.View
@@ -74,7 +101,7 @@ export default function StorageErrorBanner() {
         </Pressable>
 
         <Pressable
-          onPress={dismissStorageError}
+          onPress={handleDismiss}
           accessibilityRole="button"
           accessibilityLabel={t.common.close}
           hitSlop={8}

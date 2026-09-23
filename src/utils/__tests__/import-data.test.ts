@@ -244,17 +244,37 @@ describe('links between records', () => {
     expect(next.rewards[0].linkedToGoalId).toBeUndefined();
   });
 
-  it('makes a parent list exactly the subgoals that point back at it', () => {
+  it('drops a listed subgoal that points at a different parent', () => {
     const next = buildImport(
       empty,
       file({
         goals: [
-          // Lists child 3 (which points elsewhere) and omits child 4 (which points here).
           goal({ id: 1, title: 'Parent', subGoals: [2, 3] }),
           goal({ id: 2, title: 'Mine', parentId: 1 }),
           goal({ id: 3, title: 'Not mine', parentId: 5 }),
-          goal({ id: 4, title: 'Also mine', parentId: 1 }),
-          goal({ id: 5, title: 'Other parent' }),
+          goal({ id: 5, title: 'Other parent', subGoals: [3] }),
+        ],
+      }),
+      'replace',
+      NOW
+    );
+
+    expect(byTitle(next.goals, 'Parent').subGoals).toEqual([byTitle(next.goals, 'Mine').id]);
+    expect(byTitle(next.goals, 'Other parent').subGoals).toEqual([byTitle(next.goals, 'Not mine').id]);
+  });
+
+  // Regression: import re-listed every child that pointed at a parent. But
+  // archiving a subgoal takes it off its parent's list on purpose (keeping its
+  // parentId), so a round trip re-attached it: the parent's progress dropped,
+  // and archiving the parent swept the old subgoal up with it.
+  it('keeps an archived subgoal detached from its parent', () => {
+    const next = buildImport(
+      empty,
+      file({
+        goals: [
+          goal({ id: 1, title: 'Parent', isUltimate: true, subGoals: [2] }),
+          goal({ id: 2, title: 'Done', parentId: 1, current: 10, isComplete: true }),
+          goal({ id: 3, title: 'Archived', parentId: 1, isArchived: true, archivedAt: 5 }),
         ],
       }),
       'replace',
@@ -262,8 +282,9 @@ describe('links between records', () => {
     );
 
     const parent = byTitle(next.goals, 'Parent');
-    expect(parent.subGoals).toEqual([byTitle(next.goals, 'Mine').id, byTitle(next.goals, 'Also mine').id]);
-    expect(byTitle(next.goals, 'Other parent').subGoals).toEqual([byTitle(next.goals, 'Not mine').id]);
+    expect(parent.subGoals).toEqual([byTitle(next.goals, 'Done').id]);
+    expect(parent.progress).toBe(100);
+    expect(byTitle(next.goals, 'Archived').parentId).toBe(parent.id);
   });
 
   // A malformed file with parent cycles made progress calculation recurse
@@ -392,11 +413,99 @@ describe('repairing untrustworthy fields', () => {
     expect(kept).toMatchObject({ direction: 'decrease', period: 'yearly', progress: 50 });
   });
 
+  // Regression: fields not explicitly repaired were spread from the file
+  // unchecked. An object where a string belongs is saved, then crashes the
+  // screen that renders it - on every launch.
+  it('drops values of the wrong type instead of saving them', () => {
+    const hostile = {
+      ...goal(),
+      icon: {},
+      description: ['not', 'text'],
+      category: 'nonsense',
+      completedAt: 'last week',
+      periodStartDate: 'soon',
+      isPaused: 'yes',
+      currentStreak: -3,
+      sortOrder: '1',
+      schedule: 'mondays',
+      notificationTime: 'nine',
+      notificationDays: [1, 9, 'x', 1],
+      injected: { anything: true },
+    } as unknown as Goal;
+
+    const [repaired] = buildImport(empty, file({ goals: [hostile] }), 'replace', NOW).goals;
+
+    expect(repaired.icon).toBeUndefined();
+    expect(repaired.description).toBeUndefined();
+    expect(repaired.category).toBeUndefined();
+    expect(repaired.completedAt).toBeUndefined();
+    expect(repaired.periodStartDate).toBe(repaired.createdAt);
+    expect(repaired.isPaused).toBeUndefined();
+    expect(repaired.currentStreak).toBeUndefined();
+    expect(repaired.sortOrder).toBeUndefined();
+    expect(repaired.schedule).toBeUndefined();
+    expect(repaired.notificationTime).toBeUndefined();
+    expect(repaired.notificationDays).toEqual([1]);
+    expect(repaired).not.toHaveProperty('injected');
+  });
+
+  it('keeps the valid parts of a schedule and a reminder time', () => {
+    const [kept] = buildImport(
+      empty,
+      file({
+        goals: [
+          {
+            ...goal(),
+            schedule: { daysOfWeek: [1, 7, 3, 1], datesOfMonth: [0, 15], dateRangeStart: 25, dateRangeEnd: 20 },
+            notificationTime: 540,
+            category: 'health',
+          } as Goal,
+        ],
+      }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(kept.schedule).toEqual({ daysOfWeek: [1, 3], datesOfMonth: [15] });
+    expect(kept.notificationTime).toBe(540);
+    expect(kept.category).toBe('health');
+  });
+
+  it('keeps a valid date range', () => {
+    const [kept] = buildImport(
+      empty,
+      file({ goals: [goal({ schedule: { dateRangeStart: 20, dateRangeEnd: 25 } })] }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(kept.schedule).toEqual({ dateRangeStart: 20, dateRangeEnd: 25 });
+  });
+
+  it('gives a note without a date the import time', () => {
+    const [kept] = buildImport(
+      empty,
+      file({ goals: [{ ...goal(), notes: [{ id: 'n', text: 'hi' }] } as unknown as Goal] }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(kept.notes).toEqual([{ id: 'n', text: 'hi', createdAt: NOW }]);
+  });
+
   it('fills in reward defaults', () => {
     const broken = { ...reward(), description: undefined, icon: 3, createdAt: 'yesterday' } as unknown as Reward;
     const [repaired] = buildImport(empty, file({ rewards: [broken] }), 'replace', NOW).rewards;
 
     expect(repaired).toMatchObject({ description: '', icon: '🎁', createdAt: NOW, isRedeemed: false });
+  });
+
+  it('drops a reward field of the wrong type', () => {
+    const broken = { ...reward(), redeemedAt: 'today', extra: 1 } as unknown as Reward;
+    const [repaired] = buildImport(empty, file({ rewards: [broken] }), 'replace', NOW).rewards;
+
+    expect(repaired.redeemedAt).toBeUndefined();
+    expect(repaired).not.toHaveProperty('extra');
   });
 });
 
@@ -425,6 +534,27 @@ describe('lifetime points', () => {
     );
     expect(next.lifetimePoints).toBe(65);
   });
+
+  // Regression: a negative total was accepted - lowering a total that never
+  // decreases, or making the balance negative.
+  it('does not trust a negative total, deriving one instead', () => {
+    const next = buildImport(
+      current,
+      file({ goals: [goal({ isComplete: true, points: 25 })], lifetimePoints: -500 }),
+      'merge',
+      NOW
+    );
+    expect(next.lifetimePoints).toBe(65);
+  });
+
+  // Regression: the total was derived from the raw goals, where a recurring
+  // goal without points gave NaN - saved as "NaN" and read back every launch.
+  it('derives from the repaired goals, never producing NaN', () => {
+    const noPoints = { ...goal({ isRecurring: true, completionHistory: [1, 2] }), points: undefined } as unknown as Goal;
+    const next = buildImport(current, file({ goals: [noPoints] }), 'merge', NOW);
+
+    expect(next.lifetimePoints).toBe(40);
+  });
 });
 
 describe('deriveLifetimePoints', () => {
@@ -441,5 +571,14 @@ describe('deriveLifetimePoints', () => {
 
   it('ignores a non-numeric points value', () => {
     expect(deriveLifetimePoints([goal({ isComplete: true, points: 'lots' as unknown as number })])).toBe(0);
+  });
+
+  it('ignores a recurring goal with no usable points', () => {
+    expect(
+      deriveLifetimePoints([
+        { ...goal({ isRecurring: true, completionHistory: [1] }), points: undefined } as unknown as Goal,
+        goal({ isRecurring: true, completionHistory: [1], points: -5 }),
+      ])
+    ).toBe(0);
   });
 });

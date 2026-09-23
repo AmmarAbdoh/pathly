@@ -271,6 +271,10 @@ export interface Translations {
     openHint: string;
     moveUp: string;
     moveDown: string;
+    a11yUltimate: string;
+    a11yProgress: string; // {percent}
+    a11ySubgoals: string; // {completed} {total}
+    a11ySeparator: string;
   };
   goalDetail: {
     notFound: string;
@@ -592,6 +596,7 @@ export interface Translations {
   storageErrors: {
     saveFailed: string;
     loadFailed: string;
+    rewardsLoadFailed: string;
     retry: string;
   };
   schedule: {
@@ -881,6 +886,10 @@ export const translations: Record<Language, Translations> = {
       openHint: 'Tap to view and edit goal details',
       moveUp: 'Move goal up',
       moveDown: 'Move goal down',
+      a11yUltimate: 'Ultimate goal',
+      a11yProgress: '{percent}% complete',
+      a11ySubgoals: '{completed} of {total} subgoals complete',
+      a11ySeparator: ', ',
     },
     goalDetail: {
       notFound: 'Goal not found',
@@ -1218,6 +1227,7 @@ export const translations: Record<Language, Translations> = {
     storageErrors: {
       saveFailed: "Your latest changes couldn't be saved. They're kept on this screen; tap Retry.",
       loadFailed: "Your goals couldn't be loaded. Nothing will be saved until they load - tap Retry.",
+      rewardsLoadFailed: "Your rewards couldn't be loaded. They can't be changed until they load - tap Retry.",
       retry: 'Retry',
     },
     schedule: {
@@ -1513,6 +1523,10 @@ export const translations: Record<Language, Translations> = {
       openHint: 'اضغط لعرض وتعديل تفاصيل الهدف',
       moveUp: 'تحريك الهدف لأعلى',
       moveDown: 'تحريك الهدف لأسفل',
+      a11yUltimate: 'هدف أسمى',
+      a11yProgress: 'مكتمل بنسبة {percent}٪',
+      a11ySubgoals: 'اكتمل {completed} من {total} أهداف فرعية',
+      a11ySeparator: '، ',
     },
     goalDetail: {
       notFound: 'الهدف غير موجود',
@@ -1850,6 +1864,7 @@ export const translations: Record<Language, Translations> = {
     storageErrors: {
       saveFailed: 'تعذّر حفظ آخر تغييراتك. ما زالت محفوظة في هذه الشاشة؛ اضغط إعادة المحاولة.',
       loadFailed: 'تعذّر تحميل أهدافك. لن يُحفظ أي شيء حتى يتم تحميلها - اضغط إعادة المحاولة.',
+      rewardsLoadFailed: 'تعذّر تحميل مكافآتك. لا يمكن تعديلها حتى يتم تحميلها - اضغط إعادة المحاولة.',
       retry: 'إعادة المحاولة',
     },
     schedule: {

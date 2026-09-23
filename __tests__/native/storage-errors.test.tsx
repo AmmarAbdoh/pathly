@@ -4,9 +4,10 @@
  */
 
 import StorageErrorBanner from '@/components/StorageErrorBanner';
-import { STORAGE_KEYS } from '@/src/constants/storage-keys';
+import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
+import { RewardsProvider } from '@/src/context/RewardsContext';
 import { ThemeProvider } from '@/src/context/ThemeContext';
 import { translations } from '@/src/i18n/translations';
 import type { Goal } from '@/src/types';
@@ -63,20 +64,35 @@ const realGetItem = getItem.getMockImplementation()!;
 const realSetItem = setItem.getMockImplementation()!;
 
 /**
- * Fail the provider's own lifetime-points read, which makes the load fail.
+ * Fail the next read of `key` - by default the goals list, which makes the
+ * load fail.
  *
  * Keyed rather than a one-shot `mockRejectedValueOnce`: other providers
  * (language, theme) also read storage on mount, and would consume it first.
  */
-function failNextLoad() {
+function failNextLoad(key: string = STORAGE_KEYS.GOALS) {
   let armed = true;
-  getItem.mockImplementation(async (key: string) => {
-    if (armed && key === STORAGE_KEYS.LIFETIME_POINTS) {
+  getItem.mockImplementation(async (readKey: string) => {
+    if (armed && readKey === key) {
       armed = false;
       throw disk;
     }
-    return realGetItem(key);
+    return realGetItem(readKey);
   });
+}
+
+/** Fail every write of `key` until `recover()` is called. */
+function failWrites(key: string) {
+  let failing = true;
+  setItem.mockImplementation(async (writeKey: string, value: string) => {
+    if (failing && writeKey === key) throw disk;
+    return realSetItem(writeKey, value);
+  });
+  return {
+    recover: () => {
+      failing = false;
+    },
+  };
 }
 
 let consoleError: jest.SpyInstance;
@@ -163,10 +179,67 @@ describe('failed saves', () => {
     expect(result.current.storageError).toBeNull();
   });
 
+  // Regression: refresh flushed, and when that flush failed it reloaded
+  // anyway - putting the older goals from disk over the unsaved ones and
+  // dropping them from the retry queue. With points written separately (and
+  // never taken back), finishing the reverted goal again paid out twice.
+  it('keeps unsaved changes when refreshed while saves are failing', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    const storage = failWrites(STORAGE_KEYS.GOALS);
+
+    await act(async () => {
+      await result.current.finishGoal(1); // +50, written now; the goal is queued
+    });
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+
+    expect(result.current.goals[0].isComplete).toBe(true);
+    expect(result.current.storageError).toBe('save');
+
+    await act(async () => {
+      await result.current.finishGoal(1);
+    });
+    expect(result.current.lifetimePointsEarned).toBe(50);
+
+    storage.recover();
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect((await storedGoals())[0].isComplete).toBe(true);
+    expect(result.current.storageError).toBeNull();
+  });
+
+  // Regression: the import cleared the queue before its own write, so when
+  // that write failed the user's unsaved edits were no longer queued at all.
+  it('keeps unsaved edits queued when an import cannot be written', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    const storage = failWrites(STORAGE_KEYS.GOALS);
+
+    await act(async () => {
+      await result.current.updateGoal(1, 6);
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+    await act(async () => {
+      await expect(
+        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0)
+      ).rejects.toThrow();
+    });
+
+    storage.recover();
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect(await storedGoals()).toEqual([expect.objectContaining({ id: 1, current: 6 })]);
+  });
+
   // Regression: while storage keeps failing, a reload read the old total back
   // from disk over the unsaved in-memory one, and the next successful write
-  // then persisted the stale value. (A single failure recovers on its own:
-  // refresh flushes first, which retries the write.)
+  // then persisted the stale value.
   it('does not roll back unsaved points when refreshed while storage is still failing', async () => {
     await seed([makeGoal()], 5);
     const { result } = await renderGoals();
@@ -212,11 +285,100 @@ describe('failed saves', () => {
 });
 
 describe('failed loads', () => {
+  // Regression: the storage helper caught a failed read itself and returned
+  // [], so the provider saw "no goals" - and the next save wrote a list with
+  // only the new goal over every stored one.
   it('reports the failure', async () => {
     await seed([makeGoal()]);
     failNextLoad();
 
     const { result } = await renderGoals();
+
+    expect(result.current.storageError).toBe('load');
+  });
+
+  it('treats a failed lifetime-points read as a failed load too', async () => {
+    await seed([makeGoal()]);
+    failNextLoad(STORAGE_KEYS.LIFETIME_POINTS);
+
+    const { result } = await renderGoals();
+
+    expect(result.current.storageError).toBe('load');
+  });
+
+  it('treats corrupt stored goals as a failed load, and leaves them on disk', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '0');
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('New', 10, 0, 'x', 'increase', 1, 'daily');
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+
+    expect(result.current.storageError).toBe('load');
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.GOALS)).toBe('{corrupt');
+  });
+
+  // Regression: lifetime points were written straight through, counting up
+  // from 0 rather than the user's real total - which was then gone for good.
+  it('never writes lifetime points earned after a failed load', async () => {
+    await seed([makeGoal()], 5000);
+    failNextLoad();
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('New', 10, 0, 'x', 'increase', 10, 'daily');
+    });
+    const [added] = result.current.goals;
+    await act(async () => {
+      await result.current.finishGoal(added.id);
+    });
+
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('5000');
+    expect(result.current.storageError).toBe('load');
+
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect(result.current.lifetimePointsEarned).toBe(5000);
+  });
+
+  // Regression: a Merge after a failed load merged into an empty list and
+  // wrote the result over the user's real goals.
+  it('refuses an import until the goals have loaded', async () => {
+    await seed([makeGoal({ title: 'Keep me' })], 30);
+    failNextLoad();
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await expect(
+        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 99)
+      ).rejects.toThrow();
+    });
+
+    expect((await storedGoals()).map((g) => g.title)).toEqual(['Keep me']);
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('30');
+  });
+
+  // Regression: closing the banner cleared the error, and nothing raised it
+  // again - every later change was held in memory and silently lost.
+  it('raises the error again when a change is made after it was dismissed', async () => {
+    await seed([makeGoal()]);
+    failNextLoad();
+    const { result } = await renderGoals();
+
+    act(() => result.current.dismissStorageError());
+    expect(result.current.storageError).toBeNull();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 3);
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
 
     expect(result.current.storageError).toBe('load');
   });
@@ -256,6 +418,66 @@ describe('failed loads', () => {
     expect((await storedGoals()).map((g) => g.title)).toEqual(['Keep me']);
   });
 
+  // Regression: a failed period-rollover write inside the load was treated as
+  // a failed load. Goals that had been read fine were hidden, and saving was
+  // blocked.
+  it('shows goals whose rollover could not be written, and saves it on retry', async () => {
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    await seed([
+      makeGoal({
+        period: 'daily',
+        isRecurring: true,
+        periodStartDate: twoDaysAgo,
+        current: 10,
+        isComplete: true,
+        completedAt: twoDaysAgo,
+      }),
+    ]);
+    const storage = failWrites(STORAGE_KEYS.GOALS);
+
+    const { result } = await renderGoals();
+
+    expect(result.current.goals).toHaveLength(1);
+    expect(result.current.goals[0].isComplete).toBe(false);
+    expect(result.current.storageError).toBe('save');
+
+    storage.recover();
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect((await storedGoals())[0].isComplete).toBe(false);
+    expect(result.current.storageError).toBeNull();
+  });
+
+  it('keeps a first-time lifetime total that could not be written, and saves it on retry', async () => {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.GOALS,
+      JSON.stringify([makeGoal({ isComplete: true, current: 10, progress: 100 })])
+    );
+    const storage = failWrites(STORAGE_KEYS.LIFETIME_POINTS);
+
+    const { result } = await renderGoals();
+
+    expect(result.current.lifetimePointsEarned).toBe(50);
+    expect(result.current.storageError).toBe('save');
+
+    storage.recover();
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+  });
+
+  it('derives the total again when the stored one is unreadable', async () => {
+    await seed([makeGoal({ isComplete: true, current: 10, progress: 100 })]);
+    await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, 'NaN');
+
+    const { result } = await renderGoals();
+
+    expect(result.current.lifetimePointsEarned).toBe(50);
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+  });
+
   it('recovers on retry, restoring the stored goals', async () => {
     await seed([makeGoal({ title: 'Keep me' })]);
     failNextLoad();
@@ -291,8 +513,10 @@ describe('StorageErrorBanner', () => {
         <LanguageProvider>
           <ThemeProvider>
             <GoalsProvider>
-              <Probe />
-              <StorageErrorBanner />
+              <RewardsProvider>
+                <Probe />
+                <StorageErrorBanner />
+              </RewardsProvider>
             </GoalsProvider>
           </ThemeProvider>
         </LanguageProvider>
@@ -333,6 +557,21 @@ describe('StorageErrorBanner', () => {
     await renderBanner();
 
     expect(screen.getByText(en.loadFailed)).toBeTruthy();
+  });
+
+  it('reports rewards that could not be loaded, and Retry reloads them', async () => {
+    await seed([makeGoal()]);
+    await AsyncStorage.setItem(REWARDS_KEY, '[]');
+    failNextLoad(REWARDS_KEY);
+    await renderBanner();
+
+    expect(screen.getByText(en.rewardsLoadFailed)).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(en.retry));
+    });
+
+    await waitFor(() => expect(screen.queryByText(en.rewardsLoadFailed)).toBeNull());
   });
 
   it('can be closed', async () => {

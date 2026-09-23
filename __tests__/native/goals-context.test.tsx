@@ -6,9 +6,9 @@
  * makes mutators stable, and the points rules that depend on both.
  */
 
-import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
+import { STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
-import { Goal, Reward } from '@/src/types';
+import { Goal } from '@/src/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import React from 'react';
@@ -278,29 +278,7 @@ describe('refreshGoals inside the debounce window', () => {
   });
 });
 
-describe('linked rewards', () => {
-  it('auto-redeems the linked reward the first time a goal is finished', async () => {
-    const reward: Reward = {
-      id: 77,
-      title: 'Movie night',
-      description: '',
-      pointsCost: 50,
-      icon: '🎬',
-      createdAt: Date.now(),
-      isRedeemed: false,
-    };
-    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([reward]));
-    await seed([makeGoal({ linkedRewardId: 77 })]);
-    const { result } = await renderGoals();
-
-    await act(async () => {
-      await result.current.finishGoal(1);
-    });
-
-    const rewards: Reward[] = JSON.parse((await AsyncStorage.getItem(REWARDS_KEY)) ?? '[]');
-    expect(rewards[0].isRedeemed).toBe(true);
-  });
-});
+// Linked-reward auto-redemption lives in RewardsContext: see rewards-context.test.
 
 describe('destructive and restorative mutations', () => {
   it('permanently deletes a goal together with its subgoals', async () => {

@@ -156,6 +156,48 @@ const GoalCard = memo<GoalCardProps>(
       return theme.colors.textSecondary;
     }, [isExpired, isRecurring, urgency, theme]);
 
+    // Everything the card shows, in the user's language. The content itself is
+    // hidden from screen readers (DECORATIVE), so this is all they hear.
+    const accessibilityLabel = useMemo(() => {
+      const card = t.goalCard;
+      const hasSubgoals = subgoalCount > 0;
+      return [
+        title,
+        isUltimate ? card.a11yUltimate : null,
+        isComplete ? card.completed : null,
+        isPaused && !isComplete ? card.paused : null,
+        isBlocked && !isComplete ? card.blocked : null,
+        isExpired && !isRecurring && !isComplete ? t.time.expired : null,
+        card.a11yProgress.replace('{percent}', formatted.percent),
+        points > 0 ? `${formatted.points} ${card.points}` : null,
+        hasSubgoals
+          ? card.a11ySubgoals
+              .replace('{completed}', formatted.completedSubgoals)
+              .replace('{total}', formatted.subgoals)
+          : null,
+        timeRemaining || null,
+        isRecurring && currentStreak > 0 ? `${formatted.streak} ${card.weekStreak}` : null,
+        scheduleText,
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join(card.a11ySeparator);
+    }, [
+      t,
+      title,
+      isUltimate,
+      isComplete,
+      isPaused,
+      isBlocked,
+      isExpired,
+      isRecurring,
+      points,
+      subgoalCount,
+      timeRemaining,
+      currentStreak,
+      scheduleText,
+      formatted,
+    ]);
+
     const handlePress = useCallback(() => onPress?.(id), [onPress, id]);
     const handleMoveUp = useCallback(() => onMoveUp?.(id), [onMoveUp, id]);
     const handleMoveDown = useCallback(() => onMoveDown?.(id), [onMoveDown, id]);
@@ -171,8 +213,11 @@ const GoalCard = memo<GoalCardProps>(
             parent. Nesting the reorder buttons inside it produced a <button>
             inside a <button> on web, and on iOS an accessible parent hides its
             children from VoiceOver, so the arrows were unreachable. Rendered
-            first so it sits underneath; everything non-interactive above it is
-            pointer-transparent, so taps anywhere else still land here.
+            first so it sits underneath; everything non-interactive above it -
+            badges included, and a disabled arrow - is pointer-transparent, so
+            taps anywhere else still land here. A touch that lands on a plain
+            View does not fall through to a sibling: it only bubbles to
+            ancestors, which have no handler.
           */}
           <Pressable
             style={StyleSheet.absoluteFill}
@@ -180,36 +225,36 @@ const GoalCard = memo<GoalCardProps>(
             onPressIn={onPressIn}
             onPressOut={onPressOut}
             accessibilityRole="button"
-            accessibilityLabel={`${title} goal, ${percent}% complete, ${points} points`}
+            accessibilityLabel={accessibilityLabel}
             accessibilityHint={t.goalCard.openHint}
           />
 
             {isUltimate && !isComplete && (
-              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.ultimate }]} {...DECORATIVE}>
+              <View style={[styles.badge, styles.passThrough, styles.badgeRight, { backgroundColor: STATUS_COLORS.ultimate }]} {...DECORATIVE}>
                 <Text style={[styles.badgeText, styles.badgeTextDark]}>{t.goalCard.ultimate}</Text>
               </View>
             )}
 
             {isComplete && (
-              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.complete }]} {...DECORATIVE}>
+              <View style={[styles.badge, styles.passThrough, styles.badgeRight, { backgroundColor: STATUS_COLORS.complete }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>✓ {t.goalCard.completed}</Text>
               </View>
             )}
 
             {isExpired && !isRecurring && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: theme.colors.danger }]} {...DECORATIVE}>
+              <View style={[styles.badge, styles.passThrough, styles.badgeLeft, { backgroundColor: theme.colors.danger }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>⚠️ {t.time.expired}</Text>
               </View>
             )}
 
             {isPaused && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.paused }]} {...DECORATIVE}>
+              <View style={[styles.badge, styles.passThrough, styles.badgeLeft, { backgroundColor: STATUS_COLORS.paused }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>⏸️ {t.goalCard.paused}</Text>
               </View>
             )}
 
             {isBlocked && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.blocked }]} {...DECORATIVE}>
+              <View style={[styles.badge, styles.passThrough, styles.badgeLeft, { backgroundColor: STATUS_COLORS.blocked }]} {...DECORATIVE}>
                 <Text style={[styles.badgeText, styles.badgeTextAmber]}>🔒 {t.goalCard.blocked}</Text>
               </View>
             )}
@@ -283,7 +328,7 @@ const GoalCard = memo<GoalCardProps>(
               </View>
 
               {(onMoveUp || onMoveDown) && (
-                <View style={styles.reorderButtons}>
+                <View style={[styles.reorderButtons, styles.boxNone]}>
                   {onMoveUp && (
                     <Pressable
                       onPress={handleMoveUp}
@@ -454,8 +499,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  /** A disabled arrow lets the tap through to the card, as the gaps do. */
   reorderButtonDisabled: {
     backgroundColor: 'rgba(200, 200, 200, 0.1)',
+    pointerEvents: 'none',
   },
   reorderButtonText: {
     fontSize: 12,

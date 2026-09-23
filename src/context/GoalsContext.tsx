@@ -10,7 +10,7 @@
  *    single state update and a single write, not one per level.
  */
 
-import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
+import { STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { Goal, GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
 import { calculateGoalProgress, calculateProgress } from '@/src/utils/goal-calculations';
 import { nextId } from '@/src/utils/ids';
@@ -57,6 +57,9 @@ const SAVE_DEBOUNCE_MS = 400;
  */
 export type StorageError = 'save' | 'load';
 
+/** Called with a goal the first time it is finished. */
+export type GoalCompletedListener = (goal: Goal) => void | Promise<void>;
+
 interface GoalsContextType {
   goals: Goal[];
   lifetimePointsEarned: number;
@@ -72,7 +75,17 @@ interface GoalsContextType {
    * Rejects if the goals cannot be written, leaving the current data untouched.
    */
   replaceAllGoals: (goals: Goal[], lifetimePoints: number) => Promise<void>;
-  addGoal: (
+  /**
+   * Subscribe to goals being finished for the first time. Returns the
+   * unsubscribe function, so it can be returned straight from an effect.
+   *
+   * RewardsContext uses this to auto-redeem a goal's linked reward. It sits
+   * below this provider, so this provider cannot call it directly - and
+   * writing rewards storage from here left RewardsContext holding stale data
+   * that its next save wrote back, un-redeeming the reward.
+   */
+  onGoalCompleted: (listener: GoalCompletedListener) => () => void;
+addGoal: (
     title: string,
     target: number,
     current: number,
@@ -241,6 +254,12 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * them for a retry on the next flush if not.
    */
   const persistLifetime = useCallback(async (): Promise<boolean> => {
+    // After a failed load the in-memory total counts up from 0, not from the
+    // user's real total. Writing it would replace that for good, so it is
+    // held, and dropped by the reload along with the goals. Not marked dirty:
+    // a dirty total is trusted over disk on reload.
+    if (loadFailedRef.current) return false;
+
     try {
       await AsyncStorage.setItem(
         STORAGE_KEYS.LIFETIME_POINTS,
@@ -261,8 +280,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * A failed write used to be logged and dropped: the data stayed in memory but
    * never reached disk, and nothing told the user. Now it stays queued for the
    * next flush and raises `storageError`, which the app shows with a Retry.
+   *
+   * Returns whether everything is on disk.
    */
-  const flushSave = useCallback(async () => {
+  const flushSave = useCallback(async (): Promise<boolean> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -270,8 +291,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
 
     // After a failed load the in-memory goals are not the user's real data.
     // Writing them would replace everything on disk, so hold the write (it
-    // stays queued) until a reload succeeds.
-    if (loadFailedRef.current) return;
+    // stays queued) until a reload succeeds. Say so again whenever there is
+    // something being held: the banner may have been dismissed, and edits
+    // must not go unsaved without the user knowing.
+    if (loadFailedRef.current) {
+      if (pendingSave.current) setStorageError('load');
+      return false;
+    }
 
     let ok = true;
 
@@ -296,6 +322,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     }
 
     setStorageError((prev) => (ok ? (prev === 'save' ? null : prev) : 'save'));
+    return ok;
   }, [persistLifetime]);
 
   /**
@@ -343,63 +370,80 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * Load goals from storage and process recurring goals
    */
   const loadGoals = useCallback(async () => {
+    setError(null);
+
+    // Only the reads count as a failed load. A write the load itself implies
+    // (a period rollover, the first lifetime total) used to fail the whole
+    // load too, hiding goals that had been read perfectly well.
+    let savedGoals: Goal[];
+    let savedLifetimePoints: string | null = null;
     try {
-      setError(null);
-
-      const savedGoals = await goalsStorage.loadGoals();
-
-      // Reset any recurring goals whose period has ended, then refresh streaks.
-      const processedGoals = processRecurringGoals(savedGoals);
-      const goalsWithStreaks = processedGoals.map((goal) =>
-        goal.isRecurring ? updateGoalStreaks(goal) : goal
-      );
-
-      if (hasGoalDataChanged(savedGoals, goalsWithStreaks)) {
-        await goalsStorage.saveGoals(goalsWithStreaks);
+      savedGoals = await goalsStorage.loadGoals();
+      // An unsaved total in memory is newer than disk: its write failed and is
+      // queued for retry. Reading disk here would roll it back, and the retry
+      // would then persist the stale value - losing points for good.
+      if (!lifetimeDirtyRef.current) {
+        savedLifetimePoints = await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS);
       }
-
-      let lifetime: number;
-      if (lifetimeDirtyRef.current) {
-        // An unsaved total in memory is newer than disk: its write failed and is
-        // queued for retry. Reading disk here would roll it back, and the retry
-        // would then persist the stale value - losing points for good.
-        lifetime = lifetimePointsRef.current;
-      } else {
-        const savedLifetimePoints = await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS);
-        if (savedLifetimePoints) {
-          lifetime = parseInt(savedLifetimePoints, 10);
-        } else {
-          // Migration: derive lifetime points from history the first time.
-          lifetime = deriveLifetimePoints(goalsWithStreaks);
-          await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, lifetime.toString());
-        }
-      }
-
-      lifetimePointsRef.current = lifetime;
-      setLifetimePointsEarned(lifetime);
-
-      goalsRef.current = goalsWithStreaks;
-      setGoals(goalsWithStreaks);
-
-      // Storage is now the source of truth again. Anything queued against the
-      // previous in-memory state (e.g. during a failed load) is discarded rather
-      // than written over what was just read.
-      loadFailedRef.current = false;
-      pendingSave.current = null;
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-      }
-      setStorageError((prev) => (prev === 'load' ? null : prev));
     } catch (err) {
       console.error('Error loading goals:', err);
       setError('Failed to load goals');
       loadFailedRef.current = true;
       setStorageError('load');
-    } finally {
       setIsLoading(false);
+      return;
     }
-  }, []);
+
+    // Reset any recurring goals whose period has ended, then refresh streaks.
+    const processedGoals = processRecurringGoals(savedGoals);
+    const goalsWithStreaks = processedGoals.map((goal) =>
+      goal.isRecurring ? updateGoalStreaks(goal) : goal
+    );
+
+    let lifetime = lifetimePointsRef.current;
+    let lifetimeNeedsWrite = false;
+    if (!lifetimeDirtyRef.current) {
+      const parsed = savedLifetimePoints === null ? NaN : parseInt(savedLifetimePoints, 10);
+      if (Number.isFinite(parsed)) {
+        lifetime = parsed;
+      } else {
+        // Migration (or an unreadable stored value): derive lifetime points
+        // from history.
+        lifetime = deriveLifetimePoints(goalsWithStreaks);
+        lifetimeNeedsWrite = true;
+      }
+    }
+
+    // Storage is now the source of truth again. Anything queued against the
+    // previous in-memory state (e.g. during a failed load) is discarded rather
+    // than written over what was just read.
+    loadFailedRef.current = false;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    pendingSave.current = null;
+
+    lifetimePointsRef.current = lifetime;
+    setLifetimePointsEarned(lifetime);
+    goalsRef.current = goalsWithStreaks;
+    setGoals(goalsWithStreaks);
+    setStorageError((prev) => (prev === 'load' ? null : prev));
+    setIsLoading(false);
+
+    // Now the writes. If they fail it is an ordinary failed save: queued,
+    // reported, retried.
+    const rolledOver = hasGoalDataChanged(savedGoals, goalsWithStreaks);
+    if (rolledOver) {
+      pendingSave.current = goalsWithStreaks;
+    }
+    if (lifetimeNeedsWrite) {
+      lifetimeDirtyRef.current = true;
+    }
+    if (rolledOver || lifetimeNeedsWrite) {
+      await flushSave();
+    }
+  }, [flushSave]);
 
   useEffect(() => {
     void loadGoals();
@@ -431,9 +475,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       setLifetimePointsEarned(lifetimePointsRef.current);
 
       // Lifetime points never decrease, so losing this write loses points for
-      // good. Report it; the next flush retries.
+      // good. Report it; the next flush retries. (After a failed load it is
+      // held rather than written - see persistLifetime.)
       if (!(await persistLifetime())) {
-        setStorageError('save');
+        setStorageError(loadFailedRef.current ? 'load' : 'save');
       }
     },
     [persistLifetime]
@@ -466,7 +511,17 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     // desyncs goalsRef from storage, and because `wasComplete` is derived from
     // goalsRef while lifetime points are written immediately and never
     // decrease, re-completing the reverted goal would award its points twice.
-    await flushSave();
+    //
+    // And if that flush fails, stop. The changes it could not write exist only
+    // in memory; reloading would put the older data from disk over them and
+    // drop them from the retry queue, with the same double-award result. They
+    // stay on screen, and the banner offers Retry.
+    //
+    // After a failed load there is nothing in memory worth keeping, so a
+    // refresh goes straight to the reload - that is how Retry recovers.
+    if (!loadFailedRef.current && !(await flushSave())) {
+      return;
+    }
 
     // The initial load starts with isLoading already true, so only an explicit
     // refresh (pull-to-refresh on the home list) needs to flip it back on.
@@ -482,20 +537,52 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     }
   }, [flushSave, refreshGoals]);
 
+  // Hiding the banner does not unblock anything. After a failed load, the next
+  // change the user makes raises it again (see flushSave).
   const dismissStorageError = useCallback(() => setStorageError(null), []);
+
+  const completionListeners = useRef(new Set<GoalCompletedListener>());
+
+  const onGoalCompleted = useCallback((listener: GoalCompletedListener) => {
+    completionListeners.current.add(listener);
+    return () => {
+      completionListeners.current.delete(listener);
+    };
+  }, []);
 
   const replaceAllGoals = useCallback(
     async (next: Goal[], lifetimePoints: number) => {
-      // Anything still queued was computed against the data being replaced.
+      // After a failed load the current goals are unknown: a merge would be
+      // built on an empty list and write over the user's real data.
+      if (loadFailedRef.current) {
+        setStorageError('load');
+        throw new Error('Goals have not loaded; refusing to replace them');
+      }
+
+      // Stop a queued save from landing after (and on top of) the import. It
+      // stays queued until the import is safely written.
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+
+      // Written first: if this fails, nothing has changed and the caller can
+      // say so. That includes unsaved edits, which go back in the queue.
+      try {
+        await goalsStorage.saveGoals(next);
+      } catch (err) {
+        if (pendingSave.current) {
+          scheduleSave(pendingSave.current);
+        }
+        throw err;
+      }
+
+      // Anything still queued was computed against the data just replaced.
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
       }
       pendingSave.current = null;
-
-      // Written first: if this fails, nothing has changed and the caller can
-      // say so.
-      await goalsStorage.saveGoals(next);
 
       // Reminders for goals that no longer exist would keep firing.
       const kept = new Set(next.map((goal) => goal.id));
@@ -515,7 +602,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       // migrations, recurring-period resets and streak updates as a cold start.
       await loadGoals();
     },
-    [persistLifetime, loadGoals]
+    [scheduleSave, persistLifetime, loadGoals]
   );
 
   /**
@@ -751,36 +838,21 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   );
 
   /**
-   * Auto-redeem a reward linked to a just-completed goal.
-   *
-   * Reads rewards storage directly rather than going through RewardsContext,
-   * which sits below this provider in the tree.
+   * Tell subscribers (RewardsContext's linked-reward redemption) that a goal
+   * was finished for the first time.
    */
-  const autoRedeemLinkedReward = useCallback(async (goal: Goal) => {
-    if (!goal.linkedRewardId) return;
-
-    try {
-      const rewardsData = await AsyncStorage.getItem(REWARDS_KEY);
-      if (!rewardsData) return;
-
-      const rewards = JSON.parse(rewardsData);
-      if (!Array.isArray(rewards)) return;
-
-      const linkedReward = rewards.find((r) => r.id === goal.linkedRewardId);
-      if (!linkedReward || linkedReward.isRedeemed) return;
-
-      const updatedRewards = rewards.map((r) =>
-        r.id === goal.linkedRewardId ? { ...r, isRedeemed: true, redeemedAt: Date.now() } : r
-      );
-
-      await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify(updatedRewards));
-    } catch (rewardErr) {
-      // A failed redemption must not fail the goal completion.
-      console.error('Error auto-redeeming linked reward:', rewardErr);
+  const notifyGoalCompleted = useCallback(async (goal: Goal) => {
+    for (const listener of completionListeners.current) {
+      try {
+        await listener(goal);
+      } catch (listenerErr) {
+        // A failed redemption must not fail the goal completion.
+        console.error('Error in goal-completed listener:', listenerErr);
+      }
     }
   }, []);
 
-  /**
+/**
    * Mark goal as complete (set to 100%)
    */
   const finishGoal = useCallback(
@@ -811,7 +883,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
 
         if (isFirstCompletion) {
           await awardPointsForGoal(goal, next);
-          await autoRedeemLinkedReward(goal);
+          await notifyGoalCompleted(goal);
         }
       } catch (err) {
         console.error('Error finishing goal:', err);
@@ -819,7 +891,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         throw err;
       }
     },
-    [commit, awardPointsForGoal, autoRedeemLinkedReward]
+    [commit, awardPointsForGoal, notifyGoalCompleted]
   );
 
   /**
@@ -1151,6 +1223,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       retryStorage,
       dismissStorageError,
       replaceAllGoals,
+      onGoalCompleted,
       addGoal,
       addSubgoal,
       updateGoal,
@@ -1182,6 +1255,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       retryStorage,
       dismissStorageError,
       replaceAllGoals,
+      onGoalCompleted,
       addGoal,
       addSubgoal,
       updateGoal,

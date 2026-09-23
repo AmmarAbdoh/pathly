@@ -8,9 +8,10 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { useImportBackup } from '@/src/hooks/use-import-backup';
 import { Language, ThemeMode } from '@/src/types';
 import { generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
-import { buildImport, type ImportMode } from '@/src/utils/import-data';
+import { type ImportMode } from '@/src/utils/import-data';
 import { formatNumber } from '@/src/utils/number-formatting';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -34,8 +35,9 @@ interface LanguageOption {
 export default function SettingsScreen() {
   const { theme, themeMode, setThemeMode } = useTheme();
   const { t, language, setLanguage } = useLanguage();
-  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal, replaceAllGoals } = useGoals();
-  const { rewards, replaceAllRewards } = useRewards();
+  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal } = useGoals();
+  const { rewards } = useRewards();
+  const importBackup = useImportBackup();
   const [showArchivedGoals, setShowArchivedGoals] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -248,24 +250,13 @@ export default function SettingsScreen() {
       const skipped = importResult.errors.length;
       const count = (n: number) => formatNumber(n, language);
 
-      /**
-       * Build the next state from the backup and apply it in one go, keeping
-       * every record whole (see buildImport). This used to re-create each goal
-       * and reward through addGoal/addReward, which dropped completion state,
-       * history, notes, schedules and links, and never restored points.
-       *
-       * Goals, which carry the lifetime total, are written first: they are the
-       * data that matters most if the second write fails.
-       */
+      // Applies the whole backup or nothing; see useImportBackup. This used to
+      // re-create each goal and reward through addGoal/addReward, which
+      // dropped completion state, history, notes, schedules and links, and
+      // never restored points.
       const applyImport = async (mode: ImportMode) => {
         try {
-          const next = buildImport(
-            { goals, rewards, lifetimePoints: lifetimePointsEarned },
-            incoming,
-            mode
-          );
-          await replaceAllGoals(next.goals, next.lifetimePoints);
-          await replaceAllRewards(next.rewards);
+          await importBackup(incoming, mode);
 
           Alert.alert(
             t.common.success,
@@ -319,7 +310,7 @@ export default function SettingsScreen() {
       Alert.alert(t.common.error, t.import.importError);
       setIsImporting(false);
     }
-  }, [t, language, goals, rewards, lifetimePointsEarned, replaceAllGoals, replaceAllRewards]);
+  }, [t, language, goals, rewards, importBackup]);
 
   /**
    * Handle export as JSON

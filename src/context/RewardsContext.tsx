@@ -3,6 +3,7 @@
  * Manages global rewards state and operations
  */
 
+import { useGoals } from '@/src/context/GoalsContext';
 import { Reward } from '@/src/types';
 import { nextId } from '@/src/utils/ids';
 import { rewardsStorage } from '@/src/utils/rewards-storage';
@@ -21,6 +22,12 @@ interface RewardsContextType {
   rewards: Reward[];
   isLoading: boolean;
   error: string | null;
+  /**
+   * 'load' when rewards could not be read. Every change is refused until a
+   * reload (`refreshRewards`) succeeds; shown by StorageErrorBanner.
+   */
+  storageError: 'load' | null;
+  dismissStorageError: () => void;
   addReward: (title: string, description: string, pointsCost: number, icon: string) => Promise<void>;
   editReward: (id: number, title: string, description: string, pointsCost: number, icon: string) => Promise<void>;
   redeemReward: (id: number) => Promise<void>;
@@ -43,9 +50,18 @@ interface RewardsProviderProps {
  * Wraps the app to provide rewards context to all children
  */
 export function RewardsProvider({ children }: RewardsProviderProps) {
+  const { onGoalCompleted } = useGoals();
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<'load' | null>(null);
+
+  /**
+   * Whether storage has been read. Until it has, the in-memory rewards are not
+   * the user's (empty at startup, or after a failed read), and saving them
+   * would replace the real ones on disk.
+   */
+  const loadStateRef = useRef<'pending' | 'loaded' | 'failed'>('pending');
 
   /**
    * Synchronous mirror of `rewards`, the same pattern as GoalsContext.
@@ -59,12 +75,35 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
 
   /**
    * Apply a pure updater to the latest rewards, render, and persist.
+   *
+   * Rejects - leaving the rewards as they were - if storage has not been read
+   * or the write fails. The screen shows it immediately (the ref chains
+   * back-to-back changes), and takes it back if the write fails, so it never
+   * shows a reward that is not on disk.
    */
   const commit = useCallback(async (updater: (prev: Reward[]) => Reward[]) => {
-    const next = updater(rewardsRef.current);
+    if (loadStateRef.current !== 'loaded') {
+      if (loadStateRef.current === 'failed') setStorageError('load');
+      throw new Error('Rewards have not loaded');
+    }
+
+    const prev = rewardsRef.current;
+    const next = updater(prev);
+    if (next === prev) return;
+
     rewardsRef.current = next;
     setRewards(next);
-    await rewardsStorage.saveRewards(next);
+    try {
+      await rewardsStorage.saveRewards(next);
+    } catch (err) {
+      // Unless a later change has already built on this one (its own write
+      // carries both).
+      if (rewardsRef.current === next) {
+        rewardsRef.current = prev;
+        setRewards(prev);
+      }
+      throw err;
+    }
   }, []);
 
   /**
@@ -77,9 +116,15 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       const savedRewards = await rewardsStorage.loadRewards();
       rewardsRef.current = savedRewards;
       setRewards(savedRewards);
+      loadStateRef.current = 'loaded';
+      setStorageError(null);
     } catch (err) {
       console.error('Error loading rewards:', err);
       setError('Failed to load rewards');
+      // Keep whatever was loaded before on screen, but write nothing until a
+      // reload succeeds.
+      loadStateRef.current = 'failed';
+      setStorageError('load');
     } finally {
       setIsLoading(false);
     }
@@ -98,11 +143,33 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     await loadRewards();
   }, [loadRewards]);
 
+  const dismissStorageError = useCallback(() => setStorageError(null), []);
+
   const replaceAllRewards = useCallback(
     async (next: Reward[]) => {
       await commit(() => next);
     },
     [commit]
+  );
+
+  // Auto-redeem a goal's linked reward the first time the goal is finished.
+  useEffect(
+    () =>
+      onGoalCompleted(async (goal) => {
+        const rewardId = goal.linkedRewardId;
+        if (rewardId === undefined) return;
+
+        await commit((prev) =>
+          prev.some((reward) => reward.id === rewardId && !reward.isRedeemed)
+            ? prev.map((reward) =>
+                reward.id === rewardId
+                  ? { ...reward, isRedeemed: true, redeemedAt: Date.now() }
+                  : reward
+              )
+            : prev
+        );
+      }),
+    [onGoalCompleted, commit]
   );
 
   /**
@@ -209,6 +276,8 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       rewards,
       isLoading,
       error,
+      storageError,
+      dismissStorageError,
       addReward,
       editReward,
       redeemReward,
@@ -218,7 +287,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       getAvailableRewards,
       getRedeemedRewards,
     }),
-    [rewards, isLoading, error, addReward, editReward, redeemReward, removeReward, refreshRewards, replaceAllRewards, getAvailableRewards, getRedeemedRewards]
+    [rewards, isLoading, error, storageError, dismissStorageError, addReward,editReward, redeemReward, removeReward, refreshRewards, replaceAllRewards, getAvailableRewards, getRedeemedRewards]
   );
 
   return (

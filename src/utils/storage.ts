@@ -28,23 +28,24 @@ export const goalsStorage = {
 
   /**
    * Load goals array from AsyncStorage
-   * @returns Array of goals, or empty array if none exist
-   * @throws Error if storage operation fails critically
+   * @returns Array of goals, or empty array if none are stored
+   * @throws Error if storage cannot be read, or holds something that is not a
+   *   goals array. This used to return [] instead, and the caller could not
+   *   tell "unreadable" from "no goals": the next save wrote over everything.
    */
   async loadGoals(): Promise<Goal[]> {
     try {
       const jsonData = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
-      
+
       if (!jsonData) {
         return [];
       }
 
       const goals: Goal[] = JSON.parse(jsonData);
-      
+
       // Validate that the data is an array
       if (!Array.isArray(goals)) {
-        console.warn('Invalid goals data format, returning empty array');
-        return [];
+        throw new Error('Stored goals are not an array');
       }
 
       // Migrate old goals that don't have new fields
@@ -87,8 +88,7 @@ export const goalsStorage = {
       return migratedGoals;
     } catch (error) {
       console.error('Error loading goals:', error);
-      // Return empty array on error rather than crashing the app
-      return [];
+      throw new Error('Failed to load goals');
     }
   },
 

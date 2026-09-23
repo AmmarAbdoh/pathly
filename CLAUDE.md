@@ -50,7 +50,8 @@ Expo Router, file-based. `app/_layout.tsx` nests providers in a fixed order:
 SafeAreaProvider > LanguageProvider > ThemeProvider > GoalsProvider > RewardsProvider
 ```
 
-Theme depends on Language (RTL), Goals and Rewards depend on both. Don't reorder.
+Theme depends on Language (RTL), Goals and Rewards depend on both, and Rewards listens to Goals
+(`onGoalCompleted`), so it must stay inside `GoalsProvider` - in tests too. Don't reorder.
 
 ### State
 Two React Contexts, both AsyncStorage-backed:
@@ -66,15 +67,29 @@ every consumer in the app. This was the single biggest source of sluggishness; d
 **Persistence is debounced** (`scheduleSave` in GoalsContext). State updates are synchronous and
 instant; the AsyncStorage write lands ~400ms later. Never `await` a save to update the UI.
 
-**Storage failures are surfaced, retried, and never destructive.** A failed write stays queued and
-sets `storageError: 'save'`; `StorageErrorBanner` (mounted in `app/_layout.tsx`) shows it with a
-Retry. A failed *load* sets `'load'` and **blocks all saving** until a reload succeeds — the
-in-memory goals are then not the user's data, and writing them would replace everything on disk.
-An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
+**Never write another provider's storage key.** Each context owns its key and holds it in a ref;
+a write from outside leaves that ref stale, and the owner's next save writes the stale copy back.
+(GoalsContext auto-redeemed rewards this way, and the next reward change un-redeemed them.) To
+react to another provider, subscribe: RewardsContext redeems linked rewards via `onGoalCompleted`.
 
-**Import keeps records whole.** `buildImport` (`src/utils/import-data.ts`) builds the next state;
-`replaceAllGoals` / `replaceAllRewards` apply it. Never import by calling `addGoal` / `addReward`
-per record — that is what used to drop completion state, history, notes, schedules and links.
+**Storage failures are surfaced, retried, and never destructive.**
+- The storage helpers **throw** on a failed or corrupt read. Never return `[]` for unreadable
+  data: the caller can't tell it from "nothing saved", and the next save writes over everything.
+- A failed goals write stays queued and sets `storageError: 'save'`; `StorageErrorBanner`
+  (mounted in `app/_layout.tsx`) shows it with a Retry. A write the load itself implies (period
+  rollover, first lifetime total) failing is a failed *save*, not a failed load.
+- A failed *load* sets `'load'` and **blocks every write** - goals, lifetime points and imports -
+  until a reload succeeds. The in-memory data is then not the user's, and writing it would replace
+  everything on disk. Dismissing the banner hides it only; the next change raises it again.
+- A refresh whose flush fails does **not** reload: the unsaved changes exist only in memory.
+- An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
+- Rewards refuse changes until they have loaded, and take a change back off screen if its write
+  fails (the screen reports it).
+
+**Import keeps records whole, and is all or nothing.** `buildImport` (`src/utils/import-data.ts`)
+builds the next state; `useImportBackup` (`src/hooks/`) applies it - rewards first, put back if the
+goals then fail. Never import by calling `addGoal` / `addReward` per record — that is what used to
+drop completion state, history, notes, schedules and links.
 
 ### Business logic
 Pure functions in `src/utils/`, each unit-tested. Keep them pure — no React, no AsyncStorage:
@@ -160,10 +175,9 @@ Jest + `@testing-library/react-native`, split into two projects in `jest.config.
   react-native / expo / Reanimated (`notifications`, `export-data`, `constants/animation`).
 
 Every logic file is in coverage scope — nothing is excluded to flatter the number.
-`npm run test:coverage` meets its 90% threshold on all four metrics (~96% statements, ~93%
+`npm run test:coverage` meets its 90% threshold on all four metrics (~97% statements, ~93%
 branches). What remains uncovered is unreachable: `catch` blocks around pure synchronous
-updates, load-error handlers behind storage helpers that already swallow errors, and guards that
-re-check a condition an earlier `filter` guarantees.
+updates, and guards that re-check a condition an earlier `filter` guarantees.
 
 Add tests for new `src/utils/` logic in `unit`, and for context/hook/RN-dependent code in
 `native`. Run one side with `npx jest --selectProjects native`.
@@ -183,6 +197,10 @@ Gotchas:
   Babel produce different statement maps, and merging them corrupts the coverage report.
 - `jest.setup.js` mocks `react-native-worklets` and adds `useReducedMotion` to Reanimated's own
   mock, which omits it. Without those, nothing animated can be rendered in a test.
+- To fail storage, key the mock (`if (key === STORAGE_KEYS.GOALS) throw ...`) rather than using a
+  one-shot `mockRejectedValueOnce`: every provider reads and writes storage on mount, and whichever
+  call comes first consumes the one-shot. `storage-errors.test.tsx` has `failNextLoad` / `failWrites`.
+- A regression test only counts once you have seen it fail with the fix removed.
 - When a test checks what a library does with our input, run the input through the library's real
   code rather than a mock of it (see `parseTrigger` in the notifications tests) — that is how the
   untyped reminder trigger was caught.
@@ -211,9 +229,15 @@ Gotchas:
 - **Analytics returns data, not text.** `findBestCompletionDay` returns a weekday index and
   `findMostProductiveHour` an hour; both can legitimately be `0` (Sunday, midnight), so check
   `!== null`, never truthiness. The screen formats them in the user's language.
-- A backup file is untrusted input: it can contain duplicate ids, dangling links, missing fields
-  and even parent cycles (which make progress calculation recurse forever). `buildImport` repairs
-  all of these; keep it that way.
+- A backup file is untrusted input: it can contain duplicate ids, dangling links, missing fields,
+  values of the wrong type (an object `icon` crashes every render of the card) and even parent
+  cycles (which make progress calculation recurse forever). `buildImport` builds each record
+  field by field, checking types, rather than spreading the file; keep it that way.
+- Archiving a subgoal removes it from `parent.subGoals` but keeps its `parentId`. So `subGoals`,
+  not `parentId`, says what counts toward a parent - don't rebuild one from the other.
+- `GoalCard`'s tap target is a sibling *beneath* the content. A touch on a plain View bubbles to
+  its ancestors, never a sibling, so anything drawn over the card that isn't a button needs
+  `pointerEvents: 'none'` (badges, a disabled arrow) or `'box-none'` (containers).
 - `app.json` ships a real bundle id / package name. Changing them after a store release breaks
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications

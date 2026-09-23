@@ -13,6 +13,10 @@ import { Reward } from '../types';
 export const rewardsStorage = {
   /**
    * Load rewards from storage
+   * @returns Array of rewards, or empty array if none are stored
+   * @throws Error if storage cannot be read, or holds something that is not a
+   *   rewards array - never [], which the next save would write over the
+   *   user's real rewards.
    */
   async loadRewards(): Promise<Reward[]> {
     try {
@@ -20,10 +24,14 @@ export const rewardsStorage = {
       if (!rewardsData) {
         return [];
       }
-      return JSON.parse(rewardsData);
+      const rewards: unknown = JSON.parse(rewardsData);
+      if (!Array.isArray(rewards)) {
+        throw new Error('Stored rewards are not an array');
+      }
+      return rewards as Reward[];
     } catch (error) {
       console.error('Error loading rewards:', error);
-      return [];
+      throw new Error('Failed to load rewards');
     }
   },
 

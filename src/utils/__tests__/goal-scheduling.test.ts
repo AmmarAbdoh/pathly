@@ -213,6 +213,12 @@ describe('getNextOccurrence', () => {
       expect(next({ datesOfMonth: [30] }, day(2026, 2, 20))).toBe(day(2026, 3, 30).toDateString());
     });
 
+    // Regression: took April's missing 31st, then the next month that has
+    // one - May 31, passing over May 10.
+    it("moves to next month's earliest date when this month lacks the next one", () => {
+      expect(next({ datesOfMonth: [10, 31] }, day(2026, 4, 20))).toBe(day(2026, 5, 10).toDateString());
+    });
+
     it('lands on a day the goal is actually active on', () => {
       const schedule = { datesOfMonth: [31] };
       const result = getNextOccurrence(makeGoal({ schedule }), day(2026, 1, 31));

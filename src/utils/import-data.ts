@@ -12,10 +12,15 @@
  * file itself are resolved), remaps every cross-reference through those new
  * ids, and repairs fields a hand-edited or old backup may be missing.
  *
+ * A backup is untrusted input, and whatever this returns is saved and rendered
+ * on every launch: an object where a string belongs crashes the screen that
+ * shows it, every time. So records are rebuilt field by field, each checked
+ * for its type, rather than spread from the file.
+ *
  * Pure: no React, no storage. The contexts apply the result.
  */
 
-import type { Goal, GoalNote, Reward, TimePeriod } from '../types';
+import type { Goal, GoalCategory, GoalNote, GoalSchedule, Reward, TimePeriod } from '../types';
 import { calculateGoalProgress } from './goal-calculations';
 import { nextId } from './ids';
 import { getTotalPointsEarned } from './recurring-goals';
@@ -42,8 +47,43 @@ export interface ImportedData {
 
 const PERIODS: readonly TimePeriod[] = ['daily', 'weekly', 'monthly', 'yearly', 'custom', 'ongoing'];
 
+const CATEGORIES: readonly GoalCategory[] = [
+  'health',
+  'fitness',
+  'learning',
+  'work',
+  'finance',
+  'personal',
+  'social',
+  'hobby',
+  'other',
+];
+
 const isNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+
+const text = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
+const number = (value: unknown): number | undefined => (isNumber(value) ? value : undefined);
+
+const nonNegative = (value: unknown): number | undefined =>
+  isNumber(value) && value >= 0 ? value : undefined;
+
+const flag = (value: unknown): boolean | undefined =>
+  typeof value === 'boolean' ? value : undefined;
+
+/** The whole numbers in `value` between min and max, without duplicates. */
+function integers(value: unknown, min: number, max: number): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const result: number[] = [];
+  for (const item of value) {
+    if (Number.isInteger(item) && item >= min && item <= max && !result.includes(item)) {
+      result.push(item);
+    }
+  }
+  return result;
+}
 
 /** Ids from `ids` that `map` knows about, translated, in order. */
 function remapIds(ids: unknown, map: Map<number, number>): number[] {
@@ -94,20 +134,56 @@ function assignIds(
 export function deriveLifetimePoints(goals: readonly Goal[]): number {
   return goals.reduce((sum, goal) => {
     if (goal.parentId) return sum; // subgoals roll up into their parent
+    if (!isNumber(goal.points) || goal.points <= 0) return sum;
     if (goal.isRecurring) return sum + getTotalPointsEarned(goal);
-    return sum + (goal.isComplete && isNumber(goal.points) ? goal.points : 0);
+    return sum + (goal.isComplete ? goal.points : 0);
   }, 0);
 }
 
-function normaliseNotes(notes: unknown): GoalNote[] | undefined {
+function normaliseNotes(notes: unknown, now: number): GoalNote[] | undefined {
   if (!Array.isArray(notes)) return undefined;
-  return notes.filter(
-    (note): note is GoalNote =>
+  const result: GoalNote[] = [];
+  for (const note of notes) {
+    if (
       note !== null &&
       typeof note === 'object' &&
       typeof note.id === 'string' &&
       typeof note.text === 'string'
-  );
+    ) {
+      result.push({ id: note.id, text: note.text, createdAt: number(note.createdAt) ?? now });
+    }
+  }
+  return result;
+}
+
+function normaliseSchedule(value: unknown): GoalSchedule | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const schedule: GoalSchedule = {};
+
+  const daysOfWeek = integers(raw.daysOfWeek, 0, 6);
+  if (daysOfWeek?.length) schedule.daysOfWeek = daysOfWeek;
+
+  const datesOfMonth = integers(raw.datesOfMonth, 1, 31);
+  if (datesOfMonth?.length) schedule.datesOfMonth = datesOfMonth;
+
+  const start = raw.dateRangeStart;
+  const end = raw.dateRangeEnd;
+  if (
+    typeof start === 'number' &&
+    typeof end === 'number' &&
+    Number.isInteger(start) &&
+    Number.isInteger(end) &&
+    start >= 1 &&
+    start <= end &&
+    end <= 31
+  ) {
+    schedule.dateRangeStart = start;
+    schedule.dateRangeEnd = end;
+  }
+
+  // Nothing usable left means no schedule: active every day.
+  return Object.keys(schedule).length > 0 ? schedule : undefined;
 }
 
 /**
@@ -126,36 +202,64 @@ export function buildImport(
   const rewardIds = assignIds(incoming.rewards, base.rewards, now);
 
   // First pass: every goal keeps all its data, with ids and links remapped and
-  // untrustworthy fields repaired.
+  // every field checked. Title, target and current were validated by the
+  // parser; everything else is only kept if it has the right type.
   const goals: Goal[] = incoming.goals.map((raw, index) => {
-    const parentId = isNumber(raw.parentId) ? goalIds.map.get(raw.parentId) : undefined;
-    const linkedRewardId = isNumber(raw.linkedRewardId)
-      ? rewardIds.map.get(raw.linkedRewardId)
-      : undefined;
+    const createdAt = number(raw.createdAt) ?? now;
 
     return {
-      ...raw,
       id: goalIds.ids[index],
-      parentId,
+      parentId: isNumber(raw.parentId) ? goalIds.map.get(raw.parentId) : undefined,
       subGoals: remapIds(raw.subGoals, goalIds.map),
       dependsOn: remapIds(raw.dependsOn, goalIds.map),
-      linkedRewardId,
+      linkedRewardId: isNumber(raw.linkedRewardId)
+        ? rewardIds.map.get(raw.linkedRewardId)
+        : undefined,
 
-      unit: typeof raw.unit === 'string' ? raw.unit : '',
+      title: raw.title,
+      description: text(raw.description),
+      icon: text(raw.icon),
+      category: CATEGORIES.find((category) => category === raw.category),
+
+      target: raw.target,
+      current: raw.current,
+      initialValue: number(raw.initialValue) ?? raw.current,
+      unit: text(raw.unit) ?? '',
       direction: raw.direction === 'decrease' ? 'decrease' : 'increase',
-      points: isNumber(raw.points) && raw.points >= 0 ? raw.points : 0,
-      period: PERIODS.includes(raw.period) ? raw.period : 'ongoing',
-      createdAt: isNumber(raw.createdAt) ? raw.createdAt : now,
+      points: nonNegative(raw.points) ?? 0,
+      progress: 0, // recomputed below, once the links are repaired
+
+      period: PERIODS.find((period) => period === raw.period) ?? 'ongoing',
+      customPeriodDays: nonNegative(raw.customPeriodDays),
+      periodStartDate: number(raw.periodStartDate) ?? createdAt,
+      schedule: normaliseSchedule(raw.schedule),
+      createdAt,
+
+      isUltimate: flag(raw.isUltimate),
+      subgoalsAwardPoints: flag(raw.subgoalsAwardPoints),
+      isComplete: flag(raw.isComplete),
+      completedAt: number(raw.completedAt),
+      isRecurring: flag(raw.isRecurring),
       completionHistory: Array.isArray(raw.completionHistory)
         ? raw.completionHistory.filter(isNumber)
         : [],
-      notes: normaliseNotes(raw.notes),
+      currentStreak: nonNegative(raw.currentStreak),
+      longestStreak: nonNegative(raw.longestStreak),
+      isPaused: flag(raw.isPaused),
+      pausedAt: number(raw.pausedAt),
+      isArchived: flag(raw.isArchived),
+      archivedAt: number(raw.archivedAt),
+      sortOrder: number(raw.sortOrder),
+      notes: normaliseNotes(raw.notes, now),
 
       // Scheduled notification ids belong to the device and install that made
       // the backup. Reminders come in switched off rather than appearing
-      // enabled while nothing is actually scheduled.
+      // enabled while nothing is actually scheduled; the chosen time and days
+      // are kept for when the user turns them back on.
       notificationsEnabled: false,
       notificationIds: [],
+      notificationTime: integers([raw.notificationTime], 0, 24 * 60 - 1)?.[0],
+      notificationDays: integers(raw.notificationDays, 0, 6),
     };
   });
 
@@ -179,12 +283,12 @@ export function buildImport(
     }
   }
 
-  // Then a parent lists exactly the children that point back at it, keeping
-  // the file's order, then any it had missed.
+  // Then a parent lists only children that point back at it, in the file's
+  // order. A child the parent does not list stays unlisted: archiving a
+  // subgoal detaches it from its parent's list on purpose, keeping its
+  // parentId, so it stops counting toward the parent's progress.
   for (const goal of goals) {
-    const children = goals.filter((g) => g.parentId === goal.id).map((g) => g.id);
-    const ordered = (goal.subGoals ?? []).filter((id) => children.includes(id));
-    goal.subGoals = [...ordered, ...children.filter((id) => !ordered.includes(id))];
+    goal.subGoals = (goal.subGoals ?? []).filter((id) => byId.get(id)?.parentId === goal.id);
   }
 
   // Progress is derived data; recompute it from the repaired records rather
@@ -195,21 +299,27 @@ export function buildImport(
   }
 
   const rewards: Reward[] = incoming.rewards.map((raw, index) => ({
-    ...raw,
     id: rewardIds.ids[index],
     linkedToGoalId: isNumber(raw.linkedToGoalId) ? goalIds.map.get(raw.linkedToGoalId) : undefined,
-    description: typeof raw.description === 'string' ? raw.description : '',
-    icon: typeof raw.icon === 'string' ? raw.icon : '🎁',
+    // Title and cost were validated by the parser.
+    title: raw.title,
+    pointsCost: raw.pointsCost,
+    description: text(raw.description) ?? '',
+    icon: text(raw.icon) ?? '🎁',
     isRedeemed: raw.isRedeemed === true,
-    createdAt: isNumber(raw.createdAt) ? raw.createdAt : now,
+    redeemedAt: number(raw.redeemedAt),
+    createdAt: number(raw.createdAt) ?? now,
   }));
 
   // Merged redeemed rewards count as spending, so the backup's earned points
   // must come with them - otherwise the available balance drops, possibly
-  // below zero.
-  const importedPoints = isNumber(incoming.lifetimePoints)
-    ? incoming.lifetimePoints
-    : deriveLifetimePoints(incoming.goals);
+  // below zero. Lifetime points never decrease, so a negative total in the
+  // file is not trusted; nor are the raw goals, whose points may not be
+  // numbers (the total would be NaN, saved, and read back on every launch).
+  const importedPoints =
+    isNumber(incoming.lifetimePoints) && incoming.lifetimePoints >= 0
+      ? incoming.lifetimePoints
+      : deriveLifetimePoints(goals);
 
   return {
     goals: [...base.goals, ...goals],

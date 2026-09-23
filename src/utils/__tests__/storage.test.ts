@@ -46,20 +46,21 @@ describe('goalsStorage', () => {
     expect(await goalsStorage.loadGoals()).toEqual([]);
   });
 
-  it('returns an empty list for data that is not an array', async () => {
+  // Regression: these used to return [], which the context could not tell
+  // apart from "no goals" - so the next save wrote over the unreadable data.
+  it('throws for stored data that is not an array', async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify({ not: 'an array' }));
-    expect(await goalsStorage.loadGoals()).toEqual([]);
-    expect(consoleWarn).toHaveBeenCalled();
+    await expect(goalsStorage.loadGoals()).rejects.toThrow('Failed to load goals');
   });
 
-  it('returns an empty list rather than crashing on corrupt JSON', async () => {
-    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{not json');
-    expect(await goalsStorage.loadGoals()).toEqual([]);
+  it('throws for corrupt JSON', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    await expect(goalsStorage.loadGoals()).rejects.toThrow('Failed to load goals');
   });
 
-  it('returns an empty list when the read itself fails', async () => {
+  it('throws when the read itself fails', async () => {
     getItem.mockRejectedValueOnce(disk);
-    expect(await goalsStorage.loadGoals()).toEqual([]);
+    await expect(goalsStorage.loadGoals()).rejects.toThrow('Failed to load goals');
   });
 
   it('migrates goals saved by older versions to the current shape', async () => {
@@ -230,11 +231,19 @@ describe('rewardsStorage', () => {
     expect(await rewardsStorage.loadRewards()).toEqual([reward]);
   });
 
-  it('returns an empty list when nothing is stored or the read fails', async () => {
+  it('returns an empty list when nothing is stored', async () => {
     expect(await rewardsStorage.loadRewards()).toEqual([]);
+  });
 
+  it('throws, rather than returning an empty list, when the read fails or the data is corrupt', async () => {
     getItem.mockRejectedValueOnce(disk);
-    expect(await rewardsStorage.loadRewards()).toEqual([]);
+    await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
+
+    await AsyncStorage.setItem(REWARDS_KEY, '{corrupt');
+    await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
+
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify({ not: 'an array' }));
+    await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
   });
 
   it('clears rewards', async () => {
