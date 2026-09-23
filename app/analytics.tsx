@@ -3,13 +3,17 @@
  * Shows detailed insights and analytics about goal performance
  */
 
+import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { generateAnalyticsInsights, getInsightsSummary } from '@/src/utils/analytics';
+import {
+  formatHourOfDay,
+  generateAnalyticsInsights,
+  getInsightsSummary,
+} from '@/src/utils/analytics';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
     ScrollView,
     StyleSheet,
@@ -22,24 +26,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function AnalyticsScreen() {
   const { goals } = useGoals();
   const { theme } = useTheme();
-  const { t, isRTL } = useLanguage();
-  const router = useRouter();
+  const { t, isRTL, language } = useLanguage();
 
-  /**
-   * These screens are reachable by deep link, where there is no history to pop;
-   * router.back() would no-op and strand the user.
-   */
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/home');
-    }
-  }, [router]);
+  const handleBack = useBackOrHome();
 
   // Generate analytics insights
   const analytics = useMemo(() => generateAnalyticsInsights(goals), [goals]);
-  const insights = useMemo(() => getInsightsSummary(analytics), [analytics]);
+  const insights = useMemo(
+    () => getInsightsSummary(analytics, t, language),
+    [analytics, t, language]
+  );
 
   // Get category names
   const getCategoryName = (category: string): string => {
@@ -310,7 +306,7 @@ export default function AnalyticsScreen() {
                 🔑 {t.analytics.insights}
               </Text>
               <View style={styles.keyInsightsList}>
-                {analytics.bestPerformingCategory && (
+                {analytics.bestPerformingCategory ? (
                   <View style={[styles.keyInsightItem, { backgroundColor: theme.colors.background }]}>
                     <Text style={styles.keyInsightIcon}>⭐</Text>
                     <View style={styles.keyInsightContent}>
@@ -322,8 +318,8 @@ export default function AnalyticsScreen() {
                       </Text>
                     </View>
                   </View>
-                )}
-                {analytics.bestCompletionDay !== 'No data' && (
+                ) : null}
+                {analytics.bestCompletionDay !== null ? (
                   <View style={[styles.keyInsightItem, { backgroundColor: theme.colors.background }]}>
                     <Text style={styles.keyInsightIcon}>📅</Text>
                     <View style={styles.keyInsightContent}>
@@ -331,12 +327,12 @@ export default function AnalyticsScreen() {
                         {t.analytics.bestDay}
                       </Text>
                       <Text style={[styles.keyInsightValue, { color: theme.colors.text }]}>
-                        {analytics.bestCompletionDay}
+                        {t.schedule.weekdayLong[analytics.bestCompletionDay]}
                       </Text>
                     </View>
                   </View>
-                )}
-                {analytics.mostProductiveHour !== 'No data' && (
+                ) : null}
+                {analytics.mostProductiveHour !== null ? (
                   <View style={[styles.keyInsightItem, { backgroundColor: theme.colors.background }]}>
                     <Text style={styles.keyInsightIcon}>⏰</Text>
                     <View style={styles.keyInsightContent}>
@@ -344,11 +340,11 @@ export default function AnalyticsScreen() {
                         {t.analytics.mostProductiveHour}
                       </Text>
                       <Text style={[styles.keyInsightValue, { color: theme.colors.text }]}>
-                        {analytics.mostProductiveHour}
+                        {formatHourOfDay(analytics.mostProductiveHour, t.analytics, language)}
                       </Text>
                     </View>
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
           </>

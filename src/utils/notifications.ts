@@ -106,12 +106,17 @@ export async function scheduleGoalNotification(goal: Goal): Promise<string[]> {
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
+        // `type` is required. Without it expo-notifications cannot tell this is a
+        // weekly trigger: the object still passes validation (it has a
+        // channelId) but falls through every typed parser, and is delivered
+        // IMMEDIATELY and only once - on iOS as a null trigger, on Android as a
+        // bare channel trigger. Weekly triggers always repeat, so no `repeats`.
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
           channelId: 'goal-reminders',
           weekday: weekday + 1, // expo-notifications uses 1-7 for Sunday-Saturday
           hour,
           minute,
-          repeats: true,
         },
       });
 

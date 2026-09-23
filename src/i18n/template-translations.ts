@@ -20,33 +20,13 @@ export const goalTemplateTranslations: Record<string, Record<Language, { title: 
     en: { title: 'Run Distance', description: 'Complete running goal' },
     ar: { title: 'مسافة الجري', description: 'إكمال هدف الجري' },
   },
-  drink_water: {
-    en: { title: 'Drink Water', description: 'Stay hydrated daily' },
-    ar: { title: 'شرب الماء', description: 'حافظ على الترطيب يومياً' },
-  },
-  workout_sessions: {
-    en: { title: 'Workout Sessions', description: 'Complete workout routines' },
-    ar: { title: 'جلسات التمرين', description: 'أكمل روتين التمارين' },
-  },
   steps_daily: {
     en: { title: 'Daily Steps', description: 'Walk X steps per day' },
     ar: { title: 'الخطوات اليومية', description: 'امشِ X خطوة يومياً' },
   },
-  sleep_hours: {
-    en: { title: 'Sleep Hours', description: 'Get enough rest' },
-    ar: { title: 'ساعات النوم', description: 'احصل على قسط كافٍ من الراحة' },
-  },
   meditation: {
     en: { title: 'Meditation', description: 'Practice mindfulness' },
     ar: { title: 'التأمل', description: 'مارس اليقظة الذهنية' },
-  },
-  yoga_sessions: {
-    en: { title: 'Yoga Practice', description: 'Regular yoga sessions' },
-    ar: { title: 'ممارسة اليوغا', description: 'جلسات يوغا منتظمة' },
-  },
-  push_ups: {
-    en: { title: 'Push-ups', description: 'Build upper body strength' },
-    ar: { title: 'تمارين الضغط', description: 'بناء قوة الجزء العلوي' },
   },
   
   // Learning & Education
@@ -58,33 +38,9 @@ export const goalTemplateTranslations: Record<string, Record<Language, { title: 
     en: { title: 'Learn Language', description: 'Study new language' },
     ar: { title: 'تعلم لغة', description: 'ادرس لغة جديدة' },
   },
-  online_course: {
-    en: { title: 'Online Course', description: 'Complete course modules' },
-    ar: { title: 'دورة عبر الإنترنت', description: 'أكمل وحدات الدورة' },
-  },
-  study_hours: {
-    en: { title: 'Study Hours', description: 'Dedicated learning time' },
-    ar: { title: 'ساعات الدراسة', description: 'وقت مخصص للتعلم' },
-  },
-  coding_practice: {
-    en: { title: 'Coding Practice', description: 'Improve programming skills' },
-    ar: { title: 'ممارسة البرمجة', description: 'حسّن مهارات البرمجة' },
-  },
   watch_tutorials: {
     en: { title: 'Watch Tutorials', description: 'Educational videos' },
     ar: { title: 'مشاهدة دروس', description: 'مقاطع فيديو تعليمية' },
-  },
-  practice_instrument: {
-    en: { title: 'Practice Music', description: 'Learn an instrument' },
-    ar: { title: 'ممارسة الموسيقى', description: 'تعلم آلة موسيقية' },
-  },
-  write_journal: {
-    en: { title: 'Write Journal', description: 'Daily journaling practice' },
-    ar: { title: 'كتابة يوميات', description: 'ممارسة الكتابة اليومية' },
-  },
-  learn_skill: {
-    en: { title: 'Learn New Skill', description: 'Master a new ability' },
-    ar: { title: 'تعلم مهارة جديدة', description: 'إتقان قدرة جديدة' },
   },
   
   // Work & Productivity
@@ -92,43 +48,11 @@ export const goalTemplateTranslations: Record<string, Record<Language, { title: 
     en: { title: 'Complete Projects', description: 'Finish work tasks' },
     ar: { title: 'إكمال المشاريع', description: 'إنهاء مهام العمل' },
   },
-  work_hours: {
-    en: { title: 'Productive Hours', description: 'Focused work time' },
-    ar: { title: 'ساعات الإنتاج', description: 'وقت عمل مركز' },
-  },
-  meetings_attended: {
-    en: { title: 'Attend Meetings', description: 'Professional engagement' },
-    ar: { title: 'حضور الاجتماعات', description: 'المشاركة المهنية' },
-  },
-  tasks_completed: {
-    en: { title: 'Complete Tasks', description: 'Daily task completion' },
-    ar: { title: 'إكمال المهام', description: 'إنجاز المهام اليومية' },
-  },
-  emails_processed: {
-    en: { title: 'Process Emails', description: 'Inbox management' },
-    ar: { title: 'معالجة الرسائل', description: 'إدارة البريد الوارد' },
-  },
   
   // Finance
   save_money: {
     en: { title: 'Save Money', description: 'Build savings' },
     ar: { title: 'توفير المال', description: 'بناء المدخرات' },
-  },
-  reduce_spending: {
-    en: { title: 'Reduce Spending', description: 'Cut unnecessary expenses' },
-    ar: { title: 'تقليل الإنفاق', description: 'خفض النفقات غير الضرورية' },
-  },
-  earn_income: {
-    en: { title: 'Earn Income', description: 'Increase earnings' },
-    ar: { title: 'كسب الدخل', description: 'زيادة الأرباح' },
-  },
-  invest_money: {
-    en: { title: 'Invest Money', description: 'Build investment portfolio' },
-    ar: { title: 'استثمار المال', description: 'بناء محفظة استثمارية' },
-  },
-  pay_debt: {
-    en: { title: 'Pay Off Debt', description: 'Reduce debt balance' },
-    ar: { title: 'سداد الديون', description: 'تقليل رصيد الديون' },
   },
   
   // Personal & Social
@@ -140,24 +64,8 @@ export const goalTemplateTranslations: Record<string, Record<Language, { title: 
     en: { title: 'Meet Friends', description: 'Social connections' },
     ar: { title: 'لقاء الأصدقاء', description: 'الروابط الاجتماعية' },
   },
-  volunteer_hours: {
-    en: { title: 'Volunteer', description: 'Give back to community' },
-    ar: { title: 'العمل التطوعي', description: 'رد الجميل للمجتمع' },
-  },
-  clean_organize: {
-    en: { title: 'Clean & Organize', description: 'Maintain tidy space' },
-    ar: { title: 'التنظيف والترتيب', description: 'حافظ على مساحة نظيفة' },
-  },
-  practice_gratitude: {
-    en: { title: 'Practice Gratitude', description: 'Daily thankfulness' },
-    ar: { title: 'ممارسة الامتنان', description: 'الشكر اليومي' },
-  },
   
   // Hobbies
-  draw_paint: {
-    en: { title: 'Draw & Paint', description: 'Creative art practice' },
-    ar: { title: 'الرسم والتلوين', description: 'ممارسة الفن الإبداعي' },
-  },
   photography: {
     en: { title: 'Photography', description: 'Capture moments' },
     ar: { title: 'التصوير الفوتوغرافي', description: 'التقط اللحظات' },
@@ -169,10 +77,6 @@ export const goalTemplateTranslations: Record<string, Record<Language, { title: 
   cooking: {
     en: { title: 'Cooking', description: 'Prepare meals' },
     ar: { title: 'الطبخ', description: 'إعداد الوجبات' },
-  },
-  gaming: {
-    en: { title: 'Gaming', description: 'Play games' },
-    ar: { title: 'الألعاب', description: 'لعب الألعاب' },
   },
   daily_water: {
     en: { title: 'Drink Water', description: 'Stay hydrated daily' },
@@ -395,17 +299,9 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
     en: { title: 'Coffee Shop Visit', description: 'Treat yourself to your favorite drink' },
     ar: { title: 'زيارة المقهى', description: 'دلل نفسك بمشروبك المفضل' },
   },
-  restaurant_meal: {
-    en: { title: 'Restaurant Meal', description: 'Enjoy a nice meal out' },
-    ar: { title: 'وجبة في مطعم', description: 'استمتع بوجبة لذيذة بالخارج' },
-  },
   dessert: {
     en: { title: 'Dessert', description: 'Sweet treat' },
     ar: { title: 'حلوى', description: 'حلوى لذيذة' },
-  },
-  pizza: {
-    en: { title: 'Pizza', description: 'Order your favorite pizza' },
-    ar: { title: 'بيتزا', description: 'اطلب بيتزا المفضلة' },
   },
   ice_cream: {
     en: { title: 'Ice Cream', description: 'Cold and delicious' },
@@ -414,10 +310,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   smoothie: {
     en: { title: 'Smoothie', description: 'Healthy and refreshing' },
     ar: { title: 'سموذي', description: 'صحي ومنعش' },
-  },
-  snacks: {
-    en: { title: 'Snack Time', description: 'Your favorite snacks' },
-    ar: { title: 'وقت الوجبات الخفيفة', description: 'وجباتك الخفيفة المفضلة' },
   },
   bubble_tea: {
     en: { title: 'Bubble Tea', description: 'Refreshing bubble tea drink' },
@@ -445,25 +337,13 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   },
   
   // Entertainment
-  movie_night: {
-    en: { title: 'Movie Night', description: 'Watch a new movie' },
-    ar: { title: 'ليلة فيلم', description: 'شاهد فيلماً جديداً' },
-  },
-  streaming_service: {
-    en: { title: 'Streaming Subscription', description: '1 month subscription' },
-    ar: { title: 'اشتراك البث', description: 'اشتراك لمدة شهر واحد' },
-  },
-  concert_ticket: {
-    en: { title: 'Concert Ticket', description: 'See your favorite artist' },
-    ar: { title: 'تذكرة حفل موسيقي', description: 'شاهد فنانك المفضل' },
+  concert: {
+    en: { title: 'Concert Tickets', description: 'Live music experience' },
+    ar: { title: 'تذاكر حفل موسيقي', description: 'تجربة موسيقية حية' },
   },
   video_game: {
     en: { title: 'Video Game', description: 'New game purchase' },
     ar: { title: 'لعبة فيديو', description: 'شراء لعبة جديدة' },
-  },
-  book_purchase: {
-    en: { title: 'Book Purchase', description: 'Buy a new book' },
-    ar: { title: 'شراء كتاب', description: 'اشترِ كتاباً جديداً' },
   },
   music_album: {
     en: { title: 'Music Album', description: 'Download new music' },
@@ -499,10 +379,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   },
   
   // Shopping
-  clothing_item: {
-    en: { title: 'Clothing Item', description: 'New outfit piece' },
-    ar: { title: 'قطعة ملابس', description: 'قطعة زي جديدة' },
-  },
   shoes: {
     en: { title: 'New Shoes', description: 'Treat your feet' },
     ar: { title: 'حذاء جديد', description: 'دلل قدميك' },
@@ -510,10 +386,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   accessories: {
     en: { title: 'Accessories', description: 'Fashion accessory' },
     ar: { title: 'إكسسوارات', description: 'إكسسوار أنيق' },
-  },
-  online_shopping: {
-    en: { title: 'Online Shopping', description: 'Shop your wishlist' },
-    ar: { title: 'التسوق عبر الإنترنت', description: 'تسوق من قائمة أمنياتك' },
   },
   home_decor: {
     en: { title: 'Home Décor', description: 'Beautify your space' },
@@ -565,10 +437,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
     en: { title: 'Haircut', description: 'New hairstyle' },
     ar: { title: 'قصة شعر', description: 'تسريحة جديدة' },
   },
-  skincare_product: {
-    en: { title: 'Skincare Product', description: 'Pamper your skin' },
-    ar: { title: 'منتج للعناية بالبشرة', description: 'دلل بشرتك' },
-  },
   yoga_class: {
     en: { title: 'Yoga Class', description: 'Mind and body wellness' },
     ar: { title: 'صف يوغا', description: 'صحة العقل والجسم' },
@@ -595,26 +463,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   },
   
   // Experiences
-  weekend_trip: {
-    en: { title: 'Weekend Trip', description: 'Short getaway' },
-    ar: { title: 'رحلة نهاية الأسبوع', description: 'رحلة قصيرة' },
-  },
-  museum_visit: {
-    en: { title: 'Museum Visit', description: 'Cultural experience' },
-    ar: { title: 'زيارة المتحف', description: 'تجربة ثقافية' },
-  },
-  amusement_park: {
-    en: { title: 'Amusement Park', description: 'Fun day out' },
-    ar: { title: 'مدينة ملاهي', description: 'يوم ممتع بالخارج' },
-  },
-  sports_event: {
-    en: { title: 'Sports Event', description: 'Live game ticket' },
-    ar: { title: 'حدث رياضي', description: 'تذكرة مباراة مباشرة' },
-  },
-  class_workshop: {
-    en: { title: 'Class/Workshop', description: 'Learn something new' },
-    ar: { title: 'فصل / ورشة عمل', description: 'تعلم شيئاً جديداً' },
-  },
   day_trip: {
     en: { title: 'Day Trip', description: 'Explore nearby destination' },
     ar: { title: 'رحلة يومية', description: 'استكشف وجهة قريبة' },
@@ -657,25 +505,9 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   },
   
   // Tech & Gadgets
-  app_purchase: {
-    en: { title: 'App Purchase', description: 'Premium app' },
-    ar: { title: 'شراء تطبيق', description: 'تطبيق متميز' },
-  },
   headphones: {
     en: { title: 'Headphones', description: 'Quality audio' },
     ar: { title: 'سماعات رأس', description: 'صوت عالي الجودة' },
-  },
-  phone_accessory: {
-    en: { title: 'Phone Accessory', description: 'Upgrade your device' },
-    ar: { title: 'ملحق للهاتف', description: 'طوّر جهازك' },
-  },
-  gadget: {
-    en: { title: 'New Gadget', description: 'Cool tech item' },
-    ar: { title: 'أداة جديدة', description: 'عنصر تقني رائع' },
-  },
-  software_license: {
-    en: { title: 'Software License', description: 'Productivity tool' },
-    ar: { title: 'ترخيص برنامج', description: 'أداة إنتاجية' },
   },
   smart_speaker: {
     en: { title: 'Smart Speaker', description: 'Voice-controlled assistant' },
@@ -715,22 +547,6 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
   },
   
   // Other
-  donation: {
-    en: { title: 'Charitable Donation', description: 'Give back' },
-    ar: { title: 'تبرع خيري', description: 'رد الجميل' },
-  },
-  hobby_supplies: {
-    en: { title: 'Hobby Supplies', description: 'Materials for your passion' },
-    ar: { title: 'مستلزمات الهواية', description: 'مواد لشغفك' },
-  },
-  free_time: {
-    en: { title: 'Free Time', description: 'Guilt-free relaxation' },
-    ar: { title: 'وقت حر', description: 'استرخاء بدون ذنب' },
-  },
-  cheat_day: {
-    en: { title: 'Cheat Day', description: 'Break the rules' },
-    ar: { title: 'يوم الغش', description: 'اكسر القواعد' },
-  },
   lazy_day: {
     en: { title: 'Lazy Day', description: 'Do nothing' },
     ar: { title: 'يوم كسل', description: 'لا تفعل شيئاً' },
@@ -806,15 +622,25 @@ export const rewardTemplateTranslations: Record<string, Record<Language, { title
 };
 
 /**
+ * Returned when a template has no translation.
+ *
+ * Empty strings, not the template id: the template getters fall back with
+ * `translation.title || template.title`, and a truthy id defeated that fallback,
+ * so an untranslated template displayed its raw id ("concert") instead of its
+ * English title.
+ */
+const MISSING_TRANSLATION = { title: '', description: '' } as const;
+
+/**
  * Get translated goal template
  */
 export const getGoalTemplateTranslation = (templateId: string, language: Language) => {
-  return goalTemplateTranslations[templateId]?.[language] || { title: templateId, description: '' };
+  return goalTemplateTranslations[templateId]?.[language] || MISSING_TRANSLATION;
 };
 
 /**
  * Get translated reward template
  */
 export const getRewardTemplateTranslation = (templateId: string, language: Language) => {
-  return rewardTemplateTranslations[templateId]?.[language] || { title: templateId, description: '' };
+  return rewardTemplateTranslations[templateId]?.[language] || MISSING_TRANSLATION;
 };

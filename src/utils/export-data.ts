@@ -182,6 +182,23 @@ export interface ImportResult {
 }
 
 /**
+ * Lifetime points from an export file.
+ *
+ * generateJSONExport writes `lifetimePointsEarned`, but the parser only ever
+ * read `lifetimePoints`, so a backup made by this app always imported with
+ * null points. Read the key we actually write, and keep accepting the old one.
+ */
+function readLifetimePoints(data: Record<string, unknown>): number | null {
+  if (typeof data.lifetimePointsEarned === 'number') {
+    return data.lifetimePointsEarned;
+  }
+  if (typeof data.lifetimePoints === 'number') {
+    return data.lifetimePoints;
+  }
+  return null;
+}
+
+/**
  * Parse and validate JSON import data
  */
 export function parseJSONImport(jsonString: string): ImportResult {
@@ -244,7 +261,7 @@ export function parseJSONImport(jsonString: string): ImportResult {
       data: {
         goals: validGoals as Goal[],
         rewards: validRewards as Reward[],
-        lifetimePoints: typeof data.lifetimePoints === 'number' ? data.lifetimePoints : null,
+        lifetimePoints: readLifetimePoints(data),
       },
       errors,
     };

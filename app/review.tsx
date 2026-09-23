@@ -3,6 +3,7 @@
  * Weekly/Monthly review of goals and achievements
  */
 
+import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -17,8 +18,7 @@ import {
     ReviewPeriod,
 } from '@/src/utils/review-statistics';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,19 +31,9 @@ export default function ReviewScreen() {
   const { goals } = useGoals();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
-  const router = useRouter();
 
-  /**
-   * These screens are reachable by deep link, where there is no history to pop;
-   * router.back() would no-op and strand the user.
-   */
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/home');
-    }
-  }, [router]);
+
+  const handleBack = useBackOrHome();
   
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('thisWeek');
   
@@ -92,7 +82,7 @@ export default function ReviewScreen() {
             style={styles.backButton}
             onPress={handleBack}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={t.common.back}
           >
             <Ionicons name="arrow-back" size={24} color={theme.colors.primary} />
             <Text style={[styles.backButtonText, { color: theme.colors.primary }]}>

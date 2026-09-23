@@ -14,7 +14,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { Reward } from '@/src/types';
 import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
     Alert,
     Modal,
@@ -42,6 +42,7 @@ export default function RewardsScreen() {
     removeReward,
     getAvailableRewards,
     getRedeemedRewards,
+    refreshRewards,
   } = useRewards();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -78,11 +79,14 @@ export default function RewardsScreen() {
     return sections;
   }, [availableRewards, redeemedRewards, t]);
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Refresh would happen automatically through context
-    setTimeout(() => setRefreshing(false), 1000);
-  };
+    try {
+      await refreshRewards();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshRewards]);
 
   const openAddModal = () => {
     setEditingReward(null);

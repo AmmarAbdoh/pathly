@@ -3,6 +3,7 @@
  * App-wide providers and navigation configuration
  */
 
+import StorageErrorBanner from '@/components/StorageErrorBanner';
 import { GoalsProvider } from '@/src/context/GoalsContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
 import { RewardsProvider } from '@/src/context/RewardsContext';
@@ -49,6 +50,8 @@ export default function RootLayout() {
                     options={{ animation: 'slide_from_bottom' }}
                   />
                 </Stack>
+                {/* Rendered after the Stack so it overlays every screen. */}
+                <StorageErrorBanner />
               </RewardsProvider>
             </GoalsProvider>
           </ThemeProvider>

@@ -24,7 +24,14 @@ import {
 import { isGoalActiveOnDate } from '@/src/utils/goal-scheduling';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -81,12 +88,13 @@ function compareGoals(a: Goal, b: Goal): number {
 }
 
 export default function HomeScreen() {
-  const { goals, reorderGoals, isLoading } = useGoals();
+  const { goals, reorderGoals, refreshGoals, isLoading } = useGoals();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
   const router = useRouter();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
 
   // Keep the heavy grouping work off the keystroke path.
@@ -385,6 +393,19 @@ export default function HomeScreen() {
 
   const keyExtractor = useCallback((item: ListRow) => item.key, []);
 
+  /**
+   * Pull to refresh re-runs the recurring-goal rollover, which is what resets
+   * daily goals when the app has been left open across midnight.
+   */
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshGoals();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refreshGoals]);
+
   const listHeader = useMemo(
     () => (
       <GoalListHeader
@@ -398,7 +419,9 @@ export default function HomeScreen() {
   );
 
   const listEmpty = useMemo(() => {
-    if (isLoading) {
+    // RefreshControl draws its own spinner during a pull-to-refresh, so only
+    // show the inline one for the initial load.
+    if (isLoading && !isRefreshing) {
       return (
         <View style={styles.stateContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -413,7 +436,7 @@ export default function HomeScreen() {
         </Text>
       </Animated.View>
     );
-  }, [isLoading, theme, t, searchQuery, filterStatus]);
+  }, [isLoading, isRefreshing, theme, t, searchQuery, filterStatus]);
 
   return (
     <SafeAreaView
@@ -430,6 +453,13 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+          />
+        }
         removeClippedSubviews
         initialNumToRender={8}
         maxToRenderPerBatch={8}

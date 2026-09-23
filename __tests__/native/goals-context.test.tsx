@@ -1,0 +1,559 @@
+/**
+ * GoalsContext, rendered for real.
+ *
+ * These cover the behaviour that lives in the provider rather than in the pure
+ * helpers it calls: the debounced persistence, the ref/state bookkeeping that
+ * makes mutators stable, and the points rules that depend on both.
+ */
+
+import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
+import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
+import { Goal, Reward } from '@/src/types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { act, renderHook, waitFor } from '@testing-library/react-native';
+import React from 'react';
+
+/** Mirrors SAVE_DEBOUNCE_MS in GoalsContext. */
+const SAVE_DEBOUNCE_MS = 400;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const makeGoal = (overrides: Partial<Goal> = {}): Goal =>
+  ({
+    id: 1,
+    title: 'Read books',
+    target: 10,
+    current: 0,
+    initialValue: 0,
+    unit: 'books',
+    progress: 0,
+    points: 50,
+    direction: 'increase',
+    period: 'ongoing',
+    periodStartDate: Date.now(),
+    createdAt: Date.now(),
+    subGoals: [],
+    isComplete: false,
+    completionHistory: [],
+    ...overrides,
+  }) as Goal;
+
+async function seed(goals: Goal[], lifetimePoints = 0) {
+  await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
+  await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, String(lifetimePoints));
+}
+
+async function storedGoals(): Promise<Goal[]> {
+  return JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.GOALS)) ?? '[]');
+}
+
+const wrapper = ({ children }: { children: React.ReactNode }) => (
+  <GoalsProvider>{children}</GoalsProvider>
+);
+
+async function renderGoals() {
+  const view = renderHook(() => useGoals(), { wrapper });
+  await waitFor(() => expect(view.result.current.isLoading).toBe(false));
+  return view;
+}
+
+beforeEach(async () => {
+  await AsyncStorage.clear();
+});
+
+describe('loading', () => {
+  it('loads persisted goals and lifetime points on mount', async () => {
+    await seed([makeGoal()], 120);
+    const { result } = await renderGoals();
+
+    expect(result.current.goals).toHaveLength(1);
+    expect(result.current.goals[0].title).toBe('Read books');
+    expect(result.current.lifetimePointsEarned).toBe(120);
+  });
+
+  it('derives lifetime points from completed goals when none are stored yet', async () => {
+    // First run after upgrading from a version that did not track them.
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.GOALS,
+      JSON.stringify([
+        makeGoal({ id: 1, isComplete: true, points: 30 }),
+        makeGoal({ id: 2, isComplete: false, points: 99 }),
+      ])
+    );
+    const { result } = await renderGoals();
+
+    expect(result.current.lifetimePointsEarned).toBe(30);
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('30');
+  });
+});
+
+describe('points', () => {
+  it('awards a goal its points exactly once, however often it is set to complete', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    expect(result.current.goals[0].isComplete).toBe(true);
+    expect(result.current.lifetimePointsEarned).toBe(50);
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    await act(async () => {
+      await result.current.finishGoal(1);
+    });
+    expect(result.current.lifetimePointsEarned).toBe(50);
+  });
+
+  it('only lets a subgoal award points when its parent opts in', async () => {
+    const parent = (optIn: boolean, id: number, subId: number) =>
+      makeGoal({ id, isUltimate: true, subgoalsAwardPoints: optIn, subGoals: [subId], points: 0 });
+    const sub = (id: number, parentId: number) => makeGoal({ id, parentId, points: 25 });
+
+    await seed([parent(false, 1, 2), sub(2, 1), parent(true, 3, 4), sub(4, 3)]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(2, 10);
+    });
+    expect(result.current.lifetimePointsEarned).toBe(0);
+
+    await act(async () => {
+      await result.current.updateGoal(4, 10);
+    });
+    expect(result.current.lifetimePointsEarned).toBe(25);
+  });
+});
+
+describe('subgoal roll-up', () => {
+  it('recalculates the parent when a subgoal changes', async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2, 3] }),
+      makeGoal({ id: 2, parentId: 1 }),
+      makeGoal({ id: 3, parentId: 1 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(2, 10); // one of two subgoals done
+    });
+
+    const parent = result.current.goals.find((g) => g.id === 1);
+    expect(parent?.progress).toBe(50);
+  });
+
+  it('detaches an archived subgoal from its parent and recalculates', async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2, 3], progress: 50 }),
+      makeGoal({ id: 2, parentId: 1, current: 10, progress: 100, isComplete: true }),
+      makeGoal({ id: 3, parentId: 1 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.archiveGoal(3); // the incomplete one
+    });
+
+    const parent = result.current.goals.find((g) => g.id === 1);
+    expect(parent?.subGoals).toEqual([2]);
+    expect(parent?.progress).toBe(100);
+    expect(result.current.goals.find((g) => g.id === 3)?.isArchived).toBe(true);
+  });
+});
+
+describe('debounced persistence', () => {
+  it('updates state immediately and storage only after the debounce', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 4);
+    });
+    expect(result.current.goals[0].current).toBe(4);
+    expect((await storedGoals())[0].current).toBe(0);
+
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+    expect((await storedGoals())[0].current).toBe(4);
+  });
+
+  it('coalesces a burst of mutations into a single write', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    // setItem is already a jest.fn in the async-storage mock. Spying on it would
+    // return that same mock, and restoring the spy would wipe its implementation
+    // and silently break every later test's writes - so only clear its calls.
+    const setItem = AsyncStorage.setItem as jest.Mock;
+    setItem.mockClear();
+
+    await act(async () => {
+      for (const value of [1, 2, 3, 4, 5]) {
+        await result.current.updateGoal(1, value);
+      }
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+
+    const goalWrites = setItem.mock.calls.filter(([key]) => key === STORAGE_KEYS.GOALS);
+    expect(goalWrites).toHaveLength(1);
+    expect(JSON.parse(goalWrites[0][1])[0].current).toBe(5);
+  });
+
+  it('flushes a pending write when the provider unmounts', async () => {
+    await seed([makeGoal()]);
+    const { result, unmount } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 6);
+    });
+    unmount();
+    await act(async () => {
+      await sleep(50); // well inside the debounce window
+    });
+
+    expect((await storedGoals())[0].current).toBe(6);
+  });
+});
+
+describe('refreshGoals inside the debounce window', () => {
+  /*
+   * Regression: refreshGoals used to read storage without flushing, so a
+   * refresh landing mid-debounce loaded pre-mutation data over newer in-memory
+   * state. Because `wasComplete` is read from memory while lifetime points are
+   * written immediately and never decrease, re-completing the reverted goal
+   * paid out a second time.
+   */
+
+  it('keeps the in-flight update instead of reverting it', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+
+    expect(result.current.goals[0].current).toBe(10);
+    expect(result.current.goals[0].isComplete).toBe(true);
+  });
+
+  it('leaves storage and memory in agreement', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 7);
+    });
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+
+    expect((await storedGoals())[0].current).toBe(result.current.goals[0].current);
+  });
+
+  it('does not award the same completion twice', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+
+    expect(result.current.lifetimePointsEarned).toBe(50);
+  });
+});
+
+describe('linked rewards', () => {
+  it('auto-redeems the linked reward the first time a goal is finished', async () => {
+    const reward: Reward = {
+      id: 77,
+      title: 'Movie night',
+      description: '',
+      pointsCost: 50,
+      icon: '🎬',
+      createdAt: Date.now(),
+      isRedeemed: false,
+    };
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([reward]));
+    await seed([makeGoal({ linkedRewardId: 77 })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.finishGoal(1);
+    });
+
+    const rewards: Reward[] = JSON.parse((await AsyncStorage.getItem(REWARDS_KEY)) ?? '[]');
+    expect(rewards[0].isRedeemed).toBe(true);
+  });
+});
+
+describe('destructive and restorative mutations', () => {
+  it('permanently deletes a goal together with its subgoals', async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2] }),
+      makeGoal({ id: 2, parentId: 1 }),
+      makeGoal({ id: 3 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.permanentlyDeleteGoal(1);
+    });
+
+    expect(result.current.goals.map((g) => g.id)).toEqual([3]);
+  });
+
+  it('detaches a permanently deleted subgoal from its parent', async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2, 3] }),
+      makeGoal({ id: 2, parentId: 1, current: 10, progress: 100, isComplete: true }),
+      makeGoal({ id: 3, parentId: 1 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.permanentlyDeleteGoal(3);
+    });
+
+    const parent = result.current.goals.find((g) => g.id === 1);
+    expect(parent?.subGoals).toEqual([2]);
+    expect(parent?.progress).toBe(100);
+  });
+
+  it('unarchives a goal and its subgoals', async () => {
+    await seed([
+      makeGoal({ id: 1, subGoals: [2], isArchived: true, archivedAt: 1 }),
+      makeGoal({ id: 2, parentId: 1, isArchived: true, archivedAt: 1 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.unarchiveGoal(1);
+    });
+
+    for (const goal of result.current.goals) {
+      expect(goal.isArchived).toBeUndefined();
+      expect(goal.archivedAt).toBeUndefined();
+    }
+  });
+});
+
+describe('other mutations', () => {
+  it('edits a goal and recalculates its progress', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.editGoal(1, '  Read more  ', 20, 5, 'books', 'increase', 50, 'ongoing');
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ title: 'Read more', target: 20, progress: 25 });
+  });
+
+  it('assigns sort order from the given id sequence', async () => {
+    await seed([makeGoal({ id: 1 }), makeGoal({ id: 2 }), makeGoal({ id: 3 })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.reorderGoals([3, 1, 2]);
+    });
+
+    const order = Object.fromEntries(result.current.goals.map((g) => [g.id, g.sortOrder]));
+    expect(order).toEqual({ 1: 1, 2: 2, 3: 0 });
+  });
+
+  it('toggles pause and records when it was paused', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.togglePause(1);
+    });
+    expect(result.current.goals[0].isPaused).toBe(true);
+    expect(result.current.goals[0].pausedAt).toEqual(expect.any(Number));
+
+    await act(async () => {
+      await result.current.togglePause(1);
+    });
+    expect(result.current.goals[0].isPaused).toBe(false);
+    expect(result.current.goals[0].pausedAt).toBeUndefined();
+  });
+
+  it('adds and deletes notes', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addNote(1, '  first  ');
+    });
+    const note = result.current.goals[0].notes?.[0];
+    expect(note?.text).toBe('first');
+
+    await act(async () => {
+      await result.current.deleteNote(1, note!.id);
+    });
+    expect(result.current.goals[0].notes).toEqual([]);
+  });
+
+  it('blocks a goal until every dependency is complete, and ignores duplicate dependencies', async () => {
+    await seed([makeGoal({ id: 1 }), makeGoal({ id: 2 }), makeGoal({ id: 3 })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addDependency(1, 2);
+      await result.current.addDependency(1, 2);
+      await result.current.addDependency(1, 3);
+    });
+    expect(result.current.goals.find((g) => g.id === 1)?.dependsOn).toEqual([2, 3]);
+    expect(result.current.checkDependencies(1)).toBe(false);
+
+    await act(async () => {
+      await result.current.finishGoal(2);
+    });
+    expect(result.current.checkDependencies(1)).toBe(false);
+
+    await act(async () => {
+      await result.current.removeDependency(1, 3);
+    });
+    expect(result.current.checkDependencies(1)).toBe(true);
+  });
+
+  it('extends a deadline by moving the period start', async () => {
+    const start = Date.UTC(2026, 0, 1);
+    await seed([makeGoal({ period: 'weekly', periodStartDate: start })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.extendDeadline(1, 3);
+    });
+
+    expect(result.current.goals[0].periodStartDate).toBe(start + 3 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe('ids', () => {
+  // Regression: ids were Date.now(), so goals added within one millisecond -
+  // which JSON import does in a loop - all shared a single id.
+  it('gives goals added back to back distinct ids', async () => {
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      for (let i = 0; i < 5; i += 1) {
+        await result.current.addGoal(`Goal ${i}`, 10, 0, 'x', 'increase', 1, 'daily');
+      }
+    });
+
+    const ids = result.current.goals.map((g) => g.id);
+    expect(ids).toHaveLength(5);
+    expect(new Set(ids).size).toBe(5);
+  });
+
+  it('updates only the goal it was asked to after a burst of adds', async () => {
+    const { result } = await renderGoals();
+    await act(async () => {
+      await result.current.addGoal('A', 10, 0, 'x', 'increase', 1, 'daily');
+      await result.current.addGoal('B', 10, 0, 'x', 'increase', 1, 'daily');
+    });
+
+    const [a, b] = result.current.goals;
+    await act(async () => {
+      await result.current.updateGoal(a.id, 5);
+    });
+
+    expect(result.current.goals.find((g) => g.id === a.id)?.current).toBe(5);
+    expect(result.current.goals.find((g) => g.id === b.id)?.current).toBe(0);
+  });
+
+  it('gives notes added back to back distinct ids, so deleting one leaves the other', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addNote(1, 'first');
+      await result.current.addNote(1, 'second');
+    });
+    const [first] = result.current.goals[0].notes!;
+
+    await act(async () => {
+      await result.current.deleteNote(1, first.id);
+    });
+
+    expect(result.current.goals[0].notes?.map((n) => n.text)).toEqual(['second']);
+  });
+});
+
+describe('adding goals', () => {
+  it('adds a top-level goal with its initial progress', async () => {
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('  Run  ', 100, 25, ' km ', 'increase', 20, 'weekly');
+    });
+
+    expect(result.current.goals[0]).toMatchObject({
+      title: 'Run',
+      unit: 'km',
+      target: 100,
+      current: 25,
+      initialValue: 25,
+      progress: 25,
+      period: 'weekly',
+      isComplete: false,
+    });
+  });
+
+  it('defaults an ultimate goal to not awarding subgoal points', async () => {
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('Big', 100, 0, 'x', 'increase', 0, 'ongoing', undefined, undefined, true);
+    });
+
+    expect(result.current.goals[0].subgoalsAwardPoints).toBe(false);
+  });
+
+  it('attaches a subgoal to its parent and recalculates the parent', async () => {
+    await seed([makeGoal({ id: 1, isUltimate: true, subGoals: [] })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addSubgoal(1, 'Step', 10, 10, 'x', 'increase', 0, 'daily');
+    });
+
+    const parent = result.current.goals.find((g) => g.id === 1);
+    const child = result.current.goals.find((g) => g.parentId === 1);
+    expect(parent?.subGoals).toEqual([child?.id]);
+    expect(result.current.getSubgoals(1).map((g) => g.id)).toEqual([child?.id]);
+  });
+
+  it('recalculates on demand', async () => {
+    // Parent progress deliberately stale in storage.
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2], progress: 0 }),
+      makeGoal({ id: 2, parentId: 1, current: 10, progress: 100, isComplete: true }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.recalculateProgress(1);
+    });
+
+    expect(result.current.goals.find((g) => g.id === 1)?.progress).toBe(100);
+  });
+});
+

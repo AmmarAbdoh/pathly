@@ -191,12 +191,9 @@ export function calculateStreak(goal: Goal): { currentStreak: number; longestStr
     completions.push(goal.completedAt);
   }
 
-  // Sort completions chronologically
+  // Sort completions chronologically. Never empty here: the guard above has
+  // already returned for a goal with no completion history.
   completions.sort((a, b) => a - b);
-
-  if (completions.length === 0) {
-    return { currentStreak: 0, longestStreak: 0 };
-  }
 
   // Calculate period length in milliseconds
   const periodLength = getPeriodLength(goal.period, goal.customPeriodDays);

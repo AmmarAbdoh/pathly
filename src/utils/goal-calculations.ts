@@ -232,6 +232,7 @@ export const formatTimeRemaining = (
     expired?: string;
     resetsIn?: string;
     and?: string;          // Separator between time units
+    singularAfterTen?: boolean; // Arabic: 11+ takes the singular noun
   },
   isRecurring?: boolean
 ): string => {
@@ -251,8 +252,10 @@ export const formatTimeRemaining = (
   const getTimeLabel = (count: number, singular?: string, dual?: string, plural?: string): string => {
     if (count === 1) return singular || '';
     if (count === 2 && dual) return dual;
-    if (count >= 11) return singular || '';  // Arabic: 11+ uses singular form
-    return plural || singular || '';         // 3-10 uses plural
+    // Arabic counts of 11+ take the singular noun. This used to apply to every
+    // language, so English monthly goals read "25 day left".
+    if (count >= 11 && translations?.singularAfterTen) return singular || '';
+    return plural || singular || '';
   };
 
   if (days > 0) {

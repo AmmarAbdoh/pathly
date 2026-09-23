@@ -654,3 +654,66 @@ describe('Recurring Goals Utilities', () => {
     });
   });
 });
+
+describe('calculateStreak for an ongoing recurring goal', () => {
+  it('falls back to a one-day period length', () => {
+    const now = Date.now();
+    const goal = {
+      id: 1,
+      title: 'Ongoing',
+      target: 1,
+      current: 0,
+      unit: 'x',
+      progress: 0,
+      points: 1,
+      direction: 'increase',
+      period: 'ongoing',
+      periodStartDate: now,
+      createdAt: now,
+      isRecurring: true,
+      isComplete: true,
+      completedAt: now,
+      completionHistory: [now - 24 * 60 * 60 * 1000],
+    } as Goal;
+
+    // Two completions a day apart count as consecutive under the default
+    // one-day period.
+    expect(calculateStreak(goal)).toEqual({ currentStreak: 2, longestStreak: 2 });
+  });
+});
+
+describe('recurring edge cases', () => {
+  const base = {
+    id: 1,
+    title: 'g',
+    target: 1,
+    current: 1,
+    initialValue: 0,
+    unit: 'x',
+    progress: 100,
+    points: 1,
+    direction: 'increase',
+    createdAt: 0,
+    isRecurring: true,
+  } as const;
+
+  it('starts a completion history when resetting a goal that has none', () => {
+    const reset = resetGoal({ ...base, period: 'daily', periodStartDate: 0, isComplete: false } as Goal);
+    expect(reset.completionHistory).toEqual([]);
+  });
+
+  it('treats a custom period with no length as one day when measuring streaks', () => {
+    const now = Date.now();
+    const goal = {
+      ...base,
+      period: 'custom',
+      periodStartDate: now,
+      isComplete: true,
+      completedAt: now,
+      completionHistory: [now - 24 * 60 * 60 * 1000],
+    } as Goal;
+
+    expect(calculateStreak(goal).currentStreak).toBe(2);
+  });
+});
+

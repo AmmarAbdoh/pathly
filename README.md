@@ -35,6 +35,12 @@ your data never leaves your device.
 - **Achievements** — 10 to unlock
 - **Streaks** — current and longest, for recurring goals
 
+### 💾 Backup & Restore
+- Export everything as JSON (or CSV for spreadsheets)
+- Import a backup by **merging** it with your current data or **replacing** it — every goal and
+  reward comes back whole: progress, history, streaks, notes, schedules and links
+- If data can't be saved, you're told straight away, with a Retry
+
 ### 📊 Insights
 - Progress dashboard with completion rate and lifetime points
 - Analytics screen with generated insights
@@ -80,7 +86,7 @@ Then press `a` for Android, `i` for iOS, or scan the QR code with Expo Go.
 | `npm start` | Expo dev server |
 | `npm run android` / `npm run ios` | native build and run |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint via `expo lint` |
+| `npm run lint` | `eslint .` — the whole repo, not just Expo's default paths |
 | `npm test` | Jest suite |
 | `npm run test:coverage` | Jest with coverage |
 | `npm run verify` | typecheck + lint + test — run before committing |
@@ -105,7 +111,9 @@ pathly/
 │   ├── i18n/                # translations
 │   ├── types/               # TypeScript interfaces
 │   └── utils/               # pure business logic (unit-tested)
-└── __tests__/integration/   # cross-context integration tests
+└── __tests__/
+    ├── integration/         # storage-level integration tests
+    └── native/              # contexts, hooks and RN-dependent utils (jest-expo)
 ```
 
 ---
@@ -117,7 +125,7 @@ pathly/
 - **Expo Router** for file-based navigation
 - **React Context** + **AsyncStorage** for state and persistence
 - **Reanimated 4.5** for UI-thread animations
-- **Jest** + **@testing-library/react-native** — 322 tests
+- **Jest** + **@testing-library/react-native** — 630 tests, ~96% coverage with no files excluded
 
 ---
 

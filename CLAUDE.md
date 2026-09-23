@@ -17,11 +17,14 @@ npm run ios          # native iOS build
 npm test             # Jest, all suites
 npm run test:watch   # Jest watch mode
 npm run typecheck    # tsc --noEmit  -- MUST pass before committing
-npm run lint         # expo lint    -- MUST have 0 errors before committing
+npm run lint         # eslint .     -- MUST have 0 errors before committing
 npm run verify       # typecheck + lint + test together
 ```
 
 `npm run verify` is the gate. Run it before you claim work is done.
+
+`lint` runs `eslint .`, not `expo lint` — the latter covers a narrower set of paths and let
+real errors in `jest.setup.js` sit behind a green check.
 
 ## Non-negotiables
 
@@ -29,7 +32,8 @@ npm run verify       # typecheck + lint + test together
    to it, don't silence it with `any` or `@ts-expect-error`. Fix the type.
 2. **Zero ESLint errors.** Warnings are tolerated; errors are not. The React Compiler's
    `set-state-in-effect` rule is deliberately set to `warn` in `eslint.config.js` — the
-   remaining hits are intentional prop-to-state mirrors. Don't add new ones.
+   remaining hits are the four provider mount-loads and four intentional prop-to-state mirrors
+   (listed there). Don't add new ones.
 3. **Never call a hook outside a component body.** This repo has already shipped one
    `useGoals()`-inside-a-`useCallback` crash. Destructure from the top-level hook call.
 4. **No dead routes.** Every file in `app/` is a live route. If nothing navigates to it, delete it
@@ -62,6 +66,16 @@ every consumer in the app. This was the single biggest source of sluggishness; d
 **Persistence is debounced** (`scheduleSave` in GoalsContext). State updates are synchronous and
 instant; the AsyncStorage write lands ~400ms later. Never `await` a save to update the UI.
 
+**Storage failures are surfaced, retried, and never destructive.** A failed write stays queued and
+sets `storageError: 'save'`; `StorageErrorBanner` (mounted in `app/_layout.tsx`) shows it with a
+Retry. A failed *load* sets `'load'` and **blocks all saving** until a reload succeeds — the
+in-memory goals are then not the user's data, and writing them would replace everything on disk.
+An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
+
+**Import keeps records whole.** `buildImport` (`src/utils/import-data.ts`) builds the next state;
+`replaceAllGoals` / `replaceAllRewards` apply it. Never import by calling `addGoal` / `addReward`
+per record — that is what used to drop completion state, history, notes, schedules and links.
+
 ### Business logic
 Pure functions in `src/utils/`, each unit-tested. Keep them pure — no React, no AsyncStorage:
 
@@ -76,6 +90,8 @@ Pure functions in `src/utils/`, each unit-tested. Keep them pure — no React, n
 | `validation.ts` | form validation |
 | `export-data.ts` | JSON import/export (CSV import unsupported) |
 | `notifications.ts` | expo-notifications scheduling |
+| `ids.ts` | collision-free record ids (`Date.now()` alone collides) |
+| `import-data.ts` | backup import: merge/replace, id remapping, repairing untrusted fields |
 
 If you add logic to one of these, add a test in the sibling `__tests__/` directory.
 
@@ -134,9 +150,42 @@ This app got slow by ignoring these. They are the house style now:
 
 ## Testing
 
-Jest + `@testing-library/react-native`. Unit tests next to the code in `__tests__/`, integration
-tests in the root `__tests__/integration/`. Add tests for new `src/utils/` logic; UI tests are
-nice-to-have, not required.
+Jest + `@testing-library/react-native`, split into two projects in `jest.config.js`:
+
+- **`unit`** — `ts-jest` on plain Node. Pure logic: `src/utils`, `src/constants`, the template
+  translations, and the storage-level suites in `__tests__/integration/`. Cannot load
+  `react-native`.
+- **`native`** — `jest-expo`, tests in `__tests__/native/`. Anything that needs the RN runtime:
+  the contexts and hooks rendered for real with `renderHook`, plus the utils that import
+  react-native / expo / Reanimated (`notifications`, `export-data`, `constants/animation`).
+
+Every logic file is in coverage scope — nothing is excluded to flatter the number.
+`npm run test:coverage` meets its 90% threshold on all four metrics (~96% statements, ~93%
+branches). What remains uncovered is unreachable: `catch` blocks around pure synchronous
+updates, load-error handlers behind storage helpers that already swallow errors, and guards that
+re-check a condition an earlier `filter` guarantees.
+
+Add tests for new `src/utils/` logic in `unit`, and for context/hook/RN-dependent code in
+`native`. Run one side with `npx jest --selectProjects native`.
+
+Gotchas:
+- **Never `jest.spyOn(...)` an already-mocked function and then `mockRestore()` it.** AsyncStorage's
+  methods and, under jest-expo, `AppState.addEventListener` are already `jest.fn`s. `spyOn` returns
+  that same function and `mockRestore()` wipes its implementation, silently breaking every later
+  test in the file. Use `mockImplementationOnce` / `mockRejectedValueOnce`, or cast and
+  `mockClear()`. This has bitten this repo twice.
+- `jest.clearAllMocks()` in a `beforeEach` erases calls made at **module load** (e.g. the
+  `setNotificationHandler` registration). Capture those at the top of the file.
+- `jest.mock` calls are hoisted above imports automatically — keep imports at the top of the file.
+  Variables a mock factory references must be prefixed `mock`.
+- Jest cannot execute a dynamic `import()`. Import statically.
+- Each file must be instrumented by exactly one project (`coveragePathIgnorePatterns`). ts-jest and
+  Babel produce different statement maps, and merging them corrupts the coverage report.
+- `jest.setup.js` mocks `react-native-worklets` and adds `useReducedMotion` to Reanimated's own
+  mock, which omits it. Without those, nothing animated can be rendered in a test.
+- When a test checks what a library does with our input, run the input through the library's real
+  code rather than a mock of it (see `parseTrigger` in the notifications tests) — that is how the
+  untyped reminder trigger was caught.
 
 ## Gotchas
 
@@ -149,8 +198,22 @@ nice-to-have, not required.
   nothing else pulls in; removing it breaks the app at runtime with no build-time error.
 - `expo-router` types `MaterialTopTabBarProps` as `any & {...}`, which collapses to `any`.
   `app/(tabs)/_layout.tsx` declares the props it uses locally to keep the file checked.
-- Guard optional strings with a ternary, not `&&` — `{icon && <Text/>}` renders a bare `''`
-  into a View when the string is empty, which throws on native.
+- **Guard falsy non-booleans with a ternary, not `&&`.** `{count && <X/>}` renders a literal
+  `0` when count is 0 — a string child of a `View`, which **throws on native**. That is the
+  real hazard. An empty *string* (`{name && <X/>}`) is skipped by React's reconciler and does
+  not crash, but it still produces a hydration error on web, so use a ternary for both.
+  Prefer `{count > 0 ? … : null}` and `{name ? … : null}`.
+- **Never use `Date.now()` alone as a record id.** Records created in the same millisecond collide
+  (import does this in a loop). Use `nextId()` from `src/utils/ids.ts`.
+- Plural rules are per-locale. `formatTimeRemaining` only applies Arabic's "11+ takes the
+  singular" when the locale's `time.singularAfterTen` is true; applying it globally made English
+  read "25 day left".
+- **Analytics returns data, not text.** `findBestCompletionDay` returns a weekday index and
+  `findMostProductiveHour` an hour; both can legitimately be `0` (Sunday, midnight), so check
+  `!== null`, never truthiness. The screen formats them in the user's language.
+- A backup file is untrusted input: it can contain duplicate ids, dangling links, missing fields
+  and even parent cycles (which make progress calculation recurse forever). `buildImport` repairs
+  all of these; keep it that way.
 - `app.json` ships a real bundle id / package name. Changing them after a store release breaks
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications

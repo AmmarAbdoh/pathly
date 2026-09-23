@@ -10,6 +10,8 @@ import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Language, ThemeMode } from '@/src/types';
 import { generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
+import { buildImport, type ImportMode } from '@/src/utils/import-data';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -32,8 +34,8 @@ interface LanguageOption {
 export default function SettingsScreen() {
   const { theme, themeMode, setThemeMode } = useTheme();
   const { t, language, setLanguage } = useLanguage();
-  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal, addGoal } = useGoals();
-  const { rewards, addReward, removeReward } = useRewards();
+  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal, replaceAllGoals } = useGoals();
+  const { rewards, replaceAllRewards } = useRewards();
   const [showArchivedGoals, setShowArchivedGoals] = useState(false);
   const [goalToDelete, setGoalToDelete] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -225,141 +227,99 @@ export default function SettingsScreen() {
         content = await new File(file.uri).text();
       }
 
-      // Parse the import
-      let importResult;
-      if (file.name.endsWith('.json')) {
-        importResult = parseJSONImport(content);
-      } else if (file.name.endsWith('.csv')) {
-        Alert.alert(t.common.error, 'CSV import is not yet supported. Please use JSON format.');
+      if (file.name.endsWith('.csv')) {
+        Alert.alert(t.common.error, t.import.csvUnsupported);
         setIsImporting(false);
         return;
-      } else {
+      }
+      if (!file.name.endsWith('.json')) {
         throw new Error('Unsupported file format');
       }
 
+      const importResult = parseJSONImport(content);
       if (!importResult.success || !importResult.data) {
-        Alert.alert(t.common.error, importResult.message || 'Failed to parse import file');
+        // The parser's own message is English and technical; show ours.
+        Alert.alert(t.common.error, t.import.invalidFile);
         setIsImporting(false);
         return;
       }
 
-      const { goals: importedGoals, rewards: importedRewards } = importResult.data;
+      const incoming = importResult.data;
+      const skipped = importResult.errors.length;
+      const count = (n: number) => formatNumber(n, language);
 
-      // Show confirmation dialog
-      Alert.alert(
-        t.import.confirmTitle,
-        t.import.confirmMessage
-          .replace('{goals}', importedGoals.length.toString())
-          .replace('{rewards}', importedRewards.length.toString()),
-        [
-          {
-            text: t.common.cancel,
-            style: 'cancel',
-            onPress: () => setIsImporting(false),
-          },
-          {
-            text: t.import.merge,
-            onPress: async () => {
-              try {
-                // Import goals by calling addGoal with all required parameters
-                for (const goal of importedGoals) {
-                  await addGoal(
-                    goal.title,
-                    goal.target,
-                    goal.current,
-                    goal.unit,
-                    goal.direction,
-                    goal.points,
-                    goal.period,
-                    goal.customPeriodDays,
-                    goal.parentId,
-                    goal.isUltimate,
-                    goal.isRecurring,
-                    goal.description,
-                    goal.icon
-                  );
-                }
+      /**
+       * Build the next state from the backup and apply it in one go, keeping
+       * every record whole (see buildImport). This used to re-create each goal
+       * and reward through addGoal/addReward, which dropped completion state,
+       * history, notes, schedules and links, and never restored points.
+       *
+       * Goals, which carry the lifetime total, are written first: they are the
+       * data that matters most if the second write fails.
+       */
+      const applyImport = async (mode: ImportMode) => {
+        try {
+          const next = buildImport(
+            { goals, rewards, lifetimePoints: lifetimePointsEarned },
+            incoming,
+            mode
+          );
+          await replaceAllGoals(next.goals, next.lifetimePoints);
+          await replaceAllRewards(next.rewards);
 
-                // Import rewards
-                for (const reward of importedRewards) {
-                  await addReward(reward.title, reward.description || '', reward.pointsCost, reward.icon);
-                }
+          Alert.alert(
+            t.common.success,
+            t.import.importSuccess
+              .replace('{goals}', count(incoming.goals.length))
+              .replace('{rewards}', count(incoming.rewards.length))
+          );
+        } catch (error) {
+          console.error('Failed to import data:', error);
+          Alert.alert(t.common.error, t.import.importError);
+        } finally {
+          setIsImporting(false);
+        }
+      };
 
-                Alert.alert(
-                  t.common.success,
-                  t.import.importSuccess
-                    .replace('{goals}', importedGoals.length.toString())
-                    .replace('{rewards}', importedRewards.length.toString())
-                );
-              } catch (error) {
-                console.error('Failed to import data:', error);
-                Alert.alert(t.common.error, t.import.importError);
-              } finally {
-                setIsImporting(false);
-              }
+      // Replace discards everything the user has now, so it gets a second,
+      // explicit confirmation that says exactly what will be lost.
+      const confirmReplace = () => {
+        Alert.alert(
+          t.import.replaceConfirmTitle,
+          t.import.replaceConfirmMessage
+            .replace('{goals}', count(goals.length))
+            .replace('{rewards}', count(rewards.length)),
+          [
+            { text: t.common.cancel, style: 'cancel', onPress: () => setIsImporting(false) },
+            {
+              text: t.import.replace,
+              style: 'destructive',
+              onPress: () => void applyImport('replace'),
             },
-          },
-          {
-            text: t.import.replace,
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                // Clear existing data
-                const allGoalIds = goals.map(g => g.id);
-                for (const id of allGoalIds) {
-                  await permanentlyDeleteGoal(id);
-                }
+          ]
+        );
+      };
 
-                const allRewardIds = rewards.map(r => r.id);
-                for (const id of allRewardIds) {
-                  await removeReward(id);
-                }
+      const summary = t.import.confirmMessage
+        .replace('{goals}', count(incoming.goals.length))
+        .replace('{rewards}', count(incoming.rewards.length));
+      // Invalid records used to be dropped without a word.
+      const message =
+        skipped > 0
+          ? summary + '\n\n' + t.import.skipped.replace('{count}', count(skipped))
+          : summary;
 
-                // Import new data
-                for (const goal of importedGoals) {
-                  await addGoal(
-                    goal.title,
-                    goal.target,
-                    goal.current,
-                    goal.unit,
-                    goal.direction,
-                    goal.points,
-                    goal.period,
-                    goal.customPeriodDays,
-                    goal.parentId,
-                    goal.isUltimate,
-                    goal.isRecurring,
-                    goal.description,
-                    goal.icon
-                  );
-                }
-
-                for (const reward of importedRewards) {
-                  await addReward(reward.title, reward.description || '', reward.pointsCost, reward.icon);
-                }
-
-                Alert.alert(
-                  t.common.success,
-                  t.import.importSuccess
-                    .replace('{goals}', importedGoals.length.toString())
-                    .replace('{rewards}', importedRewards.length.toString())
-                );
-              } catch (error) {
-                console.error('Failed to import data:', error);
-                Alert.alert(t.common.error, t.import.importError);
-              } finally {
-                setIsImporting(false);
-              }
-            },
-          },
-        ]
-      );
+      Alert.alert(t.import.confirmTitle, message, [
+        { text: t.common.cancel, style: 'cancel', onPress: () => setIsImporting(false) },
+        { text: t.import.merge, onPress: () => void applyImport('merge') },
+        { text: t.import.replace, style: 'destructive', onPress: confirmReplace },
+      ]);
     } catch (error) {
       console.error('Failed to import data:', error);
       Alert.alert(t.common.error, t.import.importError);
       setIsImporting(false);
     }
-  }, [t, goals, rewards, addGoal, addReward, permanentlyDeleteGoal, removeReward]);
+  }, [t, language, goals, rewards, lifetimePointsEarned, replaceAllGoals, replaceAllRewards]);
 
   /**
    * Handle export as JSON
@@ -574,11 +534,11 @@ export default function SettingsScreen() {
                       <Text style={[styles.archivedGoalTitle, { color: theme.colors.text }]}>
                         {goal.icon} {goal.title}
                       </Text>
-                      {goal.archivedAt && (
+                      {goal.archivedAt ? (
                         <Text style={[styles.archivedGoalDate, { color: theme.colors.textSecondary }]}>
                           {new Date(goal.archivedAt).toLocaleDateString()}
                         </Text>
-                      )}
+                      ) : null}
                     </View>
                     <View style={styles.archivedGoalActions}>
                       <TouchableOpacity

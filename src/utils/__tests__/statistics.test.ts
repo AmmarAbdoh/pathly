@@ -801,3 +801,34 @@ describe('Statistics Utilities', () => {
     });
   });
 });
+
+describe('calculateStatistics streak when today has no completion yet', () => {
+  it('still counts a streak that ended yesterday', () => {
+    const midday = (daysAgo: number) => {
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      return d.getTime() - daysAgo * 24 * 60 * 60 * 1000;
+    };
+    const goal = (id: number, daysAgo: number) =>
+      ({
+        id,
+        title: 'g' + id,
+        target: 1,
+        current: 1,
+        unit: 'x',
+        progress: 100,
+        points: 1,
+        direction: 'increase',
+        period: 'daily',
+        periodStartDate: midday(daysAgo),
+        createdAt: midday(daysAgo),
+        isComplete: true,
+        completedAt: midday(daysAgo),
+      }) as Goal;
+
+    // Yesterday and the day before, nothing today: the streak is 2, not 0.
+    const stats = calculateStatistics([goal(1, 1), goal(2, 2)]);
+    expect(stats.currentStreak).toBe(2);
+  });
+});
+

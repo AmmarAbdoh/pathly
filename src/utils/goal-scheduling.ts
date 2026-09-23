@@ -105,6 +105,25 @@ export function getScheduleDescription(
 }
 
 /**
+ * `day` in the first month at or after (`year`, `month`) that actually has that
+ * day, at midnight.
+ *
+ * `new Date(2026, 1, 31)` does not fail - it silently rolls over to March 3rd,
+ * which is not a day the goal is active on. Months too short for `day` are
+ * skipped instead. Month overflow past December is handled by Date itself.
+ */
+function nextDateWithDay(year: number, month: number, day: number): Date {
+  for (let offset = 0; offset < 12; offset += 1) {
+    const candidate = new Date(year, month + offset, day);
+    if (candidate.getDate() === day) {
+      return candidate;
+    }
+  }
+  // Unreachable for 1-31: every such day exists within any 12-month window.
+  return new Date(year, month, day);
+}
+
+/**
  * Get next occurrence of a scheduled goal
  */
 export function getNextOccurrence(goal: Goal, fromDate: Date = new Date()): Date | null {
@@ -145,16 +164,12 @@ export function getNextOccurrence(goal: Goal, fromDate: Date = new Date()): Date
     // Find next date in current month
     const nextDateThisMonth = sortedDates.find(date => date > currentDate);
     if (nextDateThisMonth !== undefined) {
-      const nextDate = new Date(today);
-      nextDate.setDate(nextDateThisMonth);
-      return nextDate;
+      return nextDateWithDay(today.getFullYear(), today.getMonth(), nextDateThisMonth);
     }
 
-    // Otherwise, use first date of next month
-    const nextDate = new Date(today);
-    nextDate.setMonth(today.getMonth() + 1);
-    nextDate.setDate(sortedDates[0]);
-    return nextDate;
+    // Otherwise, the earliest date in the next month that has it. Mutating
+    // `today` with setMonth(+1) would roll Jan 31 over to early March.
+    return nextDateWithDay(today.getFullYear(), today.getMonth() + 1, sortedDates[0]);
   }
 
   // For date range
@@ -163,16 +178,11 @@ export function getNextOccurrence(goal: Goal, fromDate: Date = new Date()): Date
 
     // If we're before the range in current month
     if (currentDate < schedule.dateRangeStart) {
-      const nextDate = new Date(today);
-      nextDate.setDate(schedule.dateRangeStart);
-      return nextDate;
+      return nextDateWithDay(today.getFullYear(), today.getMonth(), schedule.dateRangeStart);
     }
 
     // Otherwise, go to next month
-    const nextDate = new Date(today);
-    nextDate.setMonth(today.getMonth() + 1);
-    nextDate.setDate(schedule.dateRangeStart);
-    return nextDate;
+    return nextDateWithDay(today.getFullYear(), today.getMonth() + 1, schedule.dateRangeStart);
   }
 
   return null;

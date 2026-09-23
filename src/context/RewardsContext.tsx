@@ -4,8 +4,18 @@
  */
 
 import { Reward } from '@/src/types';
+import { nextId } from '@/src/utils/ids';
 import { rewardsStorage } from '@/src/utils/rewards-storage';
-import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 interface RewardsContextType {
   rewards: Reward[];
@@ -16,6 +26,8 @@ interface RewardsContextType {
   redeemReward: (id: number) => Promise<void>;
   removeReward: (id: number) => Promise<void>;
   refreshRewards: () => Promise<void>;
+  /** Replace every reward at once (backup import). */
+  replaceAllRewards: (rewards: Reward[]) => Promise<void>;
   getAvailableRewards: () => Reward[];
   getRedeemedRewards: () => Reward[];
 }
@@ -36,6 +48,26 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const [error, setError] = useState<string | null>(null);
 
   /**
+   * Synchronous mirror of `rewards`, the same pattern as GoalsContext.
+   *
+   * The mutators used to close over `rewards`. Two calls before a re-render
+   * (JSON import adds rewards in a loop) each started from the same stale
+   * array, so every add overwrote the one before it: importing five rewards
+   * kept one.
+   */
+  const rewardsRef = useRef<Reward[]>([]);
+
+  /**
+   * Apply a pure updater to the latest rewards, render, and persist.
+   */
+  const commit = useCallback(async (updater: (prev: Reward[]) => Reward[]) => {
+    const next = updater(rewardsRef.current);
+    rewardsRef.current = next;
+    setRewards(next);
+    await rewardsStorage.saveRewards(next);
+  }, []);
+
+  /**
    * Load rewards from storage
    */
   const loadRewards = useCallback(async () => {
@@ -43,6 +75,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       setIsLoading(true);
       setError(null);
       const savedRewards = await rewardsStorage.loadRewards();
+      rewardsRef.current = savedRewards;
       setRewards(savedRewards);
     } catch (err) {
       console.error('Error loading rewards:', err);
@@ -65,32 +98,38 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     await loadRewards();
   }, [loadRewards]);
 
+  const replaceAllRewards = useCallback(
+    async (next: Reward[]) => {
+      await commit(() => next);
+    },
+    [commit]
+  );
+
   /**
    * Add a new reward
    */
   const addReward = useCallback(
     async (title: string, description: string, pointsCost: number, icon: string) => {
       try {
-        const newReward: Reward = {
-          id: Date.now(),
-          title: title.trim(),
-          description: description.trim(),
-          pointsCost,
-          icon,
-          createdAt: Date.now(),
-          isRedeemed: false,
-        };
-
-        const updatedRewards = [...rewards, newReward];
-        setRewards(updatedRewards);
-        await rewardsStorage.saveRewards(updatedRewards);
+        await commit((prev) => [
+          ...prev,
+          {
+            id: nextId(prev),
+            title: title.trim(),
+            description: description.trim(),
+            pointsCost,
+            icon,
+            createdAt: Date.now(),
+            isRedeemed: false,
+          },
+        ]);
       } catch (err) {
         console.error('Error adding reward:', err);
         setError('Failed to add reward');
         throw err;
       }
     },
-    [rewards]
+    [commit]
   );
 
   /**
@@ -99,28 +138,20 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const editReward = useCallback(
     async (id: number, title: string, description: string, pointsCost: number, icon: string) => {
       try {
-        const updatedRewards = rewards.map((reward) => {
-          if (reward.id === id) {
-            return {
-              ...reward,
-              title: title.trim(),
-              description: description.trim(),
-              pointsCost,
-              icon,
-            };
-          }
-          return reward;
-        });
-
-        setRewards(updatedRewards);
-        await rewardsStorage.saveRewards(updatedRewards);
+        await commit((prev) =>
+          prev.map((reward) =>
+            reward.id === id
+              ? { ...reward, title: title.trim(), description: description.trim(), pointsCost, icon }
+              : reward
+          )
+        );
       } catch (err) {
         console.error('Error editing reward:', err);
         setError('Failed to edit reward');
         throw err;
       }
     },
-    [rewards]
+    [commit]
   );
 
   /**
@@ -129,26 +160,18 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const redeemReward = useCallback(
     async (id: number) => {
       try {
-        const updatedRewards = rewards.map((reward) => {
-          if (reward.id === id) {
-            return {
-              ...reward,
-              isRedeemed: true,
-              redeemedAt: Date.now(),
-            };
-          }
-          return reward;
-        });
-
-        setRewards(updatedRewards);
-        await rewardsStorage.saveRewards(updatedRewards);
+        await commit((prev) =>
+          prev.map((reward) =>
+            reward.id === id ? { ...reward, isRedeemed: true, redeemedAt: Date.now() } : reward
+          )
+        );
       } catch (err) {
         console.error('Error redeeming reward:', err);
         setError('Failed to redeem reward');
         throw err;
       }
     },
-    [rewards]
+    [commit]
   );
 
   /**
@@ -157,16 +180,14 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const removeReward = useCallback(
     async (id: number) => {
       try {
-        const updatedRewards = rewards.filter((reward) => reward.id !== id);
-        setRewards(updatedRewards);
-        await rewardsStorage.saveRewards(updatedRewards);
+        await commit((prev) => prev.filter((reward) => reward.id !== id));
       } catch (err) {
         console.error('Error removing reward:', err);
         setError('Failed to remove reward');
         throw err;
       }
     },
-    [rewards]
+    [commit]
   );
 
   /**
@@ -193,10 +214,11 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       redeemReward,
       removeReward,
       refreshRewards,
+      replaceAllRewards,
       getAvailableRewards,
       getRedeemedRewards,
     }),
-    [rewards, isLoading, error, addReward, editReward, redeemReward, removeReward, refreshRewards, getAvailableRewards, getRedeemedRewards]
+    [rewards, isLoading, error, addReward, editReward, redeemReward, removeReward, refreshRewards, replaceAllRewards, getAvailableRewards, getRedeemedRewards]
   );
 
   return (

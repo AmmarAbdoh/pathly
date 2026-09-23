@@ -3,6 +3,7 @@
  * Verify time remaining calculations are accurate
  */
 
+import { translations } from '../../i18n/translations';
 import { Goal } from '../../types';
 import {
   calculateGoalProgress,
@@ -447,3 +448,67 @@ describe('Time Remaining Calculations', () => {
     });
   });
 });
+
+describe('calculatePeriodEndDate for ongoing goals', () => {
+  it('never ends', () => {
+    expect(calculatePeriodEndDate(Date.now(), 'ongoing')).toBe(Infinity);
+  });
+});
+
+describe('formatTimeRemaining with the real translations', () => {
+  const en = translations.en.time;
+  const ar = translations.ar.time;
+  const left = (days: number, hours = 0, minutes = 0) => ({ days, hours, minutes, isExpired: false });
+
+  // Regression: the Arabic "11 and above take the singular" rule applied to
+  // every language, so English monthly goals read "25 day left".
+  it('keeps English plurals at 11 and above', () => {
+    expect(formatTimeRemaining(left(11), en)).toBe('11 days left');
+    expect(formatTimeRemaining(left(25), en)).toBe('25 days left');
+  });
+
+  it('uses English singular only for exactly one', () => {
+    expect(formatTimeRemaining(left(1), en)).toBe('1 day left');
+    expect(formatTimeRemaining(left(2), en)).toBe('2 days left');
+  });
+
+  it('follows Arabic counting: dual for 2, plural for 3-10, singular from 11', () => {
+    expect(formatTimeRemaining(left(2), ar)).toContain(`2 ${ar.dayDual}`);
+    expect(formatTimeRemaining(left(5), ar)).toContain(`5 ${ar.days}`);
+    expect(formatTimeRemaining(left(11), ar)).toContain(`11 ${ar.day}`);
+  });
+
+  it('applies the same rules to hours and minutes', () => {
+    expect(formatTimeRemaining(left(0, 11, 2), ar)).toBe(
+      `11 ${ar.hour} ${ar.and} 2 ${ar.minuteDual} ${ar.left}`
+    );
+    expect(formatTimeRemaining(left(0, 11, 12), en)).toBe('11 hours and 12 minutes left');
+  });
+
+  it('shows only minutes when under an hour remains', () => {
+    expect(formatTimeRemaining(left(0, 0, 45), en)).toBe('45 minutes left');
+  });
+
+  it('says a recurring goal resets rather than runs out', () => {
+    expect(formatTimeRemaining(left(3), en, true)).toBe(`${en.resetsIn} 3 days`);
+  });
+
+  it('says Expired by default when given no translations', () => {
+    expect(formatTimeRemaining({ days: 0, hours: 0, minutes: 0, isExpired: true })).toBe('Expired');
+  });
+});
+
+describe('calculateProgress edge cases', () => {
+  it('treats the current value as the start of a decreasing goal with no recorded start', () => {
+    // 80 -> 60 with nothing recorded: we are at the start, so 0%.
+    expect(calculateProgress(80, 60, 'decrease')).toBe(0);
+  });
+});
+
+describe('formatEndDateTime defaults', () => {
+  it('formats in English when no language is given', () => {
+    const start = new Date(2026, 0, 1).getTime();
+    expect(formatEndDateTime(start, 'daily')).toBe(formatEndDateTime(start, 'daily', undefined, 'en'));
+  });
+});
+

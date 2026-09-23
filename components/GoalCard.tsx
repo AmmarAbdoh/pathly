@@ -27,6 +27,16 @@ const STATUS_COLORS = {
   blocked: '#fbbf24',
 } as const;
 
+/**
+ * Content the card's own accessibility label already summarises. Hidden from
+ * screen readers so it is not announced twice, leaving the card button and the
+ * reorder buttons as the only focusable elements.
+ */
+const DECORATIVE = {
+  accessibilityElementsHidden: true,
+  importantForAccessibility: 'no-hide-descendants',
+} as const;
+
 interface GoalCardProps {
   id: number;
   title: string;
@@ -155,51 +165,65 @@ const GoalCard = memo<GoalCardProps>(
     // flicker rather than polish.
     return (
       <Animated.View style={animatedStyle}>
-        <Pressable
-            style={cardStyle}
+        <View style={cardStyle}>
+          {/*
+            The whole-card tap target is a sibling of the content, not its
+            parent. Nesting the reorder buttons inside it produced a <button>
+            inside a <button> on web, and on iOS an accessible parent hides its
+            children from VoiceOver, so the arrows were unreachable. Rendered
+            first so it sits underneath; everything non-interactive above it is
+            pointer-transparent, so taps anywhere else still land here.
+          */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
             onPress={handlePress}
             onPressIn={onPressIn}
             onPressOut={onPressOut}
             accessibilityRole="button"
             accessibilityLabel={`${title} goal, ${percent}% complete, ${points} points`}
             accessibilityHint={t.goalCard.openHint}
-          >
+          />
+
             {isUltimate && !isComplete && (
-              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.ultimate }]}>
+              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.ultimate }]} {...DECORATIVE}>
                 <Text style={[styles.badgeText, styles.badgeTextDark]}>{t.goalCard.ultimate}</Text>
               </View>
             )}
 
             {isComplete && (
-              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.complete }]}>
+              <View style={[styles.badge, styles.badgeRight, { backgroundColor: STATUS_COLORS.complete }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>✓ {t.goalCard.completed}</Text>
               </View>
             )}
 
             {isExpired && !isRecurring && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: theme.colors.danger }]}>
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: theme.colors.danger }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>⚠️ {t.time.expired}</Text>
               </View>
             )}
 
             {isPaused && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.paused }]}>
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.paused }]} {...DECORATIVE}>
                 <Text style={styles.badgeText}>⏸️ {t.goalCard.paused}</Text>
               </View>
             )}
 
             {isBlocked && !isComplete && (
-              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.blocked }]}>
+              <View style={[styles.badge, styles.badgeLeft, { backgroundColor: STATUS_COLORS.blocked }]} {...DECORATIVE}>
                 <Text style={[styles.badgeText, styles.badgeTextAmber]}>🔒 {t.goalCard.blocked}</Text>
               </View>
             )}
 
-            <View style={styles.headerRow}>
-              {/* Ternary, not `&&`: an empty-string icon would otherwise render
-                  the bare string '' into a View, which throws on native. */}
-              {icon ? <Text style={styles.iconText}>{icon}</Text> : null}
+            <View style={[styles.headerRow, styles.boxNone]}>
+              {/* Ternary, not `&&`: `'' && <Text/>` evaluates to '', which React
+                  renders as a text child of a View - a hydration error on web. */}
+              {icon ? (
+                <View style={styles.passThrough} {...DECORATIVE}>
+                  <Text style={styles.iconText}>{icon}</Text>
+                </View>
+              ) : null}
 
-              <View style={styles.titleContainer}>
+              <View style={[styles.titleContainer, styles.passThrough]} {...DECORATIVE}>
                 <Text
                   style={[
                     styles.title,
@@ -301,16 +325,17 @@ const GoalCard = memo<GoalCardProps>(
                 </View>
               )}
 
-              <Text
-                style={[styles.percent, { color: theme.colors.primary }]}
-                accessibilityLabel={`${percent} percent complete`}
-              >
-                {formatted.percent}%
-              </Text>
+              <View style={styles.passThrough} {...DECORATIVE}>
+                <Text style={[styles.percent, { color: theme.colors.primary }]}>
+                  {formatted.percent}%
+                </Text>
+              </View>
             </View>
 
-          <ProgressBar progress={progress} animationDuration={DURATION.normal} />
-        </Pressable>
+          <View style={styles.passThrough} {...DECORATIVE}>
+            <ProgressBar progress={progress} animationDuration={DURATION.normal} />
+          </View>
+        </View>
       </Animated.View>
     );
   }
@@ -321,6 +346,14 @@ GoalCard.displayName = 'GoalCard';
 export default GoalCard;
 
 const styles = StyleSheet.create({
+  /** Ignores touches itself and for its whole subtree. */
+  passThrough: {
+    pointerEvents: 'none',
+  },
+  /** Ignores touches itself but lets its children (the reorder buttons) take them. */
+  boxNone: {
+    pointerEvents: 'box-none',
+  },
   card: {
     padding: 16,
     borderRadius: 16,

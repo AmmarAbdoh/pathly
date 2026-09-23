@@ -1,33 +1,54 @@
 // https://docs.expo.dev/guides/using-eslint/
 const { defineConfig } = require('eslint/config');
 const expoConfig = require('eslint-config-expo/flat');
+const globals = require('globals');
 
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'coverage/*'],
+    // `.expo` and `coverage` are generated; `dist` is build output. None are
+    // editable in source, so linting them only produces unfixable noise.
+    ignores: ['dist/*', 'coverage/*', '.expo/*', 'android/*', 'ios/*'],
+  },
+  {
+    /**
+     * eslint-config-expo supplies browser + React Native globals only, so the
+     * test files' `jest` and `node` globals are otherwise reported as no-undef.
+     */
+    files: ['jest.setup.js', 'jest.config.js', '**/__tests__/**', '**/*.test.{ts,tsx,js}'],
+    languageOptions: {
+      globals: {
+        ...globals.jest,
+        ...globals.node,
+      },
+    },
   },
   {
     rules: {
       /**
-       * React Compiler guidance, enforced as errors from SDK 56.
+       * React Compiler guidance, promoted to an error in SDK 56.
        *
-       * These flag state that is synchronised from props or from an external
-       * source inside an effect. Every remaining instance is a deliberate
-       * "mirror this input into editable local state" pattern (the goal detail
-       * slider, the add-goal template prefill, the template modal's open/close
-       * reset). They work correctly; React's preferred alternative is to adjust
-       * state during render instead, which is worth doing but is a behavioural
-       * refactor, not part of an SDK upgrade. Kept visible as warnings.
+       * Eight sites currently trip this, in two groups:
+       *  - Four provider mount effects (Goals/Theme/Language/Rewards) that load
+       *    persisted state from AsyncStorage. An effect is the correct place to
+       *    read an external store; the setState is the point.
+       *  - Four prop-to-state mirrors (the goal detail slider, the add-goal
+       *    template prefill, and the two template modals' open/close resets).
+       *
+       * Both groups work correctly. React would prefer the second group adjust
+       * state during render instead, which is a behavioural refactor worth
+       * doing deliberately rather than as upgrade fallout. Kept as warnings so
+       * they stay visible; don't add new ones.
        */
       'react-hooks/set-state-in-effect': 'warn',
     },
   },
   {
     // Reanimated shared values are mutated through `.value` by design - that is
-    // the documented API, not React state. The compiler's immutability rule
-    // cannot tell the difference, so it is a false positive here only.
-    files: ['src/hooks/use-app-animations.ts', 'components/AnimatedCounter.tsx'],
+    // the documented API, not React state, and the compiler's immutability rule
+    // cannot tell the difference. This is the only file that writes one outside
+    // an effect, which is the only shape the rule flags.
+    files: ['src/hooks/use-app-animations.ts'],
     rules: {
       'react-hooks/immutability': 'off',
     },

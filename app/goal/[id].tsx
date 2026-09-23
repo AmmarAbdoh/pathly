@@ -6,6 +6,7 @@
 import AddGoalForm from '@/components/AddGoalForm';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import GoalCard from '@/components/GoalCard';
+import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -42,6 +43,7 @@ export default function GoalDetail() {
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const router = useRouter();
+  const handleBack = useBackOrHome();
 
   const goal = useMemo(
     () => goals.find((g) => g.id === Number(id)),
@@ -807,17 +809,13 @@ export default function GoalDetail() {
     try {
       await archiveGoal(goal.id);
       // Navigate back after successful archiving
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)/home');
-      }
+      handleBack();
       Alert.alert(t.common.success, t.goalDetail.archiveSuccess);
     } catch (error) {
       console.error('Failed to archive goal:', error);
       Alert.alert(t.common.error, t.goalDetail.archiveError);
     }
-  }, [goal, archiveGoal, router, t]);
+  }, [goal, archiveGoal, t, handleBack]);
 
   /**
    * Cancel deletion
@@ -989,13 +987,6 @@ export default function GoalDetail() {
   /**
    * Navigate back
    */
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(tabs)/home');
-    }
-  }, [router]);
 
   // Memoized styles
   const containerStyle = useMemo(
@@ -1173,11 +1164,11 @@ export default function GoalDetail() {
           <Text style={[styles.title, { color: theme.colors.text }]}>
             {goal.title}
           </Text>
-          {goal.description && (
+          {goal.description ? (
             <Text style={[styles.description, { color: theme.colors.textSecondary }]}>
               {goal.description}
             </Text>
-          )}
+          ) : null}
           <Text style={[styles.progress, { color: theme.colors.textSecondary }]}>
             {progressText}
           </Text>
@@ -1218,11 +1209,11 @@ export default function GoalDetail() {
                 <Text style={[styles.timeRemainingBadgeText, { color: theme.colors.text }]}>
                   ⏱️ {timeRemainingText}
                 </Text>
-                {endDateTime && (
+                {endDateTime ? (
                   <Text style={[styles.timeRemainingEndDate, { color: theme.colors.textSecondary }]}>
                     {t.time.endsAt}: {endDateTime}
                   </Text>
-                )}
+                ) : null}
               </View>
             );
           })()}

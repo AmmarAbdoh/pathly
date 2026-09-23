@@ -3,7 +3,9 @@
  * Analyzes goal completion patterns, trends, and performance
  */
 
+import type { Language, Translations } from '../i18n/translations';
 import type { Goal, GoalCategory, TimePeriod } from '../types';
+import { formatNumber } from './number-formatting';
 
 export interface CategoryAnalytics {
   category: GoalCategory;
@@ -45,9 +47,11 @@ export interface AnalyticsInsights {
   completionTrend: CompletionTrend[]; // Last 30 days
   bestPerformingCategory: GoalCategory | null;
   worstPerformingCategory: GoalCategory | null;
-  bestCompletionDay: string; // Day name
+  /** Weekday with the most completions, 0 = Sunday; null with no completions. */
+  bestCompletionDay: number | null;
   averageCompletionTime: number; // in days
-  mostProductiveHour: string; // Hour of day
+  /** Hour of day (0-23) with the most completions; null with no completions. */
+  mostProductiveHour: number | null;
 }
 
 /**
@@ -58,14 +62,6 @@ function getHourCategory(hour: number): keyof TimeOfDayAnalytics {
   if (hour >= 12 && hour < 18) return 'afternoon';
   if (hour >= 18 && hour < 24) return 'evening';
   return 'night';
-}
-
-/**
- * Get day name from date
- */
-function getDayName(date: Date): string {
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  return days[date.getDay()];
 }
 
 /**
@@ -154,6 +150,20 @@ export function analyzeTimeOfDay(goals: Goal[]): TimeOfDayAnalytics {
 }
 
 /**
+ * `YYYY-MM-DD` for the date's *local* calendar day.
+ *
+ * `toISOString()` formats in UTC, so east of Greenwich local midnight is still
+ * the previous day in UTC and every label came out a day early (at UTC+3,
+ * Sep 23 was labelled 2026-09-22) - even though the buckets themselves were
+ * correctly local.
+ */
+function toLocalDateKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
  * Analyze completion trend over last 30 days
  */
 export function analyzeCompletionTrend(goals: Goal[], days: number = 30): CompletionTrend[] {
@@ -178,7 +188,7 @@ export function analyzeCompletionTrend(goals: Goal[], days: number = 30): Comple
     const points = completedThisDay.reduce((sum, g) => sum + g.points, 0);
     
     trend.push({
-      date: date.toISOString().split('T')[0],
+      date: toLocalDateKey(date),
       count: completedThisDay.length,
       points,
     });
@@ -188,64 +198,65 @@ export function analyzeCompletionTrend(goals: Goal[], days: number = 30): Comple
 }
 
 /**
- * Find best completion day of week
+ * The weekday (0 = Sunday) with the most completions, or null if none.
+ *
+ * Returns an index rather than a name: the name used to be hardcoded English,
+ * which the analytics screen then showed to Arabic users. The screen localises
+ * it with `t.schedule.weekdayLong`.
  */
-export function findBestCompletionDay(goals: Goal[]): string {
-  const completedGoals = goals.filter(g => g.isComplete && g.completedAt);
-  
-  const dayCount: { [key: string]: number } = {};
-  
-  completedGoals.forEach(goal => {
-    if (goal.completedAt) {
-      const date = new Date(goal.completedAt);
-      const dayName = getDayName(date);
-      dayCount[dayName] = (dayCount[dayName] || 0) + 1;
-    }
-  });
-  
-  let bestDay = 'No data';
-  let maxCount = 0;
-  
-  Object.entries(dayCount).forEach(([day, count]) => {
-    if (count > maxCount) {
-      maxCount = count;
-      bestDay = day;
-    }
-  });
-  
-  return bestDay;
+export function findBestCompletionDay(goals: Goal[]): number | null {
+  return mostFrequent(goals, (date) => date.getDay());
 }
 
 /**
- * Find most productive hour
+ * The hour of day (0-23) with the most completions, or null if none.
+ *
+ * Returns the hour rather than "3:00 PM" so the screen can format it for the
+ * user's language with `formatHourOfDay`.
  */
-export function findMostProductiveHour(goals: Goal[]): string {
-  const completedGoals = goals.filter(g => g.isComplete && g.completedAt);
-  
-  const hourCount: { [key: number]: number } = {};
-  
-  completedGoals.forEach(goal => {
-    if (goal.completedAt) {
-      const date = new Date(goal.completedAt);
-      const hour = date.getHours();
-      hourCount[hour] = (hourCount[hour] || 0) + 1;
+export function findMostProductiveHour(goals: Goal[]): number | null {
+  return mostFrequent(goals, (date) => date.getHours());
+}
+
+/**
+ * The most common value of `key` across completed goals' completion times.
+ * Ties go to the value seen first.
+ */
+function mostFrequent(goals: Goal[], key: (date: Date) => number): number | null {
+  const counts = new Map<number, number>();
+  for (const goal of goals) {
+    if (goal.isComplete && goal.completedAt) {
+      const value = key(new Date(goal.completedAt));
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     }
-  });
-  
-  let mostProductiveHour = 'No data';
-  let maxCount = 0;
-  
-  Object.entries(hourCount).forEach(([hour, count]) => {
-    if (count > maxCount) {
-      maxCount = count;
-      const hourNum = parseInt(hour);
-      const period = hourNum >= 12 ? 'PM' : 'AM';
-      const displayHour = hourNum === 0 ? 12 : hourNum > 12 ? hourNum - 12 : hourNum;
-      mostProductiveHour = `${displayHour}:00 ${period}`;
+  }
+
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
     }
-  });
-  
-  return mostProductiveHour;
+  }
+  return best;
+}
+
+/**
+ * An hour of day as "3:00 PM" / "٣:٠٠ م".
+ *
+ * Built by hand rather than with toLocaleTimeString: ICU output differs between
+ * Hermes, Node and ICU versions (newer ICU puts a narrow no-break space before
+ * the AM/PM marker), which makes it neither predictable nor testable.
+ */
+export function formatHourOfDay(
+  hour: number,
+  t: Pick<Translations['analytics'], 'am' | 'pm'>,
+  language: Language
+): string {
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  const marker = hour >= 12 ? t.pm : t.am;
+  return `${formatNumber(displayHour, language)}:${formatNumber('00', language)} ${marker}`;
 }
 
 /**
@@ -316,60 +327,69 @@ export function generateAnalyticsInsights(goals: Goal[]): AnalyticsInsights {
 }
 
 /**
- * Get formatted insights summary
+ * The analytics screen's summary sentences, in the user's language.
+ *
+ * Takes the translations rather than importing them, like every src/utils
+ * function that produces display text. This used to return hardcoded English.
  */
-export function getInsightsSummary(insights: AnalyticsInsights): string[] {
-  const summary: string[] = [];
-  
+export function getInsightsSummary(
+  insights: AnalyticsInsights,
+  t: Pick<Translations, 'analytics' | 'templates' | 'schedule'>,
+  language: Language
+): string[] {
+  const messages = t.analytics.insightMessages;
+  const percent = (value: number) => formatNumber(Math.round(value), language);
+
   if (insights.completedGoalsAnalyzed === 0) {
-    summary.push("Start completing goals to see insights!");
-    return summary;
+    return [t.analytics.startCompletingGoals];
   }
-  
-  // Completion rate insight
+
+  const summary: string[] = [];
+
+  const rate = percent(insights.overallCompletionRate);
   if (insights.overallCompletionRate >= 80) {
-    summary.push(`🏆 Excellent! ${insights.overallCompletionRate.toFixed(0)}% completion rate!`);
+    summary.push(messages.excellent.replace('{rate}', rate));
   } else if (insights.overallCompletionRate >= 50) {
-    summary.push(`💪 Good progress! ${insights.overallCompletionRate.toFixed(0)}% completion rate.`);
+    summary.push(messages.good.replace('{rate}', rate));
   } else {
-    summary.push(`🎯 ${insights.overallCompletionRate.toFixed(0)}% completion rate. Keep pushing!`);
+    summary.push(messages.keepPushing.replace('{rate}', rate));
   }
-  
-  // Best category insight
+
   if (insights.bestPerformingCategory) {
-    const bestCategory = insights.categoryPerformance.find(
-      c => c.category === insights.bestPerformingCategory
+    const best = insights.categoryPerformance.find(
+      (c) => c.category === insights.bestPerformingCategory
     );
-    if (bestCategory && bestCategory.completionRate > 0) {
-      summary.push(`⭐ Best category: ${insights.bestPerformingCategory} (${bestCategory.completionRate.toFixed(0)}%)`);
+    if (best && best.completionRate > 0) {
+      const categories = t.templates.categories as Record<string, string>;
+      summary.push(
+        messages.bestCategory
+          .replace('{category}', categories[best.category] ?? best.category)
+          .replace('{rate}', percent(best.completionRate))
+      );
     }
   }
-  
-  // Time of day insight
-  const timeOfDay = insights.completionsByTimeOfDay;
-  const maxTime = Math.max(timeOfDay.morning, timeOfDay.afternoon, timeOfDay.evening, timeOfDay.night);
-  if (maxTime > 0) {
-    if (timeOfDay.morning === maxTime) {
-      summary.push("🌅 You're most productive in the morning!");
-    } else if (timeOfDay.afternoon === maxTime) {
-      summary.push("☀️ Afternoons are your peak productivity time!");
-    } else if (timeOfDay.evening === maxTime) {
-      summary.push("🌆 You work best in the evening!");
-    } else {
-      summary.push("🌙 Night owl! You complete most goals at night.");
-    }
+
+  const time = insights.completionsByTimeOfDay;
+  const peak = Math.max(time.morning, time.afternoon, time.evening, time.night);
+  if (peak > 0) {
+    if (time.morning === peak) summary.push(messages.morning);
+    else if (time.afternoon === peak) summary.push(messages.afternoon);
+    else if (time.evening === peak) summary.push(messages.evening);
+    else summary.push(messages.night);
   }
-  
-  // Best day insight
-  if (insights.bestCompletionDay !== 'No data') {
-    summary.push(`📅 ${insights.bestCompletionDay} is your most productive day!`);
+
+  if (insights.bestCompletionDay !== null) {
+    summary.push(messages.bestDay.replace('{day}', t.schedule.weekdayLong[insights.bestCompletionDay]));
   }
-  
-  // Average completion time
+
   if (insights.averageCompletionTime > 0) {
     const days = Math.round(insights.averageCompletionTime);
-    summary.push(`⏱️ Average completion time: ${days} day${days !== 1 ? 's' : ''}`);
+    summary.push(
+      messages.averageTime
+        .replace('{days}', formatNumber(days, language))
+        .replace('{unit}', days === 1 ? t.analytics.day : t.analytics.days)
+    );
   }
-  
+
   return summary;
 }

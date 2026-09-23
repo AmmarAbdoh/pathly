@@ -178,6 +178,22 @@ export interface Translations {
     days: string;
     day: string;
     noTrend: string;
+    /** Hour-of-day markers, e.g. "3:00 PM" / "٣:٠٠ م". */
+    am: string;
+    pm: string;
+    /** Summary sentences. Placeholders in braces are filled by getInsightsSummary. */
+    insightMessages: {
+      excellent: string; // {rate}
+      good: string; // {rate}
+      keepPushing: string; // {rate}
+      bestCategory: string; // {category} {rate}
+      morning: string;
+      afternoon: string;
+      evening: string;
+      night: string;
+      bestDay: string; // {day}
+      averageTime: string; // {days} {unit}
+    };
   };
   goalForm: {
     subgoalPointsHelper: string;
@@ -376,6 +392,11 @@ export interface Translations {
     confirmMessage: string;
     merge: string;
     replace: string;
+    replaceConfirmTitle: string;
+    replaceConfirmMessage: string; // {goals} {rewards}: the user's current data
+    csvUnsupported: string;
+    invalidFile: string;
+    skipped: string; // {count}
   };
   notifications: {
     title: string;
@@ -556,11 +577,22 @@ export interface Translations {
     resetsIn: string;
     and: string;          // Separator between time units
     endsAt: string;       // "Ends: Oct 30, 11:59 PM"
+    /**
+     * Whether counts of 11 and above take the singular noun. True for Arabic
+     * ("11 يوم"); false for English, which keeps the plural ("11 days").
+     */
+    singularAfterTen: boolean;
   };
   labels: {
     target: string;
     category: string;
     description: string;
+  };
+  /** Shown by StorageErrorBanner when data cannot be saved or loaded. */
+  storageErrors: {
+    saveFailed: string;
+    loadFailed: string;
+    retry: string;
   };
   schedule: {
     title: string;
@@ -758,6 +790,20 @@ export const translations: Record<Language, Translations> = {
       days: 'days',
       day: 'day',
       noTrend: 'No completion trend data yet',
+      am: 'AM',
+      pm: 'PM',
+      insightMessages: {
+        excellent: '🏆 Excellent! {rate}% completion rate!',
+        good: '💪 Good progress! {rate}% completion rate.',
+        keepPushing: '🎯 {rate}% completion rate. Keep pushing!',
+        bestCategory: '⭐ Best category: {category} ({rate}%)',
+        morning: "🌅 You're most productive in the morning!",
+        afternoon: '☀️ Afternoons are your peak productivity time!',
+        evening: '🌆 You work best in the evening!',
+        night: '🌙 Night owl! You complete most goals at night.',
+        bestDay: '📅 {day} is your most productive day!',
+        averageTime: '⏱️ Average completion time: {days} {unit}',
+      },
     },
     goalForm: {
       subgoalPointsHelper: 'Leave at 0 if you do not want this subgoal to award points',
@@ -956,6 +1002,11 @@ export const translations: Record<Language, Translations> = {
       confirmMessage: 'Found {goals} goals and {rewards} rewards. How would you like to import?',
       merge: 'Merge with Existing',
       replace: 'Replace All Data',
+      replaceConfirmTitle: 'Replace all data?',
+      replaceConfirmMessage: 'Your current {goals} goals and {rewards} rewards will be deleted and replaced by the backup. This cannot be undone.',
+      csvUnsupported: 'CSV import is not supported yet. Please import a JSON backup.',
+      invalidFile: 'This file is not a valid Pathly backup.',
+      skipped: '{count} invalid records in the file will be skipped.',
     },
     notifications: {
       title: 'Notifications',
@@ -1157,11 +1208,17 @@ export const translations: Record<Language, Translations> = {
       resetsIn: 'Resets in',
       and: 'and',
       endsAt: 'Ends',
+      singularAfterTen: false,
     },
     labels: {
       target: 'Target',
       category: 'Category',
       description: 'Description',
+    },
+    storageErrors: {
+      saveFailed: "Your latest changes couldn't be saved. They're kept on this screen; tap Retry.",
+      loadFailed: "Your goals couldn't be loaded. Nothing will be saved until they load - tap Retry.",
+      retry: 'Retry',
     },
     schedule: {
       title: 'Schedule',
@@ -1365,6 +1422,20 @@ export const translations: Record<Language, Translations> = {
       days: 'أيام',
       day: 'يوم',
       noTrend: 'لا توجد بيانات اتجاه الإنجاز بعد',
+      am: 'ص',
+      pm: 'م',
+      insightMessages: {
+        excellent: '🏆 ممتاز! معدل الإنجاز {rate}%!',
+        good: '💪 تقدم جيد! معدل الإنجاز {rate}%.',
+        keepPushing: '🎯 معدل الإنجاز {rate}%. واصل المحاولة!',
+        bestCategory: '⭐ أفضل فئة: {category} ({rate}%)',
+        morning: '🌅 أنت أكثر إنتاجية في الصباح!',
+        afternoon: '☀️ فترة الظهيرة هي ذروة إنتاجيتك!',
+        evening: '🌆 تعمل بشكل أفضل في المساء!',
+        night: '🌙 من محبي السهر! تنجز معظم أهدافك ليلاً.',
+        bestDay: '📅 {day} هو يومك الأكثر إنتاجية!',
+        averageTime: '⏱️ متوسط وقت الإنجاز: {days} {unit}',
+      },
     },
     goalForm: {
       subgoalPointsHelper: 'اتركه 0 إذا كنت لا تريد أن يمنح هذا الهدف الفرعي نقاطاً',
@@ -1563,6 +1634,11 @@ export const translations: Record<Language, Translations> = {
       confirmMessage: 'تم العثور على {goals} أهداف و {rewards} مكافآت. كيف تريد الاستيراد؟',
       merge: 'دمج مع الموجود',
       replace: 'استبدال جميع البيانات',
+      replaceConfirmTitle: 'استبدال جميع البيانات؟',
+      replaceConfirmMessage: 'سيتم حذف أهدافك الحالية ({goals}) ومكافآتك ({rewards}) واستبدالها بالنسخة الاحتياطية. لا يمكن التراجع عن ذلك.',
+      csvUnsupported: 'استيراد CSV غير مدعوم بعد. يرجى استيراد نسخة احتياطية بصيغة JSON.',
+      invalidFile: 'هذا الملف ليس نسخة احتياطية صالحة من Pathly.',
+      skipped: 'سيتم تجاهل {count} من السجلات غير الصالحة في الملف.',
     },
     notifications: {
       title: 'الإشعارات',
@@ -1764,11 +1840,17 @@ export const translations: Record<Language, Translations> = {
       resetsIn: 'يتم إعادة التعيين في',
       and: 'و',
       endsAt: 'ينتهي',
+      singularAfterTen: true,
     },
     labels: {
       target: 'الهدف',
       category: 'الفئة',
       description: 'الوصف',
+    },
+    storageErrors: {
+      saveFailed: 'تعذّر حفظ آخر تغييراتك. ما زالت محفوظة في هذه الشاشة؛ اضغط إعادة المحاولة.',
+      loadFailed: 'تعذّر تحميل أهدافك. لن يُحفظ أي شيء حتى يتم تحميلها - اضغط إعادة المحاولة.',
+      retry: 'إعادة المحاولة',
     },
     schedule: {
       title: 'الجدول',

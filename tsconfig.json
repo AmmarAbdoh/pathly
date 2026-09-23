@@ -3,10 +3,11 @@
   "compilerOptions": {
     "strict": true,
     // TypeScript 6 (SDK 56+) no longer auto-includes every @types package, so
-    // the test globals and Node types have to be named explicitly.
+    // the test globals have to be named explicitly. "node" is deliberately
+    // absent: @types/node is only present transitively, and nothing under
+    // tsconfig's include (**/*.ts, **/*.tsx) needs it.
     "types": [
-      "jest",
-      "node"
+      "jest"
     ],
     "paths": {
       "@/*": [
