@@ -26,10 +26,15 @@ import Animated, { FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function StorageErrorBanner() {
-  const { storageError: goalsError, retryStorage, dismissStorageError: dismissGoalsError } =
-    useGoals();
+  const {
+    storageError: goalsError,
+    dataSetAside: goalsSetAside,
+    retryStorage,
+    dismissStorageError: dismissGoalsError,
+  } = useGoals();
   const {
     storageError: rewardsError,
+    dataSetAside: rewardsSetAside,
     retryStorage: retryRewards,
     dismissStorageError: dismissRewardsError,
   } = useRewards();
@@ -41,12 +46,8 @@ export default function StorageErrorBanner() {
   const handleRetry = useCallback(async () => {
     setIsRetrying(true);
     try {
-      // Independent stores: retry whichever failed. (Unreadable data has
-      // already been dealt with; there is nothing to retry.)
-      await Promise.all([
-        goalsError === 'load' || goalsError === 'save' ? retryStorage() : null,
-        rewardsError === 'load' || rewardsError === 'save' ? retryRewards() : null,
-      ]);
+      // Independent stores: retry whichever failed.
+      await Promise.all([goalsError ? retryStorage() : null, rewardsError ? retryRewards() : null]);
     } finally {
       setIsRetrying(false);
     }
@@ -58,7 +59,7 @@ export default function StorageErrorBanner() {
   }, [dismissGoalsError, dismissRewardsError]);
 
   // A failed load comes first: until it is fixed, nothing is being saved.
-  const message =
+  const error =
     goalsError === 'load'
       ? t.storageErrors.loadFailed
       : rewardsError === 'load'
@@ -67,16 +68,18 @@ export default function StorageErrorBanner() {
           ? t.storageErrors.saveFailed
           : rewardsError === 'save'
             ? t.storageErrors.rewardsSaveFailed
-            : goalsError === 'unreadable' || rewardsError === 'unreadable'
-              ? t.storageErrors.unreadable
-              : null;
+            : null;
+  // Said alongside any error, not instead of one or after it: it happens once,
+  // and hidden behind an error it was dismissed with it, unseen.
+  const setAside = goalsSetAside || rewardsSetAside ? t.storageErrors.unreadable : null;
+  const message = [error, setAside].filter(Boolean).join('\n\n');
 
   if (!message) {
     return null;
   }
 
-  // Unreadable data has already been set aside: there is nothing to retry.
-  const canRetry = [goalsError, rewardsError].some((e) => e === 'load' || e === 'save');
+  // Data set aside has already been dealt with: only an error has a Retry.
+  const canRetry = error !== null;
 
   return (
     <Animated.View

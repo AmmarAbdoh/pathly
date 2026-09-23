@@ -10,6 +10,7 @@ import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-backup';
 import { translations } from '@/src/i18n/translations';
+import { renameReminderChannel } from '@/src/utils/notifications';
 import { Language, ThemeMode } from '@/src/types';
 import { generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
 import { type ImportMode } from '@/src/utils/import-data';
@@ -75,8 +76,12 @@ export default function SettingsScreen() {
       // the language just chosen: `t` here is still the previous one.
       if (newLanguage !== language) {
         const next = translations[newLanguage];
-        // Scheduled reminders are still worded in the old language.
-        void rescheduleReminders(next.notifications);
+        // Scheduled reminders are still worded in the old language, and
+        // Android lists them under the old channel name.
+        void renameReminderChannel(next.notifications.channelName);
+        void rescheduleReminders(next.notifications).then((turnedOff) => {
+          if (turnedOff > 0) Alert.alert(next.common.error, next.notifications.remindersTurnedOff);
+        });
         Alert.alert(next.common.success, next.settings.languageChangedRestart, [
           { text: next.common.close, style: 'cancel' },
         ]);
@@ -265,7 +270,11 @@ export default function SettingsScreen() {
           console.error('Failed to import data:', error);
           Alert.alert(
             t.common.error,
-            error instanceof PartialImportError ? t.import.partialError : t.import.importError
+            error instanceof PartialImportError
+              ? mode === 'merge'
+                ? t.import.partialErrorMerge
+                : t.import.partialErrorReplace
+              : t.import.importError
           );
         } finally {
           setIsImporting(false);

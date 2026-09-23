@@ -720,12 +720,19 @@ export default function GoalDetail() {
         subgoalsAwardPoints,
         schedule
       );
-      // Reminders carry the title they were scheduled with.
-      if (title !== goal.title) {
-        await rescheduleReminders(t.notifications, goal.id);
-      }
       setIsEditMode(false);
       Alert.alert(t.common.success, t.goalDetail.goalUpdateSuccess);
+      // Reminders carry the title they were scheduled with. Not awaited: it
+      // may wait its turn behind other reminder work, a language change's say.
+      if (title !== goal.title) {
+        void rescheduleReminders(t.notifications, goal.id).then((turnedOff) => {
+          if (turnedOff > 0) {
+            // This screen's toggle keeps its own copy.
+            setNotificationsEnabled(false);
+            Alert.alert(t.common.error, t.notifications.remindersTurnedOff);
+          }
+        });
+      }
     } catch (error) {
       console.error('Failed to edit goal:', error);
       Alert.alert(t.common.error, t.goalDetail.goalUpdateError);

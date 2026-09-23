@@ -23,6 +23,7 @@ import { deriveLifetimePoints } from '@/src/utils/import-data';
 // nothing on native.
 import {
   cancelGoalNotifications,
+  NotificationPermissionError,
   scheduleGoalNotification,
   type ReminderText,
 } from '@/src/utils/notifications';
@@ -64,12 +65,10 @@ const SAVE_DEBOUNCE_MS = 400;
  *  - `load`: reading storage failed. Saving is blocked until a reload succeeds,
  *    because the in-memory goals are not the user's real data and writing them
  *    would replace everything on disk.
- *  - `unreadable`: what was stored could not be used (not a goals list). It
- *    was kept aside under another key and the app started with no goals.
- *    Nothing to retry - retrying cannot repair it, and blocking on it left no
- *    way forward but clearing the app's data.
+ *
+ * Stored data that could not be used at all is reported by `dataSetAside`.
  */
-export type StorageError = 'save' | 'load' | 'unreadable';
+export type StorageError = 'save' | 'load';
 
 /**
  * Called when a goal is completed for the first time, however that happened,
@@ -108,6 +107,14 @@ interface GoalsContextType {
   error: string | null;
   /** Set when data could not be saved or loaded; shown by StorageErrorBanner. */
   storageError: StorageError | null;
+  /**
+   * Stored goals could not be used (not a goals list): they were kept aside
+   * under another key and the app started without them. Nothing to retry -
+   * retrying cannot repair it, and blocking on it left no way forward but
+   * clearing the app's data. Its own flag, so that a save failing and then
+   * working, or a Retry, cannot clear it unseen; dismissStorageError does.
+   */
+  dataSetAside: boolean;
   /** Retry whatever failed: re-save pending data, or reload after a failed load. */
   retryStorage: () => Promise<void>;
   dismissStorageError: () => void;
@@ -198,9 +205,10 @@ interface GoalsContextType {
   /**
    * Schedule enabled reminders again with `text` - their wording is fixed when
    * they are scheduled. After a language change (every goal), or a rename
-   * (just that one, `goalId`).
+   * (just that one, `goalId`). Resolves to how many goals' reminders could not
+   * be scheduled, and were turned off.
    */
-  rescheduleReminders: (text: ReminderText, goalId?: number) => Promise<void>;
+  rescheduleReminders: (text: ReminderText, goalId?: number) => Promise<number>;
   refreshGoals: () => Promise<void>;
   getSubgoals: (parentId: number) => Goal[];
   recalculateProgress: (goalId: number) => Promise<void>;
@@ -252,6 +260,21 @@ function applyProgressRecalc(list: Goal[], startId: number): Goal[] {
 }
 
 /**
+ * Switch off the reminders of archived goals, and say which ids to cancel.
+ * Archiving does this now; goals archived before it did kept theirs, firing
+ * for a goal the user had put away - and nothing else would ever cancel them.
+ */
+function archivedRemindersOff(goals: Goal[]): { goals: Goal[]; cancel: string[] } {
+  const cancel: string[] = [];
+  const next = goals.map((goal) => {
+    if (!goal.isArchived || (!goal.notificationsEnabled && !goal.notificationIds?.length)) return goal;
+    cancel.push(...(goal.notificationIds ?? []));
+    return { ...goal, notificationsEnabled: false, notificationIds: [] };
+  });
+  return { goals: next, cancel };
+}
+
+/**
  * The scheduled reminders of a goal and of the subgoals that archiving or
  * deleting it takes along.
  */
@@ -278,6 +301,8 @@ function hasGoalDataChanged(before: Goal[], after: Goal[]): boolean {
     if (
       a.current !== b.current ||
       a.isRecurring !== b.isRecurring ||
+      a.schedule !== b.schedule ||
+      a.notificationIds !== b.notificationIds ||
       a.progress !== b.progress ||
       a.isComplete !== b.isComplete ||
       a.periodStartDate !== b.periodStartDate ||
@@ -306,6 +331,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<StorageError | null>(null);
+  const [dataSetAside, setDataSetAside] = useState(false);
 
   const loadStateRef = useRef<LoadState>('pending');
   /**
@@ -460,6 +486,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     let goalsWithStreaks: Goal[];
     let setAside = false;
     let lifetimeNeedsWrite = false;
+    let staleReminders: string[] = [];
     try {
       // Only the reads count as a failed load. A write the load itself implies
       // (a period rollover, the first lifetime total) used to fail the whole
@@ -492,7 +519,9 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         setAside = true;
       }
 
-      goalsWithStreaks = rollOver(savedGoals);
+      const loaded = archivedRemindersOff(rollOver(savedGoals));
+      goalsWithStreaks = loaded.goals;
+      staleReminders = loaded.cancel;
 
       let lifetime = lifetimePointsRef.current;
       if (!lifetimeDirtyRef.current) {
@@ -523,9 +552,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       setGoals(goalsWithStreaks);
       // With the queue gone, a failed-save report is out of date - unless the
       // lifetime total is still waiting to be written.
-      setStorageError((prev) =>
-        setAside ? 'unreadable' : prev === 'save' && lifetimeDirtyRef.current ? 'save' : null
-      );
+      setStorageError((prev) => (prev === 'save' && lifetimeDirtyRef.current ? 'save' : null));
+      if (setAside) setDataSetAside(true);
     } catch (err) {
       // Never leave the screen loading, or writes unblocked, whatever failed.
       console.error('Error loading goals:', err);
@@ -538,7 +566,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     }
 
     // Now the writes. If they fail it is an ordinary failed save: queued,
-    // reported, retried.
+    // reported, retried. Before anything is awaited: once loaded, changes are
+    // allowed, and this would put the loaded goals over one queued meanwhile.
     const rolledOver = hasGoalDataChanged(savedGoals, goalsWithStreaks);
     if (rolledOver) {
       pendingSave.current = goalsWithStreaks;
@@ -548,6 +577,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     }
     if (rolledOver || lifetimeNeedsWrite) {
       await flushSave();
+    }
+
+    if (staleReminders.length > 0) {
+      await cancelGoalNotifications(staleReminders);
     }
   }, [flushSave]);
 
@@ -612,6 +645,17 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     [incrementLifetimePoints]
   );
 
+  /**
+   * Period rollovers and streaks, applied to the goals in memory - what a load
+   * applies to what it reads.
+   */
+  const rollOverInMemory = useCallback(() => {
+    commit((prev) => {
+      const next = rollOver(prev);
+      return hasGoalDataChanged(prev, next) ? next : prev;
+    });
+  }, [commit]);
+
   const refreshGoals = useCallback(async () => {
     // After a failed load, read storage again: that is how Retry recovers.
     // Changes made meanwhile were never saved, and are dropped.
@@ -629,12 +673,9 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     // goals over newer ones: edits vanished, and a reverted completion could
     // pay out its points twice. Instead, apply what a reload was for - period
     // rollovers and streaks - to the goals in memory, and retry any failed save.
-    commit((prev) => {
-      const next = rollOver(prev);
-      return hasGoalDataChanged(prev, next) ? next : prev;
-    });
+    rollOverInMemory();
     await flushSave();
-  }, [commit, flushSave, loadGoals]);
+  }, [rollOverInMemory, flushSave, loadGoals]);
 
   const retryStorage = useCallback(async () => {
     if (loadStateRef.current === 'failed') {
@@ -646,7 +687,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
 
   // Hiding the banner does not unblock anything. After a failed load, the next
   // change the user makes raises it again (see flushSave).
-  const dismissStorageError = useCallback(() => setStorageError(null), []);
+  const dismissStorageError = useCallback(() => {
+    setStorageError(null);
+    setDataSetAside(false);
+  }, []);
 
   const completionListeners = useRef(new Set<GoalCompletedListener>());
 
@@ -709,10 +753,11 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         await goalsStorage.saveGoals(next);
       } catch (err) {
         importingRef.current = false;
-        // Edits made while it was being written are newer still.
-        const unsaved = pendingSave.current ?? queued;
-        if (unsaved) {
-          scheduleSave(unsaved);
+        // Unsaved edits go back in the queue - as memory has them, the newest.
+        // The queue itself may hold an older copy by now: a save that failed
+        // meanwhile puts its own back.
+        if (pendingSave.current || queued) {
+          scheduleSave(goalsRef.current);
         }
         throw err;
       }
@@ -724,33 +769,35 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       }
       pendingSave.current = null;
 
-      // Memory takes the import before anything else can run. Until the reload
-      // below, a change (an edit, a reminder rescheduled) was built on the old
-      // goals, and a flush then wrote them back over the import.
+      // Memory takes the import before anything else can run: a change (an
+      // edit, a reminder rescheduled) built on the old goals was flushed back
+      // over it. The unsaved changes a failed save was reporting are gone.
       const replaced = goalsRef.current;
       goalsRef.current = next;
       setGoals(next);
       lifetimePointsRef.current = lifetimePoints;
       setLifetimePointsEarned(lifetimePoints);
       importingRef.current = false;
+      setStorageError((prev) => (prev === 'save' ? null : prev));
 
-      // Reminders for goals that no longer exist would keep firing.
+      // Reminders for goals that no longer exist would keep firing. All in one
+      // go: the import holds the rewards queue until this is done.
       const kept = new Set(next.map((goal) => goal.id));
-      for (const goal of replaced) {
-        if (!kept.has(goal.id) && goal.notificationIds?.length) {
-          await cancelGoalNotifications(goal.notificationIds);
-        }
+      const gone = replaced.flatMap((goal) => (kept.has(goal.id) ? [] : goal.notificationIds ?? []));
+      if (gone.length > 0) {
+        await cancelGoalNotifications(gone);
       }
 
       if (!(await persistLifetime())) {
         setStorageError('save'); // goals are in; the total is retried
       }
 
-      // Re-read through the normal load path, so imported data gets the same
-      // migrations, recurring-period resets and streak updates as a cold start.
-      await loadGoals();
+      // Rolled over in memory, not by reading the import back: that threw away
+      // any change made while the reminders were cancelled and the total
+      // written.
+      rollOverInMemory();
     },
-    [scheduleSave, persistLifetime, loadGoals]
+    [scheduleSave, persistLifetime, rollOverInMemory]
   );
 
   /**
@@ -776,6 +823,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       schedule?: GoalSchedule
     ) => {
       try {
+        const recurring = isRecurring && canRecur({ period, customPeriodDays, parentId, isUltimate });
         const newGoal: Goal = {
           // Not Date.now(): goals added in the same millisecond (import does
           // this in a loop) would share an id. goalsRef is updated
@@ -800,12 +848,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           isUltimate,
           isComplete: false,
           // Only where it can: see canRecur.
-          isRecurring: isRecurring && canRecur({ period, customPeriodDays, parentId, isUltimate }),
+          isRecurring: recurring,
           completionHistory: [],
           linkedRewardId,
           // Ultimate goals default to not awarding subgoal points.
           subgoalsAwardPoints: subgoalsAwardPoints ?? (isUltimate ? false : undefined),
-          schedule,
+          // Only a recurring goal has one (see processRecurringGoals).
+          schedule: recurring ? schedule : undefined,
         };
 
         commit((prev) => {
@@ -893,7 +942,12 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   const updateGoal = useCallback(
     async (id: number, current: number) => {
       try {
-        const wasComplete = goalsRef.current.find((g) => g.id === id)?.isComplete ?? false;
+        // Completed before - now, or earlier and since set back. Only a first
+        // completion pays out: -1 then +1 paid the points again, and could
+        // redeem the linked reward it had just been too short for. (A new
+        // period of a recurring goal starts with no completedAt.)
+        const before = goalsRef.current.find((g) => g.id === id);
+        const completedBefore = Boolean(before?.isComplete) || typeof before?.completedAt === 'number';
 
         const next = commit((prev) => {
           const updated = prev.map((goal) => {
@@ -922,7 +976,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         });
 
         const updatedGoal = next.find((g) => g.id === id);
-        if (updatedGoal && !wasComplete && updatedGoal.isComplete) {
+        if (updatedGoal?.isComplete && !completedBefore) {
           await awardPointsForGoal(updatedGoal, next);
           // Completing by progress counts too: the detail screen's "Mark
           // complete" sets the target through here before calling finishGoal,
@@ -965,6 +1019,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           const goal = prev.find((g) => g.id === id);
           if (!goal) return prev;
 
+          const recurring =
+            isRecurring && canRecur({ period, customPeriodDays, parentId: goal.parentId, isUltimate });
           const updated = prev.map((g) =>
             g.id === id
               ? {
@@ -980,12 +1036,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
                   period,
                   customPeriodDays,
                   isUltimate,
-                  isRecurring:
-                    isRecurring &&
-                    canRecur({ period, customPeriodDays, parentId: g.parentId, isUltimate }),
+                  isRecurring: recurring,
                   linkedRewardId,
                   subgoalsAwardPoints,
-                  schedule,
+                  schedule: recurring ? schedule : undefined,
                 }
               : g
           );
@@ -1013,7 +1067,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         const goal = goalsRef.current.find((g) => g.id === id);
         if (!goal) return;
 
-        const isFirstCompletion = !goal.isComplete;
+        // As in updateGoal: not if it was completed before and set back since.
+        const isFirstCompletion = !goal.isComplete && typeof goal.completedAt !== 'number';
 
         const next = commit((prev) => {
           const updated = prev.map((g) => {
@@ -1362,92 +1417,127 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     [commit]
   );
 
+  /**
+   * Reminder changes, one at a time. Two at once each started from the same
+   * stored ids, and whichever finished first won: switching language twice
+   * quickly could leave every reminder in the one switched away from.
+   */
+  const reminderQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const inReminderQueue = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
+    const run = reminderQueue.current.then(task);
+    reminderQueue.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
   const rescheduleReminders = useCallback(
-    async (text: ReminderText, goalId?: number) => {
-      const due = goalsRef.current.filter(
-        (g) =>
-          g.notificationsEnabled &&
-          g.notificationTime !== undefined &&
-          !g.isArchived &&
-          (goalId === undefined || g.id === goalId)
-      );
+    (text: ReminderText, goalId?: number) =>
+      inReminderQueue(async () => {
+        const due = goalsRef.current.filter(
+          (g) =>
+            g.notificationsEnabled &&
+            g.notificationTime !== undefined &&
+            !g.isArchived &&
+            (goalId === undefined || g.id === goalId)
+        );
 
-      // All at once: one goal after another, a language change took as long as
-      // every goal's reminders together.
-      const results = await Promise.all(
-        due.map(async (goal) => {
-          try {
-            return { goal, ids: await scheduleGoalNotification(goal, text) };
-          } catch (err) {
-            // One goal failing (permission withdrawn, say) doesn't stop the rest.
-            console.error('Error rescheduling reminders:', err);
-            return null;
-          }
-        })
-      );
-
-      // A goal may have changed while the OS was busy: reminders turned off or
-      // saved again, the goal archived, deleted or imported over. It keeps what
-      // it has now, and these are cancelled - stored nowhere, nothing could ever
-      // cancel them. Its reminder ids are the same array only if nothing has
-      // touched them since; archiving, saving and importing all replace them.
-      // Turning reminders off leaves them alone when there were none stored.
-      const latest = new Map(goalsRef.current.map((g) => [g.id, g]));
-      const stored = new Map<number, string[]>();
-      const orphans: string[] = [];
-      for (const result of results) {
-        if (!result) continue;
-        const goal = latest.get(result.goal.id);
-        if (goal?.notificationsEnabled && goal.notificationIds === result.goal.notificationIds) {
-          stored.set(goal.id, result.ids);
-        } else {
-          orphans.push(...result.ids);
-        }
-      }
-
-      if (stored.size > 0) {
-        commit((prev) =>
-          prev.map((g) => {
-            const notificationIds = stored.get(g.id);
-            return notificationIds ? { ...g, notificationIds } : g;
+        // All at once: one goal after another, a language change took as long
+        // as every goal's reminders together.
+        const results = await Promise.all(
+          due.map(async (goal) => {
+            try {
+              return { goal, ids: await scheduleGoalNotification(goal, text), intact: false };
+            } catch (err) {
+              console.error('Error rescheduling reminders:', err);
+              // Refused before anything was cancelled: its reminders are as
+              // they were, and fire again once permission is back.
+              return { goal, ids: null, intact: err instanceof NotificationPermissionError };
+            }
           })
         );
-      }
-      if (orphans.length > 0) await cancelGoalNotifications(orphans);
-    },
-    [commit]
+
+        // A goal may have been archived, deleted or imported over while the OS
+        // was busy (reminder settings wait their turn in the queue). It keeps
+        // what it has now, and new reminders are cancelled - stored nowhere,
+        // nothing could ever cancel them. Its reminder ids are the same array
+        // only if nothing has touched them since: each of those replaces them.
+        const latest = new Map(goalsRef.current.map((g) => [g.id, g]));
+        const changes = new Map<number, Partial<Goal>>();
+        const cancel: string[] = [];
+        let turnedOff = 0;
+        for (const { goal, ids, intact } of results) {
+          const now = latest.get(goal.id);
+          const untouched = now !== undefined && now.notificationIds === goal.notificationIds;
+          if (!untouched) {
+            if (ids) cancel.push(...ids);
+          } else if (ids) {
+            changes.set(goal.id, { notificationIds: ids });
+          } else if (!intact) {
+            // Failed part-way: its old reminders were cancelled before the new
+            // ones were scheduled, and those were cancelled when one failed.
+            // Showing them on - with nothing to fire - hid that from the user.
+            changes.set(goal.id, { notificationsEnabled: false, notificationIds: [] });
+            cancel.push(...(goal.notificationIds ?? []));
+            turnedOff += 1;
+          }
+        }
+
+        if (changes.size > 0) {
+          commit((prev) =>
+            prev.map((g) => {
+              const change = changes.get(g.id);
+              return change ? { ...g, ...change } : g;
+            })
+          );
+        }
+        if (cancel.length > 0) await cancelGoalNotifications(cancel);
+        return turnedOff;
+      }),
+    [commit, inReminderQueue]
   );
 
   const updateNotificationSettings = useCallback(
-    async (goalId: number, enabled: boolean, text: ReminderText, time?: number, days?: number[]) => {
-      try {
-        const goal = goalsRef.current.find((g) => g.id === goalId);
-        if (!goal) return;
+    (goalId: number, enabled: boolean, text: ReminderText, time?: number, days?: number[]) =>
+      inReminderQueue(async () => {
+        try {
+          const goal = goalsRef.current.find((g) => g.id === goalId);
+          if (!goal) return;
 
-        const settings = { notificationsEnabled: enabled, notificationTime: time, notificationDays: days };
-        let notificationIds = goal.notificationIds;
+          const settings = { notificationsEnabled: enabled, notificationTime: time, notificationDays: days };
+          let notificationIds = goal.notificationIds;
+          let scheduled: string[] = [];
 
-        // Talk to the OS before touching state, so a scheduling failure leaves
-        // the stored settings untouched rather than half-applied.
-        if (enabled && time !== undefined) {
-          notificationIds = await scheduleGoalNotification({ ...goal, ...settings }, text);
-        } else if (goal.notificationIds?.length) {
-          await cancelGoalNotifications(goal.notificationIds);
-          notificationIds = [];
+          // Talk to the OS before touching state, so a scheduling failure leaves
+          // the stored settings untouched rather than half-applied.
+          if (enabled && time !== undefined) {
+            notificationIds = scheduled = await scheduleGoalNotification({ ...goal, ...settings }, text);
+          } else if (goal.notificationIds?.length) {
+            await cancelGoalNotifications(goal.notificationIds);
+            notificationIds = [];
+          }
+
+          // Archived, deleted or imported over while the OS was busy - each
+          // replaces the goal's reminder ids. It keeps what it has now: turning
+          // reminders back on for an archived goal left them firing, and the
+          // new ones are cancelled, stored nowhere else. The caller is told:
+          // returning quietly let the screen say the reminders were set.
+          const latest = goalsRef.current.find((g) => g.id === goalId);
+          if (!latest || latest.notificationIds !== goal.notificationIds) {
+            if (scheduled.length > 0) await cancelGoalNotifications(scheduled);
+            throw new Error('The goal changed while its reminders were being saved');
+          }
+
+          // Only these fields. The goal may have changed while the OS was busy,
+          // and writing back the copy taken before would undo that.
+          commit((prev) =>
+            prev.map((g) => (g.id === goalId ? { ...g, ...settings, notificationIds } : g))
+          );
+        } catch (err) {
+          console.error('Error updating notification settings:', err);
+          setError('Failed to update notification settings');
+          throw err;
         }
-
-        // Only these fields. The goal may have changed while the OS was busy,
-        // and writing back the copy taken before would undo that.
-        commit((prev) =>
-          prev.map((g) => (g.id === goalId ? { ...g, ...settings, notificationIds } : g))
-        );
-      } catch (err) {
-        console.error('Error updating notification settings:', err);
-        setError('Failed to update notification settings');
-        throw err;
-      }
-    },
-    [commit]
+      }),
+    [commit, inReminderQueue]
   );
 
   const value = useMemo(
@@ -1457,6 +1547,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       isLoading,
       error,
       storageError,
+      dataSetAside,
       retryStorage,
       dismissStorageError,
       getCurrentGoals,
@@ -1492,6 +1583,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       isLoading,
       error,
       storageError,
+      dataSetAside,
       retryStorage,
       dismissStorageError,
       getCurrentGoals,

@@ -94,16 +94,37 @@ describe('goals saved as recurring that cannot recur', () => {
   it('stop recurring, and keep their progress', async () => {
     const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     await seed([
-      makeGoal({ isRecurring: true, period: 'ongoing', periodStartDate: monthAgo, current: 5, progress: 50 }),
+      makeGoal({
+        isRecurring: true,
+        period: 'ongoing',
+        periodStartDate: monthAgo,
+        current: 5,
+        progress: 50,
+        schedule: { daysOfWeek: [1] },
+      }),
     ]);
     const { result } = await renderGoals();
 
-    expect(result.current.goals[0]).toMatchObject({ isRecurring: false, current: 5 });
+    // Its schedule goes too: it hid the goal on the other days, and the form
+    // offers a schedule only for a recurring goal.
+    expect(result.current.goals[0]).toMatchObject({ isRecurring: false, current: 5, schedule: undefined });
     await act(async () => {
       await result.current.refreshGoals();
     });
     expect(result.current.goals[0].current).toBe(5);
     expect((await storedGoals())[0].isRecurring).toBe(false);
+  });
+
+  it('a goal that does not recur loses its schedule, on disk too', async () => {
+    await seed([makeGoal({ isRecurring: false, schedule: { daysOfWeek: [1] } })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+
+    expect(result.current.goals[0].schedule).toBeUndefined();
+    expect((await storedGoals())[0].schedule).toBeUndefined();
   });
 });
 
@@ -125,6 +146,60 @@ describe('points', () => {
       await result.current.finishGoal(1);
     });
     expect(result.current.lifetimePointsEarned).toBe(50);
+  });
+
+  // Regression: any return to complete counted as a first completion, so -1
+  // then +1 paid the points again - and could redeem a linked reward.
+  it('pays out once for a goal completed, set back and completed again', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    const completed = jest.fn();
+    result.current.onGoalCompleted(completed);
+
+    for (const value of [10, 9, 10, 9]) {
+      await act(async () => {
+        await result.current.updateGoal(1, value);
+      });
+    }
+    await act(async () => {
+      await result.current.finishGoal(1);
+    });
+
+    expect(result.current.lifetimePointsEarned).toBe(50);
+    expect(completed).toHaveBeenCalledTimes(1);
+  });
+
+  // 0 is a time too: checked by truthiness, a goal completed then (an
+  // import can say so) paid out again.
+  it('counts a completion at time 0 as a completion', async () => {
+    await seed([makeGoal({ id: 1, completedAt: 0 }), makeGoal({ id: 2, completedAt: 0 })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    await act(async () => {
+      await result.current.finishGoal(2);
+    });
+
+    expect(result.current.lifetimePointsEarned).toBe(0);
+  });
+
+  it('pays out again for each new period of a recurring goal', async () => {
+    await seed([makeGoal({ period: 'weekly', isRecurring: true })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+    await act(async () => {
+      await result.current.resetRecurringGoal(1);
+    });
+    await act(async () => {
+      await result.current.updateGoal(1, 10);
+    });
+
+    expect(result.current.lifetimePointsEarned).toBe(100);
   });
 
   it('only lets a subgoal award points when its parent opts in', async () => {
@@ -632,6 +707,24 @@ describe('adding goals', () => {
       await result.current.editGoal(b.id, 'B', 10, 0, 'x', 'increase', 5, 'custom', undefined, false, true);
     });
     expect(result.current.goals[1].isRecurring).toBe(false);
+  });
+
+  it('keeps a schedule only on a recurring goal', async () => {
+    const { result } = await renderGoals();
+    const schedule = { daysOfWeek: [1] };
+
+    await act(async () => {
+      await result.current.addGoal('A', 10, 0, 'x', 'increase', 5, 'ongoing', undefined, undefined, false, true, undefined, undefined, undefined, undefined, schedule);
+      await result.current.addGoal('B', 10, 0, 'x', 'increase', 5, 'weekly', undefined, undefined, false, true, undefined, undefined, undefined, undefined, schedule);
+    });
+
+    expect(result.current.goals.map((g) => g.schedule)).toEqual([undefined, schedule]);
+
+    const b = result.current.goals[1];
+    await act(async () => {
+      await result.current.editGoal(b.id, 'B', 10, 0, 'x', 'increase', 5, 'ongoing', undefined, false, true, undefined, undefined, undefined, undefined, schedule);
+    });
+    expect(result.current.goals[1].schedule).toBeUndefined();
   });
 
   it('does not make a subgoal recurring', async () => {

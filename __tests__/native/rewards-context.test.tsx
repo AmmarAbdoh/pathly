@@ -271,7 +271,7 @@ it('does not write when a change changes nothing', async () => {
   setItem.mockClear();
 
   await act(async () => {
-    await result.current.replaceAllRewards(result.current.rewards);
+    await result.current.withRewardsHeld((rewards, write) => write(rewards));
   });
 
   expect(setItem).not.toHaveBeenCalled();
@@ -511,7 +511,8 @@ describe('a failed load', () => {
     await AsyncStorage.setItem(REWARDS_KEY, '{corrupt');
     const { result } = await renderRewards();
 
-    expect(result.current.storageError).toBe('unreadable');
+    expect(result.current.storageError).toBeNull();
+    expect(result.current.dataSetAside).toBe(true);
     await act(async () => {
       await result.current.addReward('New', '', 10, '🎁');
     });

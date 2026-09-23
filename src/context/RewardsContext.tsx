@@ -29,19 +29,21 @@ import React, {
  *    succeeds.
  *  - `save`: a goal's linked reward could not be redeemed. It is retried by
  *    `retryStorage`, and after the next successful load.
- *  - `unreadable`: what was stored could not be used. It was kept aside under
- *    another key and the app started with no rewards.
+ *
+ * Stored rewards that could not be used at all are reported by `dataSetAside`.
  *
  * Other failed changes are not reported here: they are undone, and the screen
  * that made them says so.
  */
-export type RewardsStorageError = 'load' | 'save' | 'unreadable';
+export type RewardsStorageError = 'load' | 'save';
 
 interface RewardsContextType {
   rewards: Reward[];
   isLoading: boolean;
   error: string | null;
   storageError: RewardsStorageError | null;
+  /** Stored rewards could not be used and were kept aside (see GoalsContext). */
+  dataSetAside: boolean;
   /** Retry whatever failed: reload after a failed load, or pending redemptions. */
   retryStorage: () => Promise<void>;
   dismissStorageError: () => void;
@@ -51,12 +53,20 @@ interface RewardsContextType {
   removeReward: (id: number) => Promise<void>;
   refreshRewards: () => Promise<void>;
   /**
-   * The rewards as they are right now, for building an import. Throws unless
-   * they have loaded.
+   * Run a backup import's `task` with the rewards as they are once every
+   * change already queued has run, holding the queue until it finishes: no
+   * change can land between reading them and writing what was built from them.
+   * Built from a copy read earlier, the import undid a linked reward redeemed
+   * meanwhile. `write` saves rewards, rejecting - and leaving them as they
+   * were - if the write fails. Rejects unless the rewards have loaded.
+   *
+   * Goals completed while it runs redeem nothing: the import puts in the goals
+   * it read at the start, so those completions are gone. If it fails, they
+   * stand, and are redeemed after all.
    */
-  getCurrentRewards: () => Reward[];
-  /** Replace every reward at once (backup import). */
-  replaceAllRewards: (rewards: Reward[]) => Promise<void>;
+  withRewardsHeld: <T>(
+    task: (rewards: Reward[], write: (next: Reward[]) => Promise<void>) => Promise<T>
+  ) => Promise<T>;
   getAvailableRewards: () => Reward[];
   getRedeemedRewards: () => Reward[];
 }
@@ -77,6 +87,8 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<RewardsStorageError | null>(null);
+  /** Stored rewards could not be used and were kept aside (see GoalsContext). */
+  const [dataSetAside, setDataSetAside] = useState(false);
 
   /**
    * Whether storage has been read. Until it has, the in-memory rewards are not
@@ -103,6 +115,12 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const pendingRedemptions = useRef(new Map<number, number>());
 
   /**
+   * Linked rewards of goals completed while an import runs (see
+   * withRewardsHeld), set aside rather than redeemed; null otherwise.
+   */
+  const heldRedemptions = useRef<Map<number, number> | null>(null);
+
+  /**
    * Every read and write of rewards storage, one at a time.
    *
    * Overlapping changes could not be undone correctly: a change that failed
@@ -117,6 +135,31 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     return run;
   }, []);
 
+  /** Throw - and say so, after a failed load - unless the rewards have loaded. */
+  const assertLoaded = useCallback(() => {
+    if (loadStateRef.current !== 'loaded') {
+      if (loadStateRef.current === 'failed') setStorageError('load');
+      throw new Error('Rewards have not loaded');
+    }
+  }, []);
+
+  /** Show and save `next`, or put back what was there if the write fails. */
+  const write = useCallback(async (next: Reward[]) => {
+    const prev = rewardsRef.current;
+    if (next === prev) return;
+
+    rewardsRef.current = next;
+    setRewards(next);
+    try {
+      await rewardsStorage.saveRewards(next);
+    } catch (err) {
+      // Changes run one at a time, so nothing has built on this one yet.
+      rewardsRef.current = prev;
+      setRewards(prev);
+      throw err;
+    }
+  }, []);
+
   /**
    * Apply a pure updater to the latest rewards, render, and persist.
    *
@@ -127,27 +170,10 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const commit = useCallback(
     (updater: (prev: Reward[]) => Reward[]) =>
       enqueue(async () => {
-        if (loadStateRef.current !== 'loaded') {
-          if (loadStateRef.current === 'failed') setStorageError('load');
-          throw new Error('Rewards have not loaded');
-        }
-
-        const prev = rewardsRef.current;
-        const next = updater(prev);
-        if (next === prev) return;
-
-        rewardsRef.current = next;
-        setRewards(next);
-        try {
-          await rewardsStorage.saveRewards(next);
-        } catch (err) {
-          // Changes run one at a time, so nothing has built on this one yet.
-          rewardsRef.current = prev;
-          setRewards(prev);
-          throw err;
-        }
+        assertLoaded();
+        await write(updater(rewardsRef.current));
       }),
-    [enqueue]
+    [enqueue, assertLoaded, write]
   );
 
   /**
@@ -222,7 +248,8 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
         rewardsRef.current = savedRewards;
         setRewards(savedRewards);
         loadStateRef.current = 'loaded';
-        setStorageError(setAside ? 'unreadable' : null);
+        setStorageError(null);
+        if (setAside) setDataSetAside(true);
         return true;
       } catch (err) {
         console.error('Error loading rewards:', err);
@@ -263,20 +290,29 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     }
   }, [loadRewards, redeemPending]);
 
-  const dismissStorageError = useCallback(() => setStorageError(null), []);
-
-  const getCurrentRewards = useCallback(() => {
-    if (loadStateRef.current !== 'loaded') {
-      throw new Error('Rewards have not loaded');
-    }
-    return rewardsRef.current;
+  const dismissStorageError = useCallback(() => {
+    setStorageError(null);
+    setDataSetAside(false);
   }, []);
 
-  const replaceAllRewards = useCallback(
-    async (next: Reward[]) => {
-      await commit(() => next);
-    },
-    [commit]
+  const withRewardsHeld = useCallback(
+    <T,>(task: (rewards: Reward[], write: (next: Reward[]) => Promise<void>) => Promise<T>) =>
+      enqueue(async () => {
+        assertLoaded();
+        const held = new Map<number, number>();
+        heldRedemptions.current = held;
+        try {
+          return await task(rewardsRef.current, write);
+        } catch (err) {
+          // Nothing was replaced, so those completions stand.
+          for (const [rewardId, points] of held) pendingRedemptions.current.set(rewardId, points);
+          if (held.size > 0) void redeemPending();
+          throw err;
+        } finally {
+          heldRedemptions.current = null;
+        }
+      }),
+    [enqueue, assertLoaded, write, redeemPending]
   );
 
   // Auto-redeem a goal's linked reward the first time the goal is completed.
@@ -287,6 +323,12 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     () =>
       onGoalCompleted(async (goal, lifetimePoints) => {
         if (goal.linkedRewardId === undefined) return;
+
+        // An import is running: it is about to throw this completion away.
+        if (heldRedemptions.current) {
+          heldRedemptions.current.set(goal.linkedRewardId, lifetimePoints);
+          return;
+        }
 
         pendingRedemptions.current.set(goal.linkedRewardId, lifetimePoints);
         if (loadStateRef.current === 'loaded') {
@@ -403,6 +445,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       isLoading,
       error,
       storageError,
+      dataSetAside,
       retryStorage,
       dismissStorageError,
       addReward,
@@ -410,8 +453,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       redeemReward,
       removeReward,
       refreshRewards,
-      getCurrentRewards,
-      replaceAllRewards,
+      withRewardsHeld,
       getAvailableRewards,
       getRedeemedRewards,
     }),
@@ -420,6 +462,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       isLoading,
       error,
       storageError,
+      dataSetAside,
       retryStorage,
       dismissStorageError,
       addReward,
@@ -427,8 +470,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
       redeemReward,
       removeReward,
       refreshRewards,
-      getCurrentRewards,
-      replaceAllRewards,
+      withRewardsHeld,
       getAvailableRewards,
       getRedeemedRewards,
     ]

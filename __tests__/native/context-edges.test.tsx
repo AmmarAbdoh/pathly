@@ -20,6 +20,7 @@ import * as notifications from '@/src/utils/notifications';
 jest.mock('@/src/utils/notifications', () => ({
   scheduleGoalNotification: jest.fn(async () => ['n1', 'n2']),
   cancelGoalNotifications: jest.fn(async () => {}),
+  NotificationPermissionError: class NotificationPermissionError extends Error {},
 }));
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -396,6 +397,46 @@ describe('GoalsContext: reminders of goals that leave the list', () => {
     expect(cancelled).toHaveBeenCalledWith(['a']);
   });
 
+  // Regression: goals archived before archiving cancelled reminders kept
+  // them, firing for a goal the user had put away, for good.
+  it('turns off, on load, the reminders an archived goal still has', async () => {
+    await seed([
+      makeGoal({ id: 1, isArchived: true, ...withReminders(['x', 'y']) }),
+      makeGoal({ id: 2, ...withReminders(['keep']) }),
+    ]);
+    const { result } = await renderGoals();
+
+    await waitFor(() => expect(cancelled).toHaveBeenCalledWith(['x', 'y']));
+    expect(result.current.goals[0]).toMatchObject({ notificationsEnabled: false, notificationIds: [] });
+    expect(result.current.goals[1].notificationIds).toEqual(['keep']);
+    await waitFor(async () => {
+      const stored: Goal[] = JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.GOALS))!);
+      expect(stored[0].notificationIds).toEqual([]);
+    });
+  });
+
+  // Regression: the stale reminders were cancelled before the load's own
+  // write, while changes were already allowed - and that write then put the
+  // loaded goals over a change made meanwhile, which was never saved.
+  it('keeps a change made while an archived goal\'s reminders are cancelled on load', async () => {
+    let release!: () => void;
+    cancelled.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)));
+    await seed([makeGoal({ id: 1, isArchived: true, ...withReminders(['x']) }), makeGoal({ id: 2 })]);
+    const { result } = await renderGoals();
+    await waitFor(() => expect(cancelled).toHaveBeenCalled());
+
+    await act(async () => {
+      await result.current.updateGoal(2, 4);
+    });
+    await act(async () => {
+      release();
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+
+    const stored: Goal[] = JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.GOALS))!);
+    expect(stored.find((g) => g.id === 2)?.current).toBe(4);
+  });
+
   it('has nothing to cancel for a goal without reminders', async () => {
     await seed([makeGoal()]);
     const { result } = await renderGoals();
@@ -449,16 +490,40 @@ describe('GoalsContext: rescheduleReminders', () => {
     expect(result.current.goals[0].notificationIds).toEqual(['old']);
   });
 
-  it('carries on past a goal it cannot schedule', async () => {
-    scheduled.mockRejectedValueOnce(new Error('permission withdrawn'));
+  // Regression: a refusal was treated as a failure part-way: reminders that
+  // were intact, and would fire again once permission was back, were
+  // cancelled and switched off on every goal.
+  it('leaves reminders as they were when notifications are not allowed', async () => {
+    scheduled.mockRejectedValueOnce(new notifications.NotificationPermissionError());
+    await seed([makeGoal({ id: 1, ...withReminders })]);
+    const { result } = await renderGoals();
+
+    let turnedOff = -1;
+    await act(async () => {
+      turnedOff = await result.current.rescheduleReminders(ar);
+    });
+
+    expect(turnedOff).toBe(0);
+    expect(result.current.goals[0]).toMatchObject(withReminders);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  // Regression: a goal whose reminders could not be scheduled kept showing
+  // them on, with ids already cancelled - nothing fired, and nobody was told.
+  it('turns off the reminders of a goal it cannot schedule, says so, and carries on', async () => {
+    scheduled.mockRejectedValueOnce(new Error('too many pending'));
     await seed([makeGoal({ id: 1, ...withReminders }), makeGoal({ id: 2, ...withReminders })]);
     const { result } = await renderGoals();
 
+    let turnedOff = 0;
     await act(async () => {
-      await result.current.rescheduleReminders(ar);
+      turnedOff = await result.current.rescheduleReminders(ar);
     });
 
-    expect(result.current.goals.map((g) => g.notificationIds)).toEqual([['old'], ['n1', 'n2']]);
+    expect(turnedOff).toBe(1);
+    expect(result.current.goals[0]).toMatchObject({ notificationsEnabled: false, notificationIds: [] });
+    expect(result.current.goals[1].notificationIds).toEqual(['n1', 'n2']);
+    expect(cancelled).toHaveBeenCalledWith(['old']);
   });
 
   /** Hold the next scheduling open; resolve it with the ids to return. */
@@ -475,7 +540,7 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<void>;
+    let rescheduling!: Promise<number>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);
     });
@@ -491,12 +556,62 @@ describe('GoalsContext: rescheduleReminders', () => {
     expect(cancelled).toHaveBeenCalledWith(['new']);
   });
 
+  // Regression: two at once each started from the same stored ids, and the
+  // first to finish won: switching language twice quickly could leave every
+  // reminder in the one switched away from.
+  it('lets the later of two overlapping calls win', async () => {
+    const release = holdScheduling();
+    scheduled.mockImplementationOnce(async () => ['en']);
+    await seed([makeGoal({ id: 1, ...withReminders })]);
+    const { result } = await renderGoals();
+
+    let first!: Promise<number>;
+    let second!: Promise<number>;
+    await act(async () => {
+      first = result.current.rescheduleReminders(ar);
+      second = result.current.rescheduleReminders(reminder);
+    });
+    expect(scheduled).toHaveBeenCalledTimes(1); // the second waits its turn
+
+    await act(async () => {
+      release(['ar']);
+      await first;
+      await second;
+    });
+    expect(result.current.goals[0].notificationIds).toEqual(['en']);
+    expect(cancelled).not.toHaveBeenCalledWith(['en']);
+  });
+
+  // Regression: saving reminder settings wrote them back whatever had happened
+  // meanwhile, turning reminders on again for a goal archived in between -
+  // and then, returning quietly instead, let the screen say they were set.
+  it('does not turn reminders back on for a goal archived while saving them, and says so', async () => {
+    const release = holdScheduling();
+    await seed([makeGoal({ id: 1 })]);
+    const { result } = await renderGoals();
+
+    let saving!: Promise<void>;
+    await act(async () => {
+      saving = result.current.updateNotificationSettings(1, true, reminder, 540, [1]);
+    });
+    await act(async () => {
+      await result.current.archiveGoal(1);
+    });
+    await act(async () => {
+      release(['new']);
+      await expect(saving).rejects.toThrow();
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ isArchived: true, notificationsEnabled: false, notificationIds: [] });
+    expect(cancelled).toHaveBeenCalledWith(['new']);
+  });
+
   it('schedules every goal at once, not one after another', async () => {
     const release = holdScheduling();
     await seed([makeGoal({ id: 1, ...withReminders }), makeGoal({ id: 2, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<void>;
+    let rescheduling!: Promise<number>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);
     });
@@ -508,47 +623,25 @@ describe('GoalsContext: rescheduleReminders', () => {
     });
   });
 
-  it('cancels what it scheduled for a goal whose reminders were turned off meanwhile', async () => {
-    const release = holdScheduling();
-    // On, with none stored yet: turning them off leaves the ids as they were.
-    await seed([makeGoal({ id: 1, notificationsEnabled: true, notificationTime: 540 })]);
-    const { result } = await renderGoals();
-
-    let rescheduling!: Promise<void>;
-    await act(async () => {
-      rescheduling = result.current.rescheduleReminders(ar);
-    });
-    await act(async () => {
-      await result.current.updateNotificationSettings(1, false, reminder);
-    });
-    await act(async () => {
-      release(['new']);
-      await rescheduling;
-    });
-
-    expect(result.current.goals[0].notificationIds).toBeUndefined();
-    expect(cancelled).toHaveBeenCalledWith(['new']);
-  });
-
-  it('leaves alone reminders that were saved again meanwhile', async () => {
+  it('saves reminder settings only once a reschedule in progress is done', async () => {
     const release = holdScheduling();
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<void>;
+    let rescheduling!: Promise<number>;
+    let saving!: Promise<void>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);
+      saving = result.current.updateNotificationSettings(1, true, reminder, 600, [2]);
     });
-    await act(async () => {
-      await result.current.updateNotificationSettings(1, true, reminder, 600, [2]);
-    });
-    await act(async () => {
-      release(['new']);
-      await rescheduling;
-    });
+    expect(scheduled).toHaveBeenCalledTimes(1); // the save waits its turn
 
-    expect(result.current.goals[0].notificationIds).toEqual(['n1', 'n2']);
-    expect(cancelled).toHaveBeenCalledWith(['new']);
+    await act(async () => {
+      release(['ar']);
+      await rescheduling;
+      await saving;
+    });
+    expect(result.current.goals[0]).toMatchObject({ notificationTime: 600, notificationIds: ['n1', 'n2'] });
   });
 });
 

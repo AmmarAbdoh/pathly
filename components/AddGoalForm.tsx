@@ -9,7 +9,7 @@ import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
 import { formatNumber } from '@/src/utils/number-formatting';
-import { canRecur, isWholeDays } from '@/src/utils/recurring-goals';
+import { canRecur, isPeriodLength } from '@/src/utils/recurring-goals';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -228,9 +228,10 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     
     if (period === 'custom' && !customPeriodDays.trim()) {
       newErrors.customPeriodDays = t.validation.customPeriodRequired;
-    } else if (period === 'custom' && !isWholeDays(Number(customPeriodDays))) {
-      // "1.5" used to pass, and an import then took the period away.
-      newErrors.customPeriodDays = t.validation.customPeriodWholeDays;
+    } else if (period === 'custom' && !isPeriodLength(Number(customPeriodDays))) {
+      // The rule for saved goals, too: asking for whole days here blocked any
+      // edit to a goal saved with "1.5" until its period was changed.
+      newErrors.customPeriodDays = t.validation.customPeriodMinimum;
     }
     
     if (Object.keys(newErrors).length > 0) {

@@ -13,6 +13,17 @@ export type ReminderText = Pick<Translations['notifications'], 'reminderTitle' |
 /** The test notification's wording, in the user's language. */
 export type TestNotificationText = Pick<Translations['notifications'], 'testTitle' | 'testBody'>;
 
+/**
+ * Notifications are not allowed. Thrown before anything is scheduled or
+ * cancelled, so a goal's reminders are as they were.
+ */
+export class NotificationPermissionError extends Error {
+  constructor() {
+    super('Notification permissions not granted');
+    this.name = 'NotificationPermissionError';
+  }
+}
+
 // Configure notification handler
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -23,6 +34,35 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+/** The Android channel every reminder goes to. */
+const CHANNEL_ID = 'goal-reminders';
+
+/** Create the reminders' Android channel, or rename it. */
+async function setUpChannel(name: string): Promise<void> {
+  await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    name,
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+    vibrationPattern: [0, 250, 250, 250],
+  });
+}
+
+/**
+ * Rename the reminders' Android channel after a language change: Android
+ * lists it by name in the app's notification settings. Only one that exists -
+ * creating it here would list reminders the user never turned on.
+ */
+export async function renameReminderChannel(name: string): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    if (await Notifications.getNotificationChannelAsync(CHANNEL_ID)) {
+      await setUpChannel(name);
+    }
+  } catch (error) {
+    console.error('Error renaming the reminder channel:', error);
+  }
+}
 
 /**
  * Request notification permissions from the user
@@ -46,12 +86,7 @@ export async function requestNotificationPermissions(channelName: string): Promi
 
     // For Android, configure notification channel
     if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('goal-reminders', {
-        name: channelName,
-        importance: Notifications.AndroidImportance.HIGH,
-        sound: 'default',
-        vibrationPattern: [0, 250, 250, 250],
-      });
+      await setUpChannel(channelName);
     }
 
     return true;
@@ -85,7 +120,7 @@ export async function scheduleGoalNotification(goal: Goal, text: ReminderText): 
     // Check permissions first
     const hasPermission = await checkNotificationPermissions();
     if (!hasPermission) {
-      throw new Error('Notification permissions not granted');
+      throw new NotificationPermissionError();
     }
 
     // Cancel existing notifications for this goal
@@ -116,7 +151,9 @@ export async function scheduleGoalNotification(goal: Goal, text: ReminderText): 
         const notificationId = await Notifications.scheduleNotificationAsync({
           content: {
             title: text.reminderTitle,
-            body: text.reminderBody.replace('{goal}', goal.title),
+            // A function, not the title itself: `$$` or `$&` in a title are
+            // replacement patterns in a string.
+            body: text.reminderBody.replace('{goal}', () => goal.title),
             data: { goalId: goal.id },
             sound: 'default',
             priority: Notifications.AndroidNotificationPriority.HIGH,
@@ -128,7 +165,7 @@ export async function scheduleGoalNotification(goal: Goal, text: ReminderText): 
           // bare channel trigger. Weekly triggers always repeat, so no `repeats`.
           trigger: {
             type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-            channelId: 'goal-reminders',
+            channelId: CHANNEL_ID,
             weekday: weekday + 1, // expo-notifications uses 1-7 for Sunday-Saturday
             hour,
             minute,
@@ -153,12 +190,14 @@ export async function scheduleGoalNotification(goal: Goal, text: ReminderText): 
  * Cancel notifications for a goal
  */
 export async function cancelGoalNotifications(notificationIds: string[]): Promise<void> {
-  try {
-    for (const id of notificationIds) {
-      await Notifications.cancelScheduledNotificationAsync(id);
+  // All at once, and each on its own: one failing doesn't stop the rest.
+  const results = await Promise.allSettled(
+    notificationIds.map((id) => Notifications.cancelScheduledNotificationAsync(id))
+  );
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('Error canceling notifications:', result.reason);
     }
-  } catch (error) {
-    console.error('Error canceling notifications:', error);
   }
 }
 
@@ -220,7 +259,7 @@ export async function scheduleTestNotification(text: TestNotificationText): Prom
   try {
     const hasPermission = await checkNotificationPermissions();
     if (!hasPermission) {
-      throw new Error('Notification permissions not granted');
+      throw new NotificationPermissionError();
     }
 
     await Notifications.scheduleNotificationAsync({

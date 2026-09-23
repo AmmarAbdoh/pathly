@@ -20,7 +20,9 @@ import {
   checkNotificationPermissions,
   formatNotificationTime,
   getAllScheduledNotifications,
+  NotificationPermissionError,
   getDayName,
+  renameReminderChannel,
   requestNotificationPermissions,
   scheduleGoalNotification,
   scheduleTestNotification,
@@ -34,6 +36,7 @@ jest.mock('expo-notifications', () => ({
   getPermissionsAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   setNotificationChannelAsync: jest.fn(),
+  getNotificationChannelAsync: jest.fn(),
   scheduleNotificationAsync: jest.fn(),
   cancelScheduledNotificationAsync: jest.fn(),
   cancelAllScheduledNotificationsAsync: jest.fn(),
@@ -68,11 +71,15 @@ beforeEach(() => {
   mocked.requestPermissionsAsync.mockResolvedValue(granted);
   let n = 0;
   mocked.scheduleNotificationAsync.mockImplementation(async () => `id-${n++}`);
+  // Clears what a test queued and did not use, which clearAllMocks keeps.
+  mocked.getNotificationChannelAsync.mockReset();
   consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
   consoleError.mockRestore();
+  // Platform.OS too, even if a test failed before putting it back.
+  jest.restoreAllMocks();
 });
 
 describe('permissions', () => {
@@ -106,6 +113,32 @@ describe('permissions', () => {
     );
   });
 
+  // Regression: the channel was named once, when permission was granted, and
+  // kept that language whatever the app was switched to.
+  it('renames the Android channel, if there is one', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    mocked.getNotificationChannelAsync.mockResolvedValueOnce(null);
+    await renameReminderChannel(ar.channelName);
+    expect(mocked.setNotificationChannelAsync).not.toHaveBeenCalled(); // none to rename
+
+    mocked.getNotificationChannelAsync.mockResolvedValueOnce({ id: 'goal-reminders' } as never);
+    await renameReminderChannel(ar.channelName);
+
+    expect(mocked.setNotificationChannelAsync).toHaveBeenCalledWith(
+      'goal-reminders',
+      expect.objectContaining({ name: ar.channelName })
+    );
+  });
+
+  it('has no channel to rename off Android, and reports rather than throws', async () => {
+    await renameReminderChannel(ar.channelName);
+    expect(mocked.getNotificationChannelAsync).not.toHaveBeenCalled();
+
+    jest.replaceProperty(Platform, 'OS', 'android');
+    mocked.getNotificationChannelAsync.mockRejectedValueOnce(new Error('boom'));
+    await expect(renameReminderChannel(ar.channelName)).resolves.toBeUndefined();
+  });
+
   it('reports false instead of throwing when the platform call fails', async () => {
     mocked.getPermissionsAsync.mockRejectedValue(new Error('boom'));
     expect(await requestNotificationPermissions(en.channelName)).toBe(false);
@@ -120,6 +153,25 @@ describe('permissions', () => {
 });
 
 describe('scheduleGoalNotification', () => {
+  // Callers tell a refusal - nothing touched - from a failure part-way.
+  it('is refused, with nothing cancelled, when notifications are not allowed', async () => {
+    mocked.getPermissionsAsync.mockResolvedValue(denied);
+
+    await expect(scheduleGoalNotification(goal({ notificationIds: ['old'] }), en)).rejects.toBeInstanceOf(
+      NotificationPermissionError
+    );
+    expect(mocked.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
+  });
+
+  // Regression: the title was passed to replace() as a string, where `$$` and
+  // `$&` are patterns: "Make $$ online" became "Make $ online".
+  it('puts the title in as written', async () => {
+    await scheduleGoalNotification(goal({ title: 'Make $$ online $&', notificationDays: [1] }), en);
+    const [[request]] = mocked.scheduleNotificationAsync.mock.calls;
+    expect(request.content.body).toBe(en.reminderBody.replace('{goal}', () => 'Make $$ online $&'));
+    expect(request.content.body).toContain('Make $$ online $&');
+  });
+
   // Regression: the ones scheduled before the failure were never returned, so
   // nothing could cancel them - they fired weekly for good.
   it('cancels what it scheduled when a later one fails', async () => {
@@ -234,6 +286,19 @@ describe('cancelling and listing', () => {
   it('cancels each given reminder', async () => {
     await cancelGoalNotifications(['a', 'b']);
     expect(mocked.cancelScheduledNotificationAsync.mock.calls).toEqual([['a'], ['b']]);
+  });
+
+  // One after another, an import over many goals held up every reward change
+  // behind them; and the first failure stopped the rest.
+  it('cancels them all at once, each on its own', async () => {
+    mocked.cancelScheduledNotificationAsync
+      .mockImplementationOnce(() => new Promise(() => {})) // never finishes
+      .mockRejectedValueOnce(new Error('gone already'));
+
+    void cancelGoalNotifications(['a', 'b', 'c']);
+    await Promise.resolve();
+
+    expect(mocked.cancelScheduledNotificationAsync.mock.calls).toEqual([['a'], ['b'], ['c']]);
   });
 
   it('cancels everything', async () => {

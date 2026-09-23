@@ -23,6 +23,7 @@ type FormProps = React.ComponentProps<typeof AddGoalForm>;
 type Initial = NonNullable<FormProps['initialValues']>;
 
 // The positions of onAddGoal's arguments this file checks.
+const CUSTOM_PERIOD_DAYS = 7;
 const IS_RECURRING = 10;
 const LINKED_REWARD = 13;
 const SUBGOALS_AWARD_POINTS = 14;
@@ -170,15 +171,27 @@ describe('adding one goal after another', () => {
 });
 
 describe('custom period', () => {
-  // Regression: "1.5" was accepted, and an import then took the period away.
-  it('must be a whole number of days', async () => {
+  it('must be a day or more', async () => {
     const onAddGoal = await renderForm({ initialValues: { ...goal, period: 'custom' } });
 
-    type(t.goalForm.customPeriodPlaceholder, '1.5');
+    type(t.goalForm.customPeriodPlaceholder, '0.5');
     fireEvent.press(screen.getByLabelText(t.goalForm.addButton));
 
-    expect(screen.getByText(t.validation.customPeriodWholeDays)).toBeTruthy();
+    expect(screen.getByText(t.validation.customPeriodMinimum)).toBeTruthy();
     expect(onAddGoal).not.toHaveBeenCalled();
+  });
+
+  // Regression: the form asked for whole days, so a goal saved with "1.5"
+  // could not be edited at all until its period was changed.
+  it('takes a saved period of a day and a half', async () => {
+    const onAddGoal = await renderForm({
+      editMode: true,
+      initialValues: { ...goal, period: 'custom', customPeriodDays: 1.5 },
+    });
+
+    submit(true);
+
+    expect(onAddGoal.mock.calls[0][CUSTOM_PERIOD_DAYS]).toBe(1.5);
   });
 });
 

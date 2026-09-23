@@ -437,7 +437,8 @@ export interface Translations {
     csvUnsupported: string;
     invalidFile: string;
     skipped: string; // {count}
-    partialError: string;
+    partialErrorMerge: string;
+    partialErrorReplace: string;
   };
   notifications: {
     title: string;
@@ -459,6 +460,7 @@ export interface Translations {
     testTitle: string;
     testBody: string;
     channelName: string; // how Android lists the reminders in system settings
+    remindersTurnedOff: string;
     permissionsRequired: string;
     permissionsDescription: string;
     enablePermissions: string;
@@ -537,7 +539,7 @@ export interface Translations {
     pointsMin: string;
     pointsMax: string;
     customPeriodRequired: string;
-    customPeriodWholeDays: string;
+    customPeriodMinimum: string;
   };
   achievements: {
     first_goal: { title: string; description: string };
@@ -1095,7 +1097,8 @@ export const translations: Record<Language, Translations> = {
       csvUnsupported: 'CSV import is not supported yet. Please import a JSON backup.',
       invalidFile: 'This file is not a valid Pathly backup.',
       skipped: '{count} invalid records in the file will be skipped.',
-      partialError: "Only part of the backup was imported: its rewards were added, but its goals couldn't be saved. Free up some storage before importing again.",
+      partialErrorMerge: "Only part of the backup was imported: its rewards were added, but its goals couldn't be saved, so your goals are as they were. Importing it again with Merge would add its rewards a second time - free up some storage and remove them first.",
+      partialErrorReplace: "Only part of the backup was imported: your rewards were replaced with its rewards, but its goals couldn't be saved, so your goals are as they were. Free up some storage, then import it again with Replace.",
     },
     notifications: {
       title: 'Notifications',
@@ -1117,6 +1120,7 @@ export const translations: Record<Language, Translations> = {
       testTitle: '🎯 Test Notification',
       testBody: 'Notifications are working! You will receive goal reminders at your scheduled times.',
       channelName: 'Goal Reminders',
+      remindersTurnedOff: "Some reminders couldn't be scheduled again, so they were turned off. You can turn them back on from the goal's page.",
       permissionsRequired: 'Notification Permissions Required',
       permissionsDescription: 'Enable notifications to receive goal reminders',
       enablePermissions: 'Enable Permissions',
@@ -1178,7 +1182,7 @@ export const translations: Record<Language, Translations> = {
     validation: {
       invalidNumber: 'Please enter a valid number',
       customPeriodRequired: 'Custom period days is required',
-      customPeriodWholeDays: 'Enter a whole number of days, 1 or more',
+      customPeriodMinimum: 'Enter a number of days, 1 or more',
       requiredField: 'This field is required',
       titleRequired: 'Title is required',
       titleTooLong: 'Title must be less than 100 characters',
@@ -1775,7 +1779,8 @@ export const translations: Record<Language, Translations> = {
       csvUnsupported: 'استيراد CSV غير مدعوم بعد. يرجى استيراد نسخة احتياطية بصيغة JSON.',
       invalidFile: 'هذا الملف ليس نسخة احتياطية صالحة من Pathly.',
       skipped: 'سيتم تجاهل {count} من السجلات غير الصالحة في الملف.',
-      partialError: 'تم استيراد جزء فقط من النسخة الاحتياطية: أُضيفت مكافآتها، لكن تعذّر حفظ أهدافها. وفّر بعض مساحة التخزين قبل الاستيراد مرة أخرى.',
+      partialErrorMerge: 'تم استيراد جزء فقط من النسخة الاحتياطية: أُضيفت مكافآتها، لكن تعذّر حفظ أهدافها، فبقيت أهدافك كما هي. إعادة استيرادها بالدمج ستضيف مكافآتها مرة ثانية - وفّر بعض مساحة التخزين واحذفها أولاً.',
+      partialErrorReplace: 'تم استيراد جزء فقط من النسخة الاحتياطية: استُبدلت مكافآتك بمكافآتها، لكن تعذّر حفظ أهدافها، فبقيت أهدافك كما هي. وفّر بعض مساحة التخزين، ثم استوردها مرة أخرى بالاستبدال.',
     },
     notifications: {
       title: 'الإشعارات',
@@ -1797,6 +1802,7 @@ export const translations: Record<Language, Translations> = {
       testTitle: '🎯 إشعار تجريبي',
       testBody: 'الإشعارات تعمل! ستصلك تذكيرات أهدافك في الأوقات المحددة.',
       channelName: 'تذكيرات الأهداف',
+      remindersTurnedOff: 'تعذّرت إعادة جدولة بعض التذكيرات، فأُوقفت. يمكنك تشغيلها مجدداً من صفحة الهدف.',
       permissionsRequired: 'مطلوب أذونات الإشعارات',
       permissionsDescription: 'قم بتمكين الإشعارات لتلقي تذكيرات الأهداف',
       enablePermissions: 'تمكين الأذونات',
@@ -1857,7 +1863,7 @@ export const translations: Record<Language, Translations> = {
     },
     validation: {
       customPeriodRequired: 'عدد أيام الفترة المخصصة مطلوب',
-      customPeriodWholeDays: 'أدخل عدداً صحيحاً من الأيام، يوماً واحداً أو أكثر',
+      customPeriodMinimum: 'أدخل عدد الأيام، يوماً واحداً أو أكثر',
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',

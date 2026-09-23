@@ -391,6 +391,66 @@ describe('failed saves', () => {
     expect(result.current.goals.map((g) => g.title)).toEqual(['Imported']);
   });
 
+  // Regression: after writing the import it was read back from storage, which
+  // threw away any change made while the reminders were cancelled and the
+  // total written.
+  it('keeps a change made while an import finishes', async () => {
+    await seed([makeGoal({ id: 1, title: 'Old' })]);
+    const { result } = await renderGoals();
+    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.LIFETIME_POINTS);
+
+    let importing!: Promise<void>;
+    await act(async () => {
+      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], 0);
+      await sleep(50); // the goals are written; the total is held
+      await result.current.updateGoal(1, 7);
+    });
+    lifetimeWrite.release();
+    await act(async () => {
+      await importing;
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ title: 'Imported', current: 7 });
+  });
+
+  // Regression: when the import could not be written, the queue got back what
+  // it held - by then the older copy a failed save had put back - and the
+  // retry wrote that over the edits made since.
+  it('re-queues the newest goals when an import cannot be written', async () => {
+    const background = captureAppState();
+    await seed([makeGoal({ id: 1 })]);
+    const { result } = await renderGoals();
+    let failing = true;
+    const write = holdNext(
+      setItem,
+      async (key: string, value: string) => {
+        if (failing && key === STORAGE_KEYS.GOALS) throw disk;
+        return realSetItem(key, value);
+      },
+      STORAGE_KEYS.GOALS
+    );
+
+    await act(async () => {
+      await result.current.updateGoal(1, 1);
+      background('background'); // that save starts, and is held
+      await result.current.updateGoal(1, 2); // queued behind it
+    });
+    let importing!: Promise<void>;
+    await act(async () => {
+      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+    });
+    write.release(); // the save fails, then the import
+    await act(async () => {
+      await expect(importing).rejects.toThrow();
+    });
+
+    failing = false;
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+    expect((await storedGoals()).map((g) => g.current)).toEqual([2]);
+  });
+
   // Regression: while storage keeps failing, a reload read the old total back
   // from disk over the unsaved in-memory one, and the next successful write
   // then persisted the stale value.
@@ -468,7 +528,8 @@ describe('failed loads', () => {
     await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '120');
     const { result } = await renderGoals();
 
-    expect(result.current.storageError).toBe('unreadable');
+    expect(result.current.storageError).toBeNull();
+    expect(result.current.dataSetAside).toBe(true);
     expect(result.current.lifetimePointsEarned).toBe(120);
 
     await act(async () => {
@@ -496,7 +557,8 @@ describe('failed loads', () => {
       await result.current.retryStorage();
     });
 
-    expect(result.current.storageError).toBe('unreadable');
+    expect(result.current.storageError).toBeNull();
+    expect(result.current.dataSetAside).toBe(true);
     const keys = await AsyncStorage.getAllKeys();
     expect(keys.filter((key) => key.startsWith(`${STORAGE_KEYS.GOALS}.unreadable.`))).toHaveLength(1);
   });
@@ -799,6 +861,31 @@ describe('StorageErrorBanner', () => {
 
     expect(screen.getByText(en.unreadable)).toBeTruthy();
     expect(screen.queryByLabelText(en.retry)).toBeNull();
+  });
+
+  // Regression: it came last, so any error hid it - and closing that error
+  // closed it too, unseen - and a save failing and then working cleared it.
+  it('says unreadable data was set aside alongside an error, until it is closed', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    const context = await renderBanner();
+    const writes = failWrites(STORAGE_KEYS.GOALS);
+
+    await act(async () => {
+      await context().addGoal('New', 10, 0, 'x', 'increase', 1, 'daily');
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+    expect(screen.getByText(en.saveFailed, { exact: false })).toBeTruthy();
+    expect(screen.getByText(en.unreadable, { exact: false })).toBeTruthy();
+
+    writes.recover();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText(en.retry));
+    });
+    await waitFor(() => expect(screen.queryByText(en.saveFailed, { exact: false })).toBeNull());
+    expect(screen.getByText(en.unreadable)).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText(translations.en.common.close));
+    await waitFor(() => expect(screen.queryByText(en.unreadable)).toBeNull());
   });
 
   it('reports rewards that could not be loaded, and Retry reloads them', async () => {

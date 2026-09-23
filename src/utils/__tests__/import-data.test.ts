@@ -455,7 +455,7 @@ describe('repairing untrustworthy fields', () => {
       file({
         goals: [
           {
-            ...goal(),
+            ...goal({ isRecurring: true }),
             schedule: { daysOfWeek: [1, 7, 3, 1], datesOfMonth: [0, 15], dateRangeStart: 25, dateRangeEnd: 20 },
             notificationTime: 540,
             category: 'health',
@@ -474,7 +474,7 @@ describe('repairing untrustworthy fields', () => {
   it('keeps a valid date range', () => {
     const [kept] = buildImport(
       empty,
-      file({ goals: [goal({ schedule: { dateRangeStart: 20, dateRangeEnd: 25 } })] }),
+      file({ goals: [goal({ isRecurring: true, schedule: { dateRangeStart: 20, dateRangeEnd: 25 } })] }),
       'replace',
       NOW
     ).goals;
@@ -514,6 +514,44 @@ describe('repairing untrustworthy fields', () => {
     expect(noDays).toMatchObject({ period: 'ongoing', isRecurring: undefined });
     expect(ongoing.isRecurring).toBeUndefined();
     expect(custom).toMatchObject({ period: 'custom', isRecurring: true, customPeriodDays: 3 });
+  });
+
+  it('keeps a schedule only on a recurring goal', () => {
+    const schedule = { daysOfWeek: [1] };
+    const [oneOff, recurring] = buildImport(
+      empty,
+      file({ goals: [goal({ schedule }), goal({ id: 2, isRecurring: true, schedule })] }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(oneOff.schedule).toBeUndefined();
+    expect(recurring.schedule).toEqual(schedule);
+  });
+
+  // Regression: only whole days were kept, so a goal saved with "1.5" lost
+  // its period and stopped recurring on a round trip.
+  it('keeps a custom period of a day and a half', () => {
+    const [kept] = buildImport(
+      empty,
+      file({ goals: [goal({ isRecurring: true, period: 'custom', customPeriodDays: 1.5 })] }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(kept).toMatchObject({ period: 'custom', customPeriodDays: 1.5, isRecurring: true });
+  });
+
+  // It would end as it starts, and reset on every load.
+  it('gives a custom period of a moment no deadline, and no recurrence', () => {
+    const [kept] = buildImport(
+      empty,
+      file({ goals: [goal({ isRecurring: true, period: 'custom', customPeriodDays: 1e-6 })] }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(kept).toMatchObject({ period: 'ongoing', customPeriodDays: undefined, isRecurring: undefined });
   });
 
   // Regression: import had its own copy of the rule, which let these in.

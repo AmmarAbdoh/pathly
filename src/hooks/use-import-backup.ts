@@ -32,36 +32,39 @@ export class PartialImportError extends Error {
  */
 export function useImportBackup() {
   const { getCurrentGoals, replaceAllGoals } = useGoals();
-  const { getCurrentRewards, replaceAllRewards } = useRewards();
+  const { withRewardsHeld } = useRewards();
 
   return useCallback(
-    async (incoming: ImportedData, mode: ImportMode) => {
-      // The data as it is now, not when the screen last rendered: picking a
-      // file and confirming take a while, and an import built on an older
-      // copy - or on the empty lists from before loading finished - writes
-      // over whatever it is missing. Both throw, before anything is written,
-      // unless their data has loaded.
-      const current = getCurrentGoals();
-      const currentRewards = getCurrentRewards();
+    (incoming: ImportedData, mode: ImportMode) =>
+      // With the rewards queue held, so no reward change - a linked reward
+      // being redeemed - runs between reading the rewards and writing the
+      // import, only to be undone by it.
+      withRewardsHeld(async (currentRewards, writeRewards) => {
+        // The data as it is now, not when the screen last rendered: picking a
+        // file and confirming take a while, and an import built on an older
+        // copy - or on the empty lists from before loading finished - writes
+        // over whatever it is missing. Both reject, before anything is
+        // written, unless their data has loaded.
+        const current = getCurrentGoals();
 
-      const next = buildImport(
-        { goals: current.goals, rewards: currentRewards, lifetimePoints: current.lifetimePoints },
-        incoming,
-        mode
-      );
+        const next = buildImport(
+          { goals: current.goals, rewards: currentRewards, lifetimePoints: current.lifetimePoints },
+          incoming,
+          mode
+        );
 
-      await replaceAllRewards(next.rewards);
-      try {
-        await replaceAllGoals(next.goals, next.lifetimePoints);
-      } catch (goalsError) {
+        await writeRewards(next.rewards);
         try {
-          await replaceAllRewards(currentRewards);
-        } catch {
-          throw new PartialImportError(goalsError);
+          await replaceAllGoals(next.goals, next.lifetimePoints);
+        } catch (goalsError) {
+          try {
+            await writeRewards(currentRewards);
+          } catch {
+            throw new PartialImportError(goalsError);
+          }
+          throw goalsError;
         }
-        throw goalsError;
-      }
-    },
-    [getCurrentGoals, getCurrentRewards, replaceAllGoals, replaceAllRewards]
+      }),
+    [getCurrentGoals, replaceAllGoals, withRewardsHeld]
   );
 }

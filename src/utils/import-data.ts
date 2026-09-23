@@ -23,7 +23,7 @@
 import type { Goal, GoalCategory, GoalNote, GoalSchedule, Reward, TimePeriod } from '../types';
 import { calculateGoalProgress } from './goal-calculations';
 import { nextId } from './ids';
-import { canRecur, getTotalPointsEarned, isWholeDays } from './recurring-goals';
+import { canRecur, getTotalPointsEarned, isPeriodLength } from './recurring-goals';
 
 /**
  * - `merge`:   add the backup's goals and rewards alongside the current ones.
@@ -78,19 +78,30 @@ const flag = (value: unknown): boolean | undefined =>
  * same, but `typeof x === 'number'` let through Infinity (JSON `1e999`),
  * which is saved as null and read back as a goal with no target.
  */
-export const isImportableGoal = (raw: Goal): boolean =>
-  typeof raw.title === 'string' &&
-  raw.title.trim() !== '' &&
-  isNumber(raw.target) &&
-  raw.target > 0 &&
-  isNumber(raw.current);
+export const isImportableGoal = (raw: unknown): raw is Goal => goalImportProblem(raw) === null;
+
+/**
+ * Why a backup's goal cannot be imported, or null if it can. The parser uses
+ * it to say what was wrong with a record it skips, so the two can't disagree.
+ */
+export function goalImportProblem(raw: unknown): 'title' | 'target' | 'current' | null {
+  const goal = (typeof raw === 'object' ? raw : null) as Partial<Goal> | null;
+  if (typeof goal?.title !== 'string' || goal.title.trim() === '') return 'title';
+  if (!isNumber(goal.target) || goal.target <= 0) return 'target';
+  if (!isNumber(goal.current)) return 'current';
+  return null;
+}
 
 /** Likewise for a reward: an infinite cost is saved as null, which anyone can afford. */
-export const isImportableReward = (raw: Reward): boolean =>
-  typeof raw.title === 'string' &&
-  raw.title.trim() !== '' &&
-  isNumber(raw.pointsCost) &&
-  raw.pointsCost > 0;
+export const isImportableReward = (raw: unknown): raw is Reward => rewardImportProblem(raw) === null;
+
+/** Why a backup's reward cannot be imported, or null if it can. */
+export function rewardImportProblem(raw: unknown): 'title' | 'pointsCost' | null {
+  const reward = (typeof raw === 'object' ? raw : null) as Partial<Reward> | null;
+  if (typeof reward?.title !== 'string' || reward.title.trim() === '') return 'title';
+  if (!isNumber(reward.pointsCost) || reward.pointsCost <= 0) return 'pointsCost';
+  return null;
+}
 
 /** The whole numbers in `value` between min and max, without duplicates. */
 function integers(value: unknown, min: number, max: number): number[] | undefined {
@@ -233,9 +244,9 @@ export function buildImport(
   const goals: Goal[] = incomingGoals.map((raw, index) => {
     const createdAt = number(raw.createdAt) ?? now;
 
-    // A 'custom' period without a length in whole days would end the moment
-    // it starts: it has no deadline instead.
-    const customPeriodDays = isWholeDays(raw.customPeriodDays) ? raw.customPeriodDays : undefined;
+    // A 'custom' period without a length would end the moment it starts: it
+    // has no deadline instead.
+    const customPeriodDays = isPeriodLength(raw.customPeriodDays) ? raw.customPeriodDays : undefined;
     const statedPeriod = PERIODS.find((period) => period === raw.period);
     const period =
       statedPeriod === undefined || (statedPeriod === 'custom' && customPeriodDays === undefined)
@@ -330,6 +341,8 @@ export function buildImport(
   // a copy of it in this file let recurring subgoals in.
   for (const goal of goals) {
     if (goal.isRecurring && !canRecur(goal)) goal.isRecurring = undefined;
+    // Only a recurring goal has a schedule (see processRecurringGoals).
+    if (!goal.isRecurring) goal.schedule = undefined;
   }
 
   // Progress is derived data; recompute it from the repaired records rather

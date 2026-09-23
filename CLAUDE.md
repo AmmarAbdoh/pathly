@@ -73,6 +73,9 @@ a write from outside leaves that ref stale, and the owner's next save writes the
 react to another provider, subscribe: RewardsContext redeems linked rewards via `onGoalCompleted`,
 which fires on a goal's first completion by *any* path (`updateGoal` reaching the target, or
 `finishGoal`) and only once goals have loaded - a completion that can't be saved redeems nothing.
+"First" means never completed before: `completedAt` stays when a goal is set back, so -1 then +1
+pays nothing again; a recurring goal's new period clears it. Points follow the same rule. Test it
+with `typeof completedAt === 'number'`, never truthiness: 0 is a time too.
 Auto-redemption follows the Rewards screen's rule (`getAvailablePoints` in `src/utils/points.ts`,
 used by both): a reward the user can't afford stays available.
 
@@ -84,18 +87,23 @@ used by both): a reward the user can't afford stays available.
   held** - goals, lifetime points, imports - until a reload succeeds; the banner offers Retry.
   Dismissing it only hides it; the next change raises it again. Data that was read but is *not
   a list* (`UnreadableDataError`) never will be: it is kept aside under
-  `<key>.unreadable.<timestamp>` and the app starts empty (`'unreadable'`). Blocking on it left no
-  way out but clearing the app's data. It is set aside only after *every* read has worked:
-  set aside first, a later failed read left a Retry that found no goals and said nothing.
+  `<key>.unreadable.<timestamp>` and the app starts empty. Blocking on it left no way out but
+  clearing the app's data. It is set aside only after *every* read has worked: set aside first,
+  a later failed read left a Retry that found no goals and said nothing. It is reported by its
+  own flag, `dataSetAside`, which the banner shows *alongside* any error: as one more kind of
+  `storageError` it was hidden by other errors, closed with them, and cleared by the next save.
 - Writes are also held until the *first* load finishes (`loadState: 'pending'`), not just after
   a failed one.
 - A failed goals write stays queued (`'save'`) and is retried. A write the load itself implies
-  (period rollover, first lifetime total) failing is a failed save, not a failed load.
+  (period rollover, first lifetime total) failing is a failed save, not a failed load. Queue it
+  before awaiting anything else: once loaded, changes are allowed, and queueing the loaded goals
+  after one would put them over it.
 - **Once loaded, memory is the source of truth: refresh never re-reads storage.** Nothing else
   writes it, so a re-read can only return what was written - or something older, whenever a save
   is queued or in flight. Re-reading raced saves and lost edits. Refresh rolls periods over in
-  memory and retries failed saves. Only the first load, Retry after a failed load, and the reload
-  after an import read storage, and each discards the save queue.
+  memory and retries failed saves. Only the first load and Retry after a failed load read
+  storage, and each discards the save queue. An import is not read back either: that threw
+  away changes made while it finished. It goes into memory and is rolled over there.
 - An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
 - Rewards changes run **one at a time** (a queue), so a failed one can be undone exactly; the
   screen reports it. A linked reward that can't be redeemed yet (not loaded, write failed) is
@@ -103,12 +111,16 @@ used by both): a reward the user can't afford stays available.
 
 **Import keeps records whole, and is all or nothing.** `buildImport` (`src/utils/import-data.ts`)
 builds the next state; `useImportBackup` (`src/hooks/`) applies it - rewards first, put back if the
-goals then fail (`PartialImportError` if even that fails). It builds from `getCurrentGoals()` /
-`getCurrentRewards()` at the moment it applies - never from a screen's render-time copy, which
-is stale after the file picker, or empty before loading finishes; both throw until loaded.
+goals then fail (`PartialImportError` if even that fails - its message differs for Merge and
+Replace). It builds from `getCurrentGoals()` and the rewards `withRewardsHeld` hands it, at the
+moment it applies - never from a screen's render-time copy, which is stale after the file picker,
+or empty before loading finishes; both reject until loaded. `withRewardsHeld` holds the rewards
+queue for the whole import, so a reward redeemed meanwhile isn't undone by it. A goal completed
+*while* it runs redeems nothing: the import puts in the goals it read at the start, so that
+completion is gone (if the import fails, it stands, and is redeemed then).
 While the import is written, queued goal saves are held so none can land on top of it, and once
-it is written memory holds it at once - not only after the reload - so no change made in the
-meantime is built on the goals it replaced. Never
+it is written memory holds it at once, so no change made in the meantime is built on the goals
+it replaced. Never
 import by calling `addGoal` / `addReward` per record — that is what used to drop completion
 state, history, notes, schedules and links.
 
@@ -191,6 +203,8 @@ This app got slow by ignoring these. They are the house style now:
   total and percentage on screen, not just the headline ones.
 - Right after `setLanguage`, `t` in that handler is still the old language. Text about the
   switch comes from `translations[newLanguage]`.
+- Put user text into a translation with a function: `.replace('{goal}', () => goal.title)`.
+  Passed as a string, `$$` and `$&` in it are replacement patterns.
 
 ## Testing
 
@@ -262,10 +276,12 @@ Gotchas:
   `!== null`, never truthiness. The screen formats them in the user's language.
 - **Which goals can recur is one rule: `canRecur` (`recurring-goals.ts`).** A top-level,
   non-ultimate goal whose period ends: `getPeriodEndDate` returns the start date for `'ongoing'`,
-  and for `'custom'` without a whole number of days, so such a goal would reset on every load.
-  `addGoal`, `editGoal`, `buildImport`, the form and loading (`processRecurringGoals`, which turns
-  recurring off for a saved goal that breaks it) all call it. Don't write a local copy: two
-  copies that disagreed let recurring subgoals in through import.
+  and for `'custom'` without a length, so such a goal would reset on every load - as it would with
+  a length of a moment. `isPeriodLength` is the rule: a day or more, fractions allowed.`addGoal`, `editGoal`, `buildImport`, the
+  form and loading (`processRecurringGoals`, which turns recurring off for a saved goal that
+  breaks it) all call it. Don't write a local copy: two copies that disagreed let recurring
+  subgoals in through import. Only a recurring goal keeps a `schedule` - on any other it hid the
+  goal on unscheduled days, and the form (which offers it only for recurring) couldn't show why.
 - `Number.isFinite`, not `typeof x === 'number'`, for numbers from outside: JSON's `1e999` parses
   as `Infinity`, which `JSON.stringify` saves as `null`.
 - A backup file is untrusted input: it can contain duplicate ids, dangling links, missing fields,
@@ -286,10 +302,16 @@ Gotchas:
   for the next one - and showing a template again takes a remount (the screen keys the form on it).
 - A goal's reminders live in the OS, not in the goal. Anything that takes a goal off the list
   (archive, delete, import) cancels its `notificationIds`, or they keep firing for a goal that
-  is gone. Likewise any id scheduled but not stored: `scheduleGoalNotification` cancels what it
-  scheduled if a later day fails, and `rescheduleReminders` cancels, rather than stores, new ids
-  for a goal whose reminders changed while it worked.
-- `app.json` ships a real bundle id / package name.Changing them after a store release breaks
+  is gone; loading does the same for an archived goal that still has them. Likewise any id
+  scheduled but not stored: `scheduleGoalNotification` cancels what it scheduled if a later day
+  fails, and `rescheduleReminders` / `updateNotificationSettings` cancel, rather than store, new
+  ids for a goal archived, deleted or imported over while they worked (the settings save then
+  rejects, so the screen doesn't say it worked). Those two run one at a time (a queue), or
+  overlapping calls each start from the same ids and the first to finish wins - so a screen
+  shouldn't await a reschedule to carry on. Reminders that failed part-way are turned off and
+  counted for the screen to report; a refusal (`NotificationPermissionError`, thrown before
+  anything is cancelled) leaves them as they are.
+- `app.json` ships a real bundle id / package name. Changing them after a store release breaks
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications
   (all this app uses) work fine, but test them in a dev build.

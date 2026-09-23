@@ -11,7 +11,7 @@ import {
   getPeriodEndDate,
   getTimeRemaining,
   getTotalPointsEarned,
-  isWholeDays,
+  isPeriodLength,
   processRecurringGoals,
   recordCompletion,
   resetGoal,
@@ -734,12 +734,15 @@ describe('canRecur', () => {
     }
   });
 
-  it('needs a custom period in whole days', () => {
-    expect(canRecur(topLevel('custom', 1.5))).toBe(false);
+  // Regression: whole days only, so goals saved with "1.5" (the form once
+  // took it) stopped recurring on load, though they never reset early. Then
+  // any length, so a backup's period of a moment reset on every load.
+  it('takes a custom period of a day or more, fractions too', () => {
+    expect(canRecur(topLevel('custom', 1.5))).toBe(true);
     expect(canRecur(topLevel('custom', 1))).toBe(true);
-    expect(isWholeDays(2)).toBe(true);
-    for (const days of [0.5, 0, -1, NaN, Infinity, '3', undefined]) {
-      expect(isWholeDays(days)).toBe(false);
+    expect(canRecur(topLevel('custom', 1e-6))).toBe(false);
+    for (const days of [0.5, 1e-6, 0, -1, NaN, Infinity, '3', undefined]) {
+      expect(isPeriodLength(days)).toBe(false);
     }
   });
 
@@ -784,5 +787,20 @@ describe('a goal saved as recurring that cannot recur', () => {
   it('stops recurring when loaded, keeping its progress', () => {
     const [loaded] = processRecurringGoals([stored]);
     expect(loaded).toMatchObject({ isRecurring: false, current: 5, periodStartDate: longAgo });
+  });
+
+  // Regression: the goal was still hidden on the days its schedule left out,
+  // and the form - which offers a schedule only for a recurring goal - gave no
+  // way to see why, or change it.
+  it('loses its schedule, as any goal that does not recur', () => {
+    const schedule = { daysOfWeek: [1] };
+    const [turnedOff, oneOff, recurring] = processRecurringGoals([
+      { ...stored, schedule },
+      { ...stored, isRecurring: undefined, schedule },
+      { ...stored, period: 'weekly', periodStartDate: Date.now(), schedule },
+    ]);
+    expect(turnedOff.schedule).toBeUndefined();
+    expect(oneOff.schedule).toBeUndefined();
+    expect(recurring.schedule).toEqual(schedule);
   });
 });

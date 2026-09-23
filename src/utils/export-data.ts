@@ -5,6 +5,18 @@
 
 import { Platform, Share } from 'react-native';
 import { Goal, Reward } from '../types';
+import { goalImportProblem, rewardImportProblem } from './import-data';
+
+const GOAL_PROBLEMS = {
+  title: 'Missing or invalid title',
+  target: 'Invalid target value',
+  current: 'Invalid current value',
+} as const;
+
+const REWARD_PROBLEMS = {
+  title: 'Missing or invalid title',
+  pointsCost: 'Invalid points cost',
+} as const;
 
 export interface ExportData {
   exportDate: string;
@@ -226,38 +238,19 @@ export function parseJSONImport(jsonString: string): ImportResult {
     }
     
     // Validate and filter goals
-    // The titles are checked as buildImport checks them (isImportableGoal):
-    // one of only spaces passed here and was dropped there, so the counts the
-    // user was shown did not match what was imported.
-    const validGoals = data.goals.filter((goal: any, index: number) => {
-      if (typeof goal?.title !== 'string' || goal.title.trim() === '') {
-        errors.push(`Goal ${index + 1}: Missing or invalid title`);
-        return false;
-      }
-      // Number.isFinite, not typeof: JSON's 1e999 parses as Infinity, which
-      // is saved as null.
-      if (!Number.isFinite(goal.target) || goal.target <= 0) {
-        errors.push(`Goal ${index + 1}: Invalid target value`);
-        return false;
-      }
-      if (!Number.isFinite(goal.current)) {
-        errors.push(`Goal ${index + 1}: Invalid current value`);
-        return false;
-      }
-      return true;
+    // Kept by the test the import itself applies, so the counts the user is
+    // shown are what gets imported: a copy of it here drifted, and let titles
+    // of only spaces through. It also says why a record is skipped.
+    const validGoals = data.goals.filter((goal: unknown, index: number) => {
+      const problem = goalImportProblem(goal);
+      if (problem) errors.push(`Goal ${index + 1}: ${GOAL_PROBLEMS[problem]}`);
+      return problem === null;
     });
-    
-    // Validate and filter rewards
-    const validRewards = data.rewards.filter((reward: any, index: number) => {
-      if (typeof reward?.title !== 'string' || reward.title.trim() === '') {
-        errors.push(`Reward ${index + 1}: Missing or invalid title`);
-        return false;
-      }
-      if (!Number.isFinite(reward.pointsCost) || reward.pointsCost <= 0) {
-        errors.push(`Reward ${index + 1}: Invalid points cost`);
-        return false;
-      }
-      return true;
+
+    const validRewards = data.rewards.filter((reward: unknown, index: number) => {
+      const problem = rewardImportProblem(reward);
+      if (problem) errors.push(`Reward ${index + 1}: ${REWARD_PROBLEMS[problem]}`);
+      return problem === null;
     });
     
     return {

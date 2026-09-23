@@ -38,15 +38,16 @@ export function canRecur(
   goal: Pick<Goal, 'period' | 'customPeriodDays' | 'parentId' | 'isUltimate'>
 ): boolean {
   if (goal.parentId || goal.isUltimate || goal.period === 'ongoing') return false;
-  return goal.period !== 'custom' || isWholeDays(goal.customPeriodDays);
+  return goal.period !== 'custom' || isPeriodLength(goal.customPeriodDays);
 }
 
 /**
- * A custom period's length: a whole number of days, at least one. The deadline
- * shown counts whole days, and imports keep only these.
+ * A custom period's length: a day or more. Fractions are fine -
+ * getPeriodEndDate handles them, and the form once took "1.5" - but a period
+ * of a moment ends as it starts, and resets its goal on every load.
  */
-export function isWholeDays(days: unknown): days is number {
-  return typeof days === 'number' && Number.isInteger(days) && days >= 1;
+export function isPeriodLength(days: unknown): days is number {
+  return typeof days === 'number' && Number.isFinite(days) && days >= 1;
 }
 
 /**
@@ -129,15 +130,15 @@ export function recordCompletion(goal: Goal): Goal {
  */
 export function processRecurringGoals(goals: Goal[]): Goal[] {
   return goals.map(goal => {
-    // Skip non-recurring goals
-    if (!goal.isRecurring) {
-      return goal;
-    }
-
     // Saved before every way in checked canRecur - the form offered recurring
-    // with 'Ongoing', and such a goal reset on every load. It stops recurring.
-    if (!canRecur(goal)) {
-      return { ...goal, isRecurring: false };
+    // with 'Ongoing', and such a goal reset on every load - it stops
+    // recurring. And only a recurring goal has a schedule: the form offers it
+    // for no other, and on one the goal was hidden on the other days with no
+    // way left to see why, or change it.
+    if (!goal.isRecurring || !canRecur(goal)) {
+      return goal.isRecurring || goal.schedule
+        ? { ...goal, isRecurring: false, schedule: undefined }
+        : goal;
     }
     
     // If goal has no periodStartDate, initialize it now
