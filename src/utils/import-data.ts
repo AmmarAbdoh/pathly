@@ -23,7 +23,7 @@
 import type { Goal, GoalCategory, GoalNote, GoalSchedule, Reward, TimePeriod } from '../types';
 import { calculateGoalProgress } from './goal-calculations';
 import { nextId } from './ids';
-import { getTotalPointsEarned } from './recurring-goals';
+import { canRecur, getTotalPointsEarned, isWholeDays } from './recurring-goals';
 
 /**
  * - `merge`:   add the backup's goals and rewards alongside the current ones.
@@ -72,6 +72,25 @@ const nonNegative = (value: unknown): number | undefined =>
 
 const flag = (value: unknown): boolean | undefined =>
   typeof value === 'boolean' ? value : undefined;
+
+/**
+ * Whether a record has what a goal cannot do without. The parser checks the
+ * same, but `typeof x === 'number'` let through Infinity (JSON `1e999`),
+ * which is saved as null and read back as a goal with no target.
+ */
+export const isImportableGoal = (raw: Goal): boolean =>
+  typeof raw.title === 'string' &&
+  raw.title.trim() !== '' &&
+  isNumber(raw.target) &&
+  raw.target > 0 &&
+  isNumber(raw.current);
+
+/** Likewise for a reward: an infinite cost is saved as null, which anyone can afford. */
+export const isImportableReward = (raw: Reward): boolean =>
+  typeof raw.title === 'string' &&
+  raw.title.trim() !== '' &&
+  isNumber(raw.pointsCost) &&
+  raw.pointsCost > 0;
 
 /** The whole numbers in `value` between min and max, without duplicates. */
 function integers(value: unknown, min: number, max: number): number[] | undefined {
@@ -132,8 +151,13 @@ function assignIds(
  * derivation GoalsContext uses when migrating from versions that predate them.
  */
 export function deriveLifetimePoints(goals: readonly Goal[]): number {
+  const awardingParents = new Set(
+    goals.filter((goal) => goal.subgoalsAwardPoints).map((goal) => goal.id)
+  );
   return goals.reduce((sum, goal) => {
-    if (goal.parentId) return sum; // subgoals roll up into their parent
+    // A subgoal pays out only when its parent says so, as awardPointsForGoal
+    // does when it is completed.
+    if (goal.parentId && !awardingParents.has(goal.parentId)) return sum;
     if (!isNumber(goal.points) || goal.points <= 0) return sum;
     if (goal.isRecurring) return sum + getTotalPointsEarned(goal);
     return sum + (goal.isComplete ? goal.points : 0);
@@ -198,14 +222,25 @@ export function buildImport(
   const base: AppData =
     mode === 'replace' ? { goals: [], rewards: [], lifetimePoints: 0 } : current;
 
-  const goalIds = assignIds(incoming.goals, base.goals, now);
-  const rewardIds = assignIds(incoming.rewards, base.rewards, now);
+  const incomingGoals = incoming.goals.filter(isImportableGoal);
+  const incomingRewards = incoming.rewards.filter(isImportableReward);
+
+  const goalIds = assignIds(incomingGoals, base.goals, now);
+  const rewardIds = assignIds(incomingRewards, base.rewards, now);
 
   // First pass: every goal keeps all its data, with ids and links remapped and
-  // every field checked. Title, target and current were validated by the
-  // parser; everything else is only kept if it has the right type.
-  const goals: Goal[] = incoming.goals.map((raw, index) => {
+  // every field checked. Anything that is not of the right type is dropped.
+  const goals: Goal[] = incomingGoals.map((raw, index) => {
     const createdAt = number(raw.createdAt) ?? now;
+
+    // A 'custom' period without a length in whole days would end the moment
+    // it starts: it has no deadline instead.
+    const customPeriodDays = isWholeDays(raw.customPeriodDays) ? raw.customPeriodDays : undefined;
+    const statedPeriod = PERIODS.find((period) => period === raw.period);
+    const period =
+      statedPeriod === undefined || (statedPeriod === 'custom' && customPeriodDays === undefined)
+        ? 'ongoing'
+        : statedPeriod;
 
     return {
       id: goalIds.ids[index],
@@ -229,8 +264,8 @@ export function buildImport(
       points: nonNegative(raw.points) ?? 0,
       progress: 0, // recomputed below, once the links are repaired
 
-      period: PERIODS.find((period) => period === raw.period) ?? 'ongoing',
-      customPeriodDays: nonNegative(raw.customPeriodDays),
+      period,
+      customPeriodDays,
       periodStartDate: number(raw.periodStartDate) ?? createdAt,
       schedule: normaliseSchedule(raw.schedule),
       createdAt,
@@ -239,7 +274,7 @@ export function buildImport(
       subgoalsAwardPoints: flag(raw.subgoalsAwardPoints),
       isComplete: flag(raw.isComplete),
       completedAt: number(raw.completedAt),
-      isRecurring: flag(raw.isRecurring),
+      isRecurring: flag(raw.isRecurring), // checked below, once parentId is repaired
       completionHistory: Array.isArray(raw.completionHistory)
         ? raw.completionHistory.filter(isNumber)
         : [],
@@ -291,6 +326,12 @@ export function buildImport(
     goal.subGoals = (goal.subGoals ?? []).filter((id) => byId.get(id)?.parentId === goal.id);
   }
 
+  // The app's one rule for which goals can recur. Checked here, not by hand:
+  // a copy of it in this file let recurring subgoals in.
+  for (const goal of goals) {
+    if (goal.isRecurring && !canRecur(goal)) goal.isRecurring = undefined;
+  }
+
   // Progress is derived data; recompute it from the repaired records rather
   // than trusting the file (a parent's progress depends on its children).
   const allGoals = [...base.goals, ...goals];
@@ -298,10 +339,9 @@ export function buildImport(
     goal.progress = calculateGoalProgress(goal, allGoals);
   }
 
-  const rewards: Reward[] = incoming.rewards.map((raw, index) => ({
+  const rewards: Reward[] = incomingRewards.map((raw, index) => ({
     id: rewardIds.ids[index],
     linkedToGoalId: isNumber(raw.linkedToGoalId) ? goalIds.map.get(raw.linkedToGoalId) : undefined,
-    // Title and cost were validated by the parser.
     title: raw.title,
     pointsCost: raw.pointsCost,
     description: text(raw.description) ?? '',

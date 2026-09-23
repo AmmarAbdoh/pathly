@@ -87,6 +87,26 @@ describe('loading', () => {
   });
 });
 
+describe('goals saved as recurring that cannot recur', () => {
+  // Regression: the form allowed recurring with 'Ongoing'. Such a period
+  // "ends" where it starts, so the goal was reset - its progress lost - on
+  // every load and refresh.
+  it('stop recurring, and keep their progress', async () => {
+    const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    await seed([
+      makeGoal({ isRecurring: true, period: 'ongoing', periodStartDate: monthAgo, current: 5, progress: 50 }),
+    ]);
+    const { result } = await renderGoals();
+
+    expect(result.current.goals[0]).toMatchObject({ isRecurring: false, current: 5 });
+    await act(async () => {
+      await result.current.refreshGoals();
+    });
+    expect(result.current.goals[0].current).toBe(5);
+    expect((await storedGoals())[0].isRecurring).toBe(false);
+  });
+});
+
 describe('points', () => {
   it('awards a goal its points exactly once, however often it is set to complete', async () => {
     await seed([makeGoal()]);
@@ -280,6 +300,63 @@ describe('refreshGoals inside the debounce window', () => {
 
 // Linked-reward auto-redemption lives in RewardsContext: see rewards-context.test.
 
+describe('resetRecurringGoal', () => {
+  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+  const finishedToday = () =>
+    makeGoal({
+      period: 'weekly',
+      isRecurring: true,
+      periodStartDate: twoHoursAgo,
+      current: 10,
+      progress: 100,
+      isComplete: true,
+      completedAt: twoHoursAgo,
+      completionHistory: [1_000],
+      linkedRewardId: 7,
+    });
+
+  // Regression: the detail screen reset through editGoal, which only sets the
+  // form's fields - the completion was never recorded, the period never
+  // restarted, the goal stayed complete at 0%, and its reward was unlinked.
+  it('records the completion and starts a new period', async () => {
+    await seed([finishedToday()]);
+    const { result } = await renderGoals();
+    const before = Date.now();
+
+    await act(async () => {
+      await result.current.resetRecurringGoal(1);
+    });
+
+    const [goal] = result.current.goals;
+    expect(goal).toMatchObject({ isComplete: false, current: 0, progress: 0, linkedRewardId: 7 });
+    expect(goal.completedAt).toBeUndefined();
+    expect(goal.completionHistory).toEqual([1_000, twoHoursAgo]);
+    expect(goal.periodStartDate).toBeGreaterThanOrEqual(before);
+  });
+
+  it('keeps the history as it was when the goal was not completed', async () => {
+    await seed([{ ...finishedToday(), isComplete: false, completedAt: undefined, current: 4, progress: 40 }]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.resetRecurringGoal(1);
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ current: 0, completionHistory: [1_000] });
+  });
+
+  it('leaves a goal that is not recurring alone', async () => {
+    await seed([makeGoal({ current: 4, progress: 40 })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.resetRecurringGoal(1);
+    });
+
+    expect(result.current.goals[0].current).toBe(4);
+  });
+});
+
 describe('destructive and restorative mutations', () => {
   it('permanently deletes a goal together with its subgoals', async () => {
     await seed([
@@ -341,6 +418,39 @@ describe('other mutations', () => {
     });
 
     expect(result.current.goals[0]).toMatchObject({ title: 'Read more', target: 20, progress: 25 });
+  });
+
+  // Regression: editGoal didn't take these, so the edit form couldn't save them.
+  it('edits the schedule and whether subgoals award points', async () => {
+    await seed([makeGoal({ period: 'weekly', isRecurring: true })]);
+    const { result } = await renderGoals();
+    const schedule = { daysOfWeek: [1, 3] };
+
+    await act(async () => {
+      await result.current.editGoal(
+        1, 'Read books', 10, 0, 'books', 'increase', 50, 'weekly',
+        undefined, false, true, undefined, undefined, undefined, true, schedule
+      );
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ isRecurring: true, subgoalsAwardPoints: true, schedule });
+  });
+
+  // Regression: progress was worked out from `current`, so an ultimate goal
+  // showed 0% after any edit - even of its title - until a subgoal changed.
+  it('keeps the progress a goal takes from its subgoals', async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subGoals: [2, 3], target: 100, unit: 'subgoals', progress: 50 }),
+      makeGoal({ id: 2, parentId: 1, current: 10, progress: 100, isComplete: true }),
+      makeGoal({ id: 3, parentId: 1 }),
+    ]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.editGoal(1, 'Renamed', 100, 0, 'subgoals', 'increase', 50, 'ongoing', undefined, true);
+    });
+
+    expect(result.current.goals.find((g) => g.id === 1)).toMatchObject({ title: 'Renamed', progress: 50 });
   });
 
   it('assigns sort order from the given id sequence', async () => {
@@ -505,6 +615,36 @@ describe('adding goals', () => {
     expect(result.current.goals[0].subgoalsAwardPoints).toBe(false);
   });
 
+  // Regression: the form offered "recurring" with "Ongoing", and such a goal
+  // reset on every load - its period ends where it starts.
+  it('only makes a goal recurring if its period can end', async () => {
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('A', 10, 0, 'x', 'increase', 5, 'ongoing', undefined, undefined, false, true);
+      await result.current.addGoal('B', 10, 0, 'x', 'increase', 5, 'weekly', undefined, undefined, false, true);
+    });
+    const [a, b] = result.current.goals;
+    expect(a.isRecurring).toBe(false);
+    expect(b.isRecurring).toBe(true);
+
+    await act(async () => {
+      await result.current.editGoal(b.id, 'B', 10, 0, 'x', 'increase', 5, 'custom', undefined, false, true);
+    });
+    expect(result.current.goals[1].isRecurring).toBe(false);
+  });
+
+  it('does not make a subgoal recurring', async () => {
+    await seed([makeGoal({ id: 1, isUltimate: true })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addGoal('Step', 10, 0, 'x', 'increase', 0, 'daily', undefined, 1, false, true);
+    });
+
+    expect(result.current.goals.find((g) => g.parentId === 1)?.isRecurring).toBe(false);
+  });
+
   it('attaches a subgoal to its parent and recalculates the parent', async () => {
     await seed([makeGoal({ id: 1, isUltimate: true, subGoals: [] })]);
     const { result } = await renderGoals();
@@ -517,6 +657,22 @@ describe('adding goals', () => {
     const child = result.current.goals.find((g) => g.parentId === 1);
     expect(parent?.subGoals).toEqual([child?.id]);
     expect(result.current.getSubgoals(1).map((g) => g.id)).toEqual([child?.id]);
+  });
+
+  // Regression: the subgoal form asks for these, and they were dropped.
+  it("keeps a subgoal's description, icon and reward", async () => {
+    await seed([makeGoal({ id: 1, isUltimate: true })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await result.current.addSubgoal(1, 'Step', 10, 0, 'x', 'increase', 0, 'daily', undefined, 'First step', '🏃', 7);
+    });
+
+    expect(result.current.goals.find((g) => g.parentId === 1)).toMatchObject({
+      description: 'First step',
+      icon: '🏃',
+      linkedRewardId: 7,
+    });
   });
 
   it('recalculates on demand', async () => {

@@ -3,13 +3,15 @@
  * Verify reset logic, completion tracking, and streak calculations
  */
 
-import { Goal } from '../../types';
+import { Goal, TimePeriod } from '../../types';
 import {
   calculateStreak,
+  canRecur,
   getCompletionCount,
   getPeriodEndDate,
   getTimeRemaining,
   getTotalPointsEarned,
+  isWholeDays,
   processRecurringGoals,
   recordCompletion,
   resetGoal,
@@ -717,3 +719,70 @@ describe('recurring edge cases', () => {
   });
 });
 
+describe('canRecur', () => {
+  const topLevel = (period: TimePeriod, customPeriodDays?: number) => ({ period, customPeriodDays });
+
+  // A period that doesn't end puts its end at its start, so a recurring goal
+  // with one would reset on every load.
+  it('needs a period that ends', () => {
+    expect(canRecur(topLevel('ongoing'))).toBe(false);
+    expect(canRecur(topLevel('custom'))).toBe(false);
+    expect(canRecur(topLevel('custom', 0))).toBe(false);
+    expect(canRecur(topLevel('custom', 3))).toBe(true);
+    for (const period of ['daily', 'weekly', 'monthly', 'yearly'] as const) {
+      expect(canRecur(topLevel(period))).toBe(true);
+    }
+  });
+
+  it('needs a custom period in whole days', () => {
+    expect(canRecur(topLevel('custom', 1.5))).toBe(false);
+    expect(canRecur(topLevel('custom', 1))).toBe(true);
+    expect(isWholeDays(2)).toBe(true);
+    for (const days of [0.5, 0, -1, NaN, Infinity, '3', undefined]) {
+      expect(isWholeDays(days)).toBe(false);
+    }
+  });
+
+  it('is only for top-level goals that are not ultimate', () => {
+    expect(canRecur({ ...topLevel('daily'), parentId: 1 })).toBe(false);
+    expect(canRecur({ ...topLevel('daily'), isUltimate: true })).toBe(false);
+  });
+
+  it('agrees with getPeriodEndDate', () => {
+    const start = new Date(2025, 0, 15, 12).getTime();
+    for (const [period, days] of [['ongoing'], ['custom'], ['custom', 0], ['custom', 2], ['weekly']] as const) {
+      expect(canRecur(topLevel(period, days))).toBe(getPeriodEndDate(start, period, days) > start);
+    }
+  });
+});
+
+describe('a goal saved as recurring that cannot recur', () => {
+  const longAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const stored = {
+    id: 1,
+    title: 'Someday',
+    current: 5,
+    target: 10,
+    unit: 'x',
+    initialValue: 0,
+    direction: 'increase',
+    progress: 50,
+    points: 10,
+    period: 'ongoing',
+    periodStartDate: longAgo,
+    createdAt: longAgo,
+    isRecurring: true,
+    completionHistory: [],
+  } as Goal;
+
+  // Regression: the form allowed recurring with 'Ongoing'. Its period "ends"
+  // where it starts, so it was reset - progress lost - on every load and refresh.
+  it('is never reset', () => {
+    expect(shouldResetGoal(stored)).toBe(false);
+  });
+
+  it('stops recurring when loaded, keeping its progress', () => {
+    const [loaded] = processRecurringGoals([stored]);
+    expect(loaded).toMatchObject({ isRecurring: false, current: 5, periodStartDate: longAgo });
+  });
+});

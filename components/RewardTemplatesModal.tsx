@@ -7,6 +7,7 @@ import TemplateModal from '@/components/TemplateModal';
 import { getRewardTemplates, RewardTemplate } from '@/src/constants/reward-templates';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -87,11 +88,11 @@ export default function RewardTemplatesModal({ visible, onClose, onSelectTemplat
       <View style={styles.templateFooter}>
         <View style={[styles.pointsBadge, { backgroundColor: theme.colors.primary }]}>
           <Ionicons name="star" size={16} color="#fff" />
-          <Text style={styles.pointsText}>{item.pointsCost}</Text>
+          <Text style={styles.pointsText}>{formatNumber(item.pointsCost, language)}</Text>
         </View>
       </View>
     </TouchableOpacity>
-  ), [handleSelectTemplate, theme]);
+  ), [handleSelectTemplate, theme, language]);
 
   return (
     <TemplateModal<RewardTemplate, RewardTemplate['category']>

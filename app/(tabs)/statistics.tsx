@@ -11,6 +11,7 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { calculateStatistics, getAchievementProgress } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -205,7 +206,8 @@ export default function StatisticsScreen() {
           </View>
           <ProgressBar progress={stats.completionRate} />
           <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
-            {stats.completedGoals} {t.messages.goalsCompleted.replace('{total}', stats.totalGoals.toString())}
+            {formatNumber(stats.completedGoals, language)}{' '}
+            {t.messages.goalsCompleted.replace('{total}', formatNumber(stats.totalGoals, language))}
           </Text>
         </View>
 
@@ -217,7 +219,7 @@ export default function StatisticsScreen() {
           <View style={styles.streakRow}>
             <View style={styles.streakItem}>
               <Text style={[styles.streakNumber, { color: theme.colors.text }]}>
-                {stats.currentStreak}
+                {formatNumber(stats.currentStreak, language)}
               </Text>
               <Text style={[styles.streakLabel, { color: theme.colors.textSecondary }]}>
                 {t.statistics.current}
@@ -226,7 +228,7 @@ export default function StatisticsScreen() {
             <View style={styles.streakDivider} />
             <View style={styles.streakItem}>
               <Text style={[styles.streakNumber, { color: theme.colors.text }]}>
-                {stats.longestStreak}
+                {formatNumber(stats.longestStreak, language)}
               </Text>
               <Text style={[styles.streakLabel, { color: theme.colors.textSecondary }]}>
                 {t.statistics.best}
@@ -244,7 +246,8 @@ export default function StatisticsScreen() {
         {unlockedAchievements.length > 0 && (
           <View style={cardStyle}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              {t.statistics.achievements} ({unlockedAchievements.length}/{ACHIEVEMENTS.length})
+              {t.statistics.achievements} ({formatNumber(unlockedAchievements.length, language)}/
+              {formatNumber(ACHIEVEMENTS.length, language)})
             </Text>
             <View style={styles.achievementsGrid}>
               {unlockedAchievements.map(achievement => (

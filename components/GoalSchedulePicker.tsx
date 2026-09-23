@@ -6,6 +6,8 @@
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalSchedule } from '@/src/types';
+import { getScheduleDescription } from '@/src/utils/goal-scheduling';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -19,19 +21,26 @@ interface GoalSchedulePickerProps {
 /** Weekday indices, matching JavaScript's Date.getDay(). Labels come from i18n. */
 const WEEKDAY_INDICES = [0, 1, 2, 3, 4, 5, 6] as const;
 
+type ScheduleType = 'none' | 'weekly' | 'monthly-dates' | 'monthly-range';
+
+function scheduleTypeOf(schedule?: GoalSchedule): ScheduleType {
+  if (schedule?.daysOfWeek) return 'weekly';
+  if (schedule?.datesOfMonth) return 'monthly-dates';
+  if (schedule?.dateRangeStart !== undefined) return 'monthly-range';
+  return 'none';
+}
+
 export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecurring }: GoalSchedulePickerProps) {
   const { theme } = useTheme();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [showModal, setShowModal] = useState(false);
-  const [scheduleType, setScheduleType] = useState<'none' | 'weekly' | 'monthly-dates' | 'monthly-range'>(
-    schedule?.daysOfWeek ? 'weekly' :
-    schedule?.datesOfMonth ? 'monthly-dates' :
-    schedule?.dateRangeStart !== undefined ? 'monthly-range' : 'none'
-  );
-  const [selectedDays, setSelectedDays] = useState<number[]>(schedule?.daysOfWeek || []);
-  const [selectedDates, setSelectedDates] = useState<number[]>(schedule?.datesOfMonth || []);
-  const [rangeStart, setRangeStart] = useState(schedule?.dateRangeStart?.toString() || '');
-  const [rangeEnd, setRangeEnd] = useState(schedule?.dateRangeEnd?.toString() || '');
+  // The choices being made in the modal. Filled from `schedule` each time it
+  // opens (see openModal).
+  const [scheduleType, setScheduleType] = useState<ScheduleType>('none');
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [selectedDates, setSelectedDates] = useState<number[]>([]);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
 
   if (!isRecurring) {
     return null;
@@ -78,37 +87,29 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
     setShowModal(false);
   };
 
-  const getScheduleText = () => {
-    if (!schedule) return t.schedule.everyDay;
-
-    if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
-      const days = schedule.daysOfWeek.map(d => t.schedule.weekdayShort[d]).join(', ');
-      return t.schedule.everyDays.replace('{days}', days);
-    }
-
-    if (schedule.datesOfMonth && schedule.datesOfMonth.length > 0) {
-      return t.schedule.monthlyShort.replace('{dates}', schedule.datesOfMonth.join(', '));
-    }
-
-    if (schedule.dateRangeStart !== undefined && schedule.dateRangeEnd !== undefined) {
-      return t.schedule.monthlyRangeShort
-        .replace('{start}', String(schedule.dateRangeStart))
-        .replace('{end}', String(schedule.dateRangeEnd));
-    }
-
-    return t.schedule.everyDay;
+  // From the schedule as it is now, every time. Read once on mount, the last
+  // goal's choices stayed after the form was reset for the next one - it
+  // stays mounted - and Apply gave them to the new goal. Choices closed
+  // without Apply are dropped too.
+  const openModal = () => {
+    setScheduleType(scheduleTypeOf(schedule));
+    setSelectedDays(schedule?.daysOfWeek || []);
+    setSelectedDates(schedule?.datesOfMonth || []);
+    setRangeStart(schedule?.dateRangeStart?.toString() || '');
+    setRangeEnd(schedule?.dateRangeEnd?.toString() || '');
+    setShowModal(true);
   };
 
   return (
     <>
       <TouchableOpacity
         style={[styles.scheduleButton, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-        onPress={() => setShowModal(true)}
+        onPress={openModal}
       >
         <View style={styles.scheduleButtonContent}>
           <Ionicons name="calendar-outline" size={20} color={theme.colors.primary} />
           <Text style={[styles.scheduleButtonText, { color: theme.colors.text }]}>
-            {getScheduleText()}
+            {getScheduleDescription(schedule, t.schedule, language)}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
@@ -124,7 +125,11 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
           <View style={[styles.modalContent, { backgroundColor: theme.colors.background }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.schedule.title}</Text>
-              <TouchableOpacity onPress={() => setShowModal(false)}>
+              <TouchableOpacity
+                onPress={() => setShowModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t.common.close}
+              >
                 <Ionicons name="close" size={24} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
@@ -242,7 +247,7 @@ export default function GoalSchedulePicker({ schedule, onScheduleChange, isRecur
                             { color: selectedDates.includes(date) ? '#fff' : theme.colors.text },
                           ]}
                         >
-                          {date}
+                          {formatNumber(date, language)}
                         </Text>
                       </TouchableOpacity>
                     ))}

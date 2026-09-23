@@ -8,6 +8,7 @@ import { getGoalTemplates } from '@/src/constants/goal-templates';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalCategory, GoalTemplate } from '@/src/types';
+import { formatNumber } from '@/src/utils/number-formatting';
 import { customTemplatesStorage } from '@/src/utils/storage';
 import { Ionicons } from '@expo/vector-icons';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -20,7 +21,7 @@ interface TemplatesModalProps {
 }
 
 // Memoized template card component
-const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }: any) => (
+const TemplateCard = memo(({ template, theme, t, language, onSelect, isCustom, onDelete }: any) => (
   <TouchableOpacity
     style={[
       styles.templateCard,
@@ -61,7 +62,7 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
           {t.labels.target}
         </Text>
         <Text style={[styles.templateDetailValue, { color: theme.colors.text }]}>
-          {template.target} {t.units[template.unit as keyof typeof t.units] || template.unit}
+          {formatNumber(template.target, language)} {t.units[template.unit as keyof typeof t.units] || template.unit}
         </Text>
       </View>
       <View style={styles.templateDetail}>
@@ -69,7 +70,7 @@ const TemplateCard = memo(({ template, theme, t, onSelect, isCustom, onDelete }:
           {t.goalCard.points}
         </Text>
         <Text style={[styles.templateDetailValue, { color: theme.colors.primary }]}>
-          {template.points}
+          {formatNumber(template.points, language)}
         </Text>
       </View>
       <View style={styles.templateDetail}>
@@ -172,11 +173,12 @@ function TemplatesModal({ visible, onClose, onSelectTemplate }: TemplatesModalPr
       template={item}
       theme={theme}
       t={t}
+      language={language}
       onSelect={() => handleSelectTemplate(item)}
       isCustom={item.id.startsWith('custom_')}
       onDelete={() => handleDeleteTemplate(item.id)}
     />
-  ), [handleSelectTemplate, handleDeleteTemplate, theme, t]);
+  ), [handleSelectTemplate, handleDeleteTemplate, theme, t, language]);
 
   return (
     <TemplateModal<GoalTemplate, GoalCategory | 'custom'>

@@ -4,7 +4,14 @@
 
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import type { Translations } from '../i18n/translations';
 import type { Goal } from '../types';
+
+/** A reminder's wording, in the user's language. */
+export type ReminderText = Pick<Translations['notifications'], 'reminderTitle' | 'reminderBody'>;
+
+/** The test notification's wording, in the user's language. */
+export type TestNotificationText = Pick<Translations['notifications'], 'testTitle' | 'testBody'>;
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -19,8 +26,11 @@ Notifications.setNotificationHandler({
 
 /**
  * Request notification permissions from the user
+ *
+ * `channelName` is what Android lists the reminders as in the app's
+ * notification settings, in the user's language.
  */
-export async function requestNotificationPermissions(): Promise<boolean> {
+export async function requestNotificationPermissions(channelName: string): Promise<boolean> {
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -37,7 +47,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
     // For Android, configure notification channel
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('goal-reminders', {
-        name: 'Goal Reminders',
+        name: channelName,
         importance: Notifications.AndroidImportance.HIGH,
         sound: 'default',
         vibrationPattern: [0, 250, 250, 250],
@@ -66,8 +76,11 @@ export async function checkNotificationPermissions(): Promise<boolean> {
 
 /**
  * Schedule a notification for a goal
+ *
+ * The text is fixed when scheduled: after a language change or a rename,
+ * GoalsContext's rescheduleReminders schedules them again.
  */
-export async function scheduleGoalNotification(goal: Goal): Promise<string[]> {
+export async function scheduleGoalNotification(goal: Goal, text: ReminderText): Promise<string[]> {
   try {
     // Check permissions first
     const hasPermission = await checkNotificationPermissions();
@@ -96,31 +109,37 @@ export async function scheduleGoalNotification(goal: Goal): Promise<string[]> {
       ? goal.notificationDays 
       : [0, 1, 2, 3, 4, 5, 6];
 
-    // Schedule a notification for each selected day
-    for (const weekday of daysToSchedule) {
-      const notificationId = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🎯 Goal Reminder',
-          body: `Time to work on: ${goal.title}`,
-          data: { goalId: goal.id },
-          sound: 'default',
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-        },
-        // `type` is required. Without it expo-notifications cannot tell this is a
-        // weekly trigger: the object still passes validation (it has a
-        // channelId) but falls through every typed parser, and is delivered
-        // IMMEDIATELY and only once - on iOS as a null trigger, on Android as a
-        // bare channel trigger. Weekly triggers always repeat, so no `repeats`.
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
-          channelId: 'goal-reminders',
-          weekday: weekday + 1, // expo-notifications uses 1-7 for Sunday-Saturday
-          hour,
-          minute,
-        },
-      });
+    // Schedule a notification for each selected day. If one fails, cancel the
+    // ones already scheduled: never returned, nothing could cancel them later.
+    try {
+      for (const weekday of daysToSchedule) {
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: text.reminderTitle,
+            body: text.reminderBody.replace('{goal}', goal.title),
+            data: { goalId: goal.id },
+            sound: 'default',
+            priority: Notifications.AndroidNotificationPriority.HIGH,
+          },
+          // `type` is required. Without it expo-notifications cannot tell this is a
+          // weekly trigger: the object still passes validation (it has a
+          // channelId) but falls through every typed parser, and is delivered
+          // IMMEDIATELY and only once - on iOS as a null trigger, on Android as a
+          // bare channel trigger. Weekly triggers always repeat, so no `repeats`.
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+            channelId: 'goal-reminders',
+            weekday: weekday + 1, // expo-notifications uses 1-7 for Sunday-Saturday
+            hour,
+            minute,
+          },
+        });
 
-      notificationIds.push(notificationId);
+        notificationIds.push(notificationId);
+      }
+    } catch (error) {
+      await cancelGoalNotifications(notificationIds);
+      throw error;
     }
 
     return notificationIds;
@@ -197,7 +216,7 @@ export function getDayName(dayIndex: number, short: boolean = false): string {
 /**
  * Schedule an immediate test notification
  */
-export async function scheduleTestNotification(): Promise<void> {
+export async function scheduleTestNotification(text: TestNotificationText): Promise<void> {
   try {
     const hasPermission = await checkNotificationPermissions();
     if (!hasPermission) {
@@ -206,8 +225,8 @@ export async function scheduleTestNotification(): Promise<void> {
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: '🎯 Test Notification',
-        body: 'Notifications are working! You will receive goal reminders at your scheduled times.',
+        title: text.testTitle,
+        body: text.testBody,
         sound: 'default',
       },
       trigger: {

@@ -8,7 +8,8 @@ import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { useImportBackup } from '@/src/hooks/use-import-backup';
+import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-backup';
+import { translations } from '@/src/i18n/translations';
 import { Language, ThemeMode } from '@/src/types';
 import { generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
 import { type ImportMode } from '@/src/utils/import-data';
@@ -35,7 +36,7 @@ interface LanguageOption {
 export default function SettingsScreen() {
   const { theme, themeMode, setThemeMode } = useTheme();
   const { t, language, setLanguage } = useLanguage();
-  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal } = useGoals();
+  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal, rescheduleReminders } = useGoals();
   const { rewards } = useRewards();
   const importBackup = useImportBackup();
   const [showArchivedGoals, setShowArchivedGoals] = useState(false);
@@ -70,22 +71,18 @@ export default function SettingsScreen() {
   const handleLanguageChange = useCallback(
     async (newLanguage: Language) => {
       await setLanguage(newLanguage);
-      // Show alert that app needs restart for full RTL support
-      if (newLanguage === 'ar' && language === 'en') {
-        Alert.alert(
-          t.common.success,
-          'Language changed to Arabic. Please restart the app for full RTL support.',
-          [{ text: t.common.cancel, style: 'cancel' }]
-        );
-      } else if (newLanguage === 'en' && language === 'ar') {
-        Alert.alert(
-          t.common.success,
-          'Language changed to English. Please restart the app for full effect.',
-          [{ text: t.common.cancel, style: 'cancel' }]
-        );
+      // A restart is needed for the layout direction to switch fully. Say so in
+      // the language just chosen: `t` here is still the previous one.
+      if (newLanguage !== language) {
+        const next = translations[newLanguage];
+        // Scheduled reminders are still worded in the old language.
+        void rescheduleReminders(next.notifications);
+        Alert.alert(next.common.success, next.settings.languageChangedRestart, [
+          { text: next.common.close, style: 'cancel' },
+        ]);
       }
     },
-    [setLanguage, language, t]
+    [setLanguage, language, rescheduleReminders]
   );
 
   /**
@@ -111,8 +108,8 @@ export default function SettingsScreen() {
           activeOpacity={0.7}
           accessibilityRole="radio"
           accessibilityState={{ checked: isSelected }}
-          accessibilityLabel={`${option.label} theme`}
-          accessibilityHint={`Switch to ${option.label.toLowerCase()} theme mode`}
+          accessibilityLabel={t.settings.themeOptionLabel.replace('{theme}', option.label)}
+          accessibilityHint={t.settings.themeOptionHint.replace('{theme}', option.label)}
         >
           <Text
             style={[
@@ -127,7 +124,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       );
     },
-    [theme, themeMode, handleThemeModeChange]
+    [theme, themeMode, handleThemeModeChange, t]
   );
 
   /**
@@ -153,7 +150,7 @@ export default function SettingsScreen() {
           activeOpacity={0.7}
           accessibilityRole="radio"
           accessibilityState={{ checked: isSelected }}
-          accessibilityLabel={`${option.label} language`}
+          accessibilityLabel={t.settings.languageOptionLabel.replace('{language}', option.label)}
         >
           <Text
             style={[
@@ -168,7 +165,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       );
     },
-    [theme, language, handleLanguageChange]
+    [theme, language, handleLanguageChange, t]
   );
 
   const archivedGoals = useMemo(() => goals.filter(g => g.isArchived), [goals]);
@@ -266,7 +263,10 @@ export default function SettingsScreen() {
           );
         } catch (error) {
           console.error('Failed to import data:', error);
-          Alert.alert(t.common.error, t.import.importError);
+          Alert.alert(
+            t.common.error,
+            error instanceof PartialImportError ? t.import.partialError : t.import.importError
+          );
         } finally {
           setIsImporting(false);
         }
@@ -490,7 +490,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.archivedBadge}>
               <Text style={[styles.archivedBadgeText, { color: theme.colors.primary }]}>
-                {archivedGoals.length}
+                {formatNumber(archivedGoals.length, language)}
               </Text>
             </View>
           </View>

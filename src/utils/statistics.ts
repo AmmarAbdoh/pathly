@@ -5,6 +5,7 @@
 
 import { ACHIEVEMENTS, checkAchievement } from '../constants/achievements';
 import { Goal, Reward, Statistics } from '../types';
+import { getSpentPoints } from './points';
 import { getTotalPointsEarned } from './recurring-goals';
 
 const getDayStart = (timestamp: number): number => {
@@ -36,9 +37,7 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifet
   }, 0);
 
   // Calculate spent points from redeemed rewards
-  const spentPoints = rewards
-    .filter(reward => reward.isRedeemed)
-    .reduce((sum, reward) => sum + reward.pointsCost, 0);
+  const spentPoints = getSpentPoints(rewards);
   
   // Calculate streak
   const today = new Date();

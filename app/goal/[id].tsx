@@ -10,9 +10,14 @@ import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { Goal, GoalDirection, TimePeriod } from '@/src/types';
+import { Goal, GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
 import { calculateTimeRemaining, formatEndDateTime, formatProgressText, formatTimeRemaining } from '@/src/utils/goal-calculations';
 import { formatNumber } from '@/src/utils/number-formatting';
+import {
+  checkNotificationPermissions,
+  requestNotificationPermissions,
+  scheduleTestNotification,
+} from '@/src/utils/notifications';
 import { customTemplatesStorage } from '@/src/utils/storage';
 import { isValidNumber } from '@/src/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
@@ -39,7 +44,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
  */
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, editGoal, addSubgoal, extendDeadline, togglePause, addNote, deleteNote, addDependency, removeDependency, checkDependencies, updateNotificationSettings } = useGoals();
+  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, editGoal, addSubgoal, extendDeadline, togglePause, resetRecurringGoal, rescheduleReminders, addNote,deleteNote, addDependency, removeDependency, checkDependencies, updateNotificationSettings } = useGoals();
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const router = useRouter();
@@ -406,10 +411,10 @@ export default function GoalDetail() {
     
     try {
       await finishGoal(goal.id);
-      Alert.alert(t.common.success, t.goalDetail.finishSuccess || 'Goal completed!');
+      Alert.alert(t.common.success, t.goalDetail.finishSuccess);
     } catch (error) {
       console.error('Failed to finish goal:', error);
-      Alert.alert(t.common.error, t.goalDetail.finishError || 'Failed to finish goal');
+      Alert.alert(t.common.error, t.goalDetail.finishError);
     }
   }, [goal, finishGoal, t]);
 
@@ -435,7 +440,7 @@ export default function GoalDetail() {
     
     const days = parseInt(extendDays, 10);
     if (isNaN(days) || days < 1) {
-      Alert.alert(t.common.error, 'Please enter a valid number of days');
+      Alert.alert(t.common.error, t.goalDetail.invalidDays);
       return;
     }
     
@@ -540,7 +545,7 @@ export default function GoalDetail() {
       setNoteText('');
     } catch (error) {
       console.error('Failed to add note:', error);
-      Alert.alert(t.common.error, 'Failed to save note');
+      Alert.alert(t.common.error, t.goalDetail.noteSaveError);
     }
   }, [goal, noteText, addNote, t]);
 
@@ -573,7 +578,7 @@ export default function GoalDetail() {
       setNoteToDelete(null);
     } catch (error) {
       console.error('Failed to delete note:', error);
-      Alert.alert(t.common.error, 'Failed to delete note');
+      Alert.alert(t.common.error, t.goalDetail.noteDeleteError);
     }
   }, [goal, noteToDelete, deleteNote, t]);
 
@@ -631,7 +636,7 @@ export default function GoalDetail() {
       }
     } catch (error) {
       console.error('Failed to update dependencies:', error);
-      Alert.alert(t.common.error, 'Failed to update dependencies');
+      Alert.alert(t.common.error, t.goalDetail.dependenciesUpdateError);
     }
   }, [goal, selectedDependencies, addDependency, removeDependency, t]);
 
@@ -653,7 +658,7 @@ export default function GoalDetail() {
       await removeDependency(goal.id, depId);
     } catch (error) {
       console.error('Failed to remove dependency:', error);
-      Alert.alert(t.common.error, 'Failed to remove dependency');
+      Alert.alert(t.common.error, t.goalDetail.dependencyRemoveError);
     }
   }, [goal, removeDependency, t]);
 
@@ -689,10 +694,11 @@ export default function GoalDetail() {
     description?: string,
     icon?: string,
     linkedRewardId?: number,
-    subgoalsAwardPoints?: boolean
+    subgoalsAwardPoints?: boolean,
+    schedule?: GoalSchedule
   ) => {
     if (!goal) return;
-    
+
     try {
       await editGoal(
         goal.id,
@@ -707,15 +713,24 @@ export default function GoalDetail() {
         isUltimate,
         isRecurring,
         description,
-        icon
+        icon,
+        // Every field, or editGoal clears it: saving an edit used to unlink the
+        // goal's reward.
+        linkedRewardId,
+        subgoalsAwardPoints,
+        schedule
       );
+      // Reminders carry the title they were scheduled with.
+      if (title !== goal.title) {
+        await rescheduleReminders(t.notifications, goal.id);
+      }
       setIsEditMode(false);
-      Alert.alert(t.common.success, 'Goal updated successfully');
+      Alert.alert(t.common.success, t.goalDetail.goalUpdateSuccess);
     } catch (error) {
       console.error('Failed to edit goal:', error);
-      Alert.alert(t.common.error, 'Failed to update goal');
+      Alert.alert(t.common.error, t.goalDetail.goalUpdateError);
     }
-  }, [goal, editGoal, t]);
+  }, [goal, editGoal, rescheduleReminders, t]);
 
   /**
    * Handle add subgoal
@@ -756,13 +771,16 @@ export default function GoalDetail() {
         direction,
         points,
         period,
-        customPeriodDays
+        customPeriodDays,
+        description,
+        icon,
+        linkedRewardId
       );
       setShowAddSubgoal(false);
-      Alert.alert(t.common.success, 'Subgoal added successfully');
+      Alert.alert(t.common.success, t.goalDetail.subgoalAddSuccess);
     } catch (error) {
       console.error('Failed to add subgoal:', error);
-      Alert.alert(t.common.error, 'Failed to add subgoal');
+      Alert.alert(t.common.error, t.goalDetail.subgoalAddError);
     }
   }, [goal, addSubgoal, t]);
 
@@ -849,56 +867,35 @@ export default function GoalDetail() {
     if (!goal || !goal.isRecurring) return;
     
     Alert.alert(
-      'Reset Recurring Goal',
-      'Are you sure you want to reset this recurring goal? It will start a new period and your current progress will be recorded in history.',
+      t.goalDetail.resetTitle,
+      t.goalDetail.resetMessage,
       [
         {
           text: t.common.cancel,
           style: 'cancel',
         },
         {
-          text: 'Reset Now',
+          text: t.goalDetail.resetNow,
           style: 'default',
           onPress: async () => {
             try {
-              const { resetGoal, recordCompletion } = await import('@/src/utils/recurring-goals');
-              const goalWithHistory = recordCompletion(goal);
-              const resetGoalData = resetGoal(goalWithHistory);
-              
-              // Update the goal with reset data
-              await editGoal(
-                goal.id,
-                resetGoalData.title,
-                resetGoalData.target,
-                resetGoalData.current,
-                resetGoalData.unit,
-                resetGoalData.direction,
-                resetGoalData.points,
-                resetGoalData.period,
-                resetGoalData.customPeriodDays,
-                resetGoalData.isUltimate,
-                resetGoalData.isRecurring,
-                resetGoalData.description,
-                resetGoalData.icon
-              );
-              
-              Alert.alert(t.common.success, 'Recurring goal has been reset to a new period!');
+              await resetRecurringGoal(goal.id);
+              Alert.alert(t.common.success, t.goalDetail.resetSuccess);
             } catch (error) {
               console.error('Failed to reset recurring goal:', error);
-              Alert.alert(t.common.error, 'Failed to reset recurring goal');
+              Alert.alert(t.common.error, t.goalDetail.resetError);
             }
           },
         },
       ]
     );
-  }, [goal, editGoal, t]);
+  }, [goal, resetRecurringGoal, t]);
 
   /**
    * Check notification permissions on mount
    */
   useEffect(() => {
     const checkPermissions = async () => {
-      const { checkNotificationPermissions } = await import('@/src/utils/notifications');
       const hasPermission = await checkNotificationPermissions();
       setHasNotificationPermission(hasPermission);
     };
@@ -913,8 +910,7 @@ export default function GoalDetail() {
 
     if (!notificationsEnabled && !hasNotificationPermission) {
       // Request permissions first
-      const { requestNotificationPermissions } = await import('@/src/utils/notifications');
-      const granted = await requestNotificationPermissions();
+      const granted = await requestNotificationPermissions(t.notifications.channelName);
       setHasNotificationPermission(granted);
       
       if (!granted) {
@@ -960,6 +956,7 @@ export default function GoalDetail() {
       await updateNotificationSettings(
         goal.id,
         notificationsEnabled,
+        t.notifications,
         notificationTime,
         selectedDays
       );
@@ -975,8 +972,7 @@ export default function GoalDetail() {
    */
   const handleTestNotification = useCallback(async () => {
     try {
-      const { scheduleTestNotification } = await import('@/src/utils/notifications');
-      await scheduleTestNotification();
+      await scheduleTestNotification(t.notifications);
       Alert.alert(t.common.success, t.notifications.testNotificationSent);
     } catch (error) {
       console.error('Failed to send test notification:', error);
@@ -1054,7 +1050,7 @@ export default function GoalDetail() {
             style={styles.backButton}
             onPress={handleEditComplete}
             accessibilityRole="button"
-            accessibilityLabel="Cancel edit"
+            accessibilityLabel={t.goalDetail.cancelEdit}
           >
             <Ionicons
               name="close"
@@ -1069,6 +1065,9 @@ export default function GoalDetail() {
           <AddGoalForm
             editMode={true}
             isCompleted={goal.isComplete}
+            // A subgoal is edited in the subgoal form: points optional, and no
+            // ultimate or recurring options.
+            parentId={goal.parentId}
             initialValues={{
               ...goal,
               isRecurring: goal.isRecurring || false,
@@ -1094,7 +1093,7 @@ export default function GoalDetail() {
             style={styles.backButton}
             onPress={() => setShowAddSubgoal(false)}
             accessibilityRole="button"
-            accessibilityLabel="Cancel add subgoal"
+            accessibilityLabel={t.goalDetail.cancelAddSubgoal}
           >
             <Ionicons
               name="close"
@@ -1132,7 +1131,7 @@ export default function GoalDetail() {
           style={styles.backButton}
           onPress={handleBack}
           accessibilityRole="button"
-          accessibilityLabel="Go back"
+          accessibilityLabel={t.common.back}
         >
           <Ionicons
             name="arrow-back"
@@ -1148,17 +1147,17 @@ export default function GoalDetail() {
         <View style={styles.header}>
           {goal.isUltimate && (
             <View style={styles.ultimateBadge}>
-              <Text style={styles.ultimateBadgeText}>⭐ {t.goalCard.ultimate}</Text>
+              <Text style={styles.ultimateBadgeText}>{t.goalCard.ultimate}</Text>
             </View>
           )}
           {goal.isRecurring && (
             <View style={[styles.ultimateBadge, { backgroundColor: '#10b981' }]}>
-              <Text style={styles.ultimateBadgeText}>🔄 Recurring</Text>
+              <Text style={styles.ultimateBadgeText}>🔄 {t.goalDetail.recurringBadge}</Text>
             </View>
           )}
           {goal.isPaused && (
             <View style={[styles.ultimateBadge, { backgroundColor: '#f59e0b' }]}>
-              <Text style={styles.ultimateBadgeText}>⏸️ Paused</Text>
+              <Text style={styles.ultimateBadgeText}>⏸️ {t.goalCard.paused}</Text>
             </View>
           )}
           <Text style={[styles.title, { color: theme.colors.text }]}>
@@ -1177,9 +1176,15 @@ export default function GoalDetail() {
           </Text>
           {goal.points > 0 && (
             <Text style={[styles.points, { color: theme.colors.primary }]}>
-              🎯 {goal.points} {t.goalCard.points}
+              🎯 {formatNumber(goal.points, language)} {t.goalCard.points}
               {goal.isRecurring && goal.completionHistory && goal.completionHistory.length > 0 && (
-                <Text style={{ fontSize: 14 }}> × {goal.completionHistory.length + (goal.isComplete ? 1 : 0)} completions</Text>
+                <Text style={{ fontSize: 14 }}>
+                  {' '}
+                  {t.goalDetail.timesCompleted.replace(
+                    '{count}',
+                    formatNumber(goal.completionHistory.length + (goal.isComplete ? 1 : 0), language)
+                  )}
+                </Text>
               )}
             </Text>
           )}
@@ -1301,7 +1306,7 @@ export default function GoalDetail() {
               color="#FFF" 
             />
             <Text style={styles.buttonText}>
-              Reset Now
+              {t.goalDetail.resetNow}
             </Text>
           </TouchableOpacity>
         )}
@@ -1422,7 +1427,7 @@ export default function GoalDetail() {
                   keyboardType="decimal-pad"
                   placeholder={goal.unit}
                   placeholderTextColor={theme.colors.textSecondary}
-                  accessibilityLabel="New progress value"
+                  accessibilityLabel={t.goalDetail.newProgressValue}
                 />
                 <TouchableOpacity
                   style={[styles.updateButton, { backgroundColor: theme.colors.primary }]}
@@ -1441,7 +1446,7 @@ export default function GoalDetail() {
           <View style={cardStyle}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                {t.goalDetail.subgoalsTitle} ({subgoals.length})
+                {t.goalDetail.subgoalsTitle} ({formatNumber(subgoals.length, language)})
               </Text>
               {!isGoalExpired && (
                 <TouchableOpacity
@@ -1631,8 +1636,7 @@ export default function GoalDetail() {
                   width: '100%',
                 }]}
                 onPress={async () => {
-                  const { requestNotificationPermissions } = await import('@/src/utils/notifications');
-                  const granted = await requestNotificationPermissions();
+                  const granted = await requestNotificationPermissions(t.notifications.channelName);
                   if (granted) {
                     setNotificationsEnabled(true);
                     Alert.alert(t.common.success, t.notifications.permissionsGranted);
@@ -1752,7 +1756,7 @@ export default function GoalDetail() {
           onPress={handleSaveAsTemplate}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Save as template"
+          accessibilityLabel={t.goalDetail.saveAsTemplate}
         >
           <Ionicons name="bookmark-outline" size={20} color="#FFF" />
           <Text style={styles.buttonText}>{t.goalDetail.saveAsTemplate}</Text>
@@ -1764,7 +1768,7 @@ export default function GoalDetail() {
           onPress={handleDelete}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel="Archive goal"
+          accessibilityLabel={t.goalDetail.archiveGoal}
           testID="archive-goal-button"
         >
           <Ionicons name="archive-outline" size={20} color="#FFF" />
@@ -2054,7 +2058,7 @@ export default function GoalDetail() {
             <ScrollView style={styles.dependenciesScrollView}>
               {availableGoalsForDependencies.length === 0 ? (
                 <Text style={[styles.emptyText, { color: theme.colors.textSecondary, textAlign: 'center', marginTop: 20 }]}>
-                  No available goals to add as dependencies
+                  {t.goalDetail.noAvailableDependencies}
                 </Text>
               ) : (
                 availableGoalsForDependencies.map((g) => (
@@ -2074,7 +2078,8 @@ export default function GoalDetail() {
                           {g.title}
                         </Text>
                         <Text style={[styles.dependencyStatus, { color: theme.colors.textSecondary }]}>
-                          {Math.round(g.progress)}% • {g.points} pts
+                          {formatNumber(Math.round(g.progress), language)}% •{' '}
+                          {formatNumber(g.points, language)} {t.goalCard.points}
                         </Text>
                       </View>
                     </View>

@@ -4,6 +4,7 @@
  */
 
 import { DURATION, SPRING } from '@/src/constants/animation';
+import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import React, { memo } from 'react';
 import {
@@ -41,6 +42,7 @@ const ConfirmationModal = memo<ConfirmationModalProps>(({
   confirmStyle = 'default',
 }) => {
   const { theme } = useTheme();
+  const { t } = useLanguage();
 
   return (
     <Modal
@@ -58,7 +60,7 @@ const ConfirmationModal = memo<ConfirmationModalProps>(({
         <Pressable
           style={styles.overlay}
           onPress={onCancel}
-          accessibilityLabel="Close modal"
+          accessibilityLabel={t.common.close}
         >
           <Animated.View
             entering={ZoomIn.springify()

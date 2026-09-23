@@ -4,6 +4,7 @@
 
 import { Platform, Share } from 'react-native';
 import type { Goal, Reward } from '@/src/types';
+import { isImportableGoal, isImportableReward } from '@/src/utils/import-data';
 import {
   generateCSVExport,
   generateJSONExport,
@@ -112,6 +113,36 @@ describe('JSON export and import', () => {
       'Reward 3: Invalid points cost',
     ]);
     expect(parsed.message).toBe('Successfully parsed 1 goals and 1 rewards');
+  });
+
+  // Regression: a title of spaces passed here and was dropped by buildImport,
+  // so the numbers the user was told - to import, skipped, imported - were off.
+  it('accepts exactly the records the import keeps', () => {
+    const goals = [goal(), { ...goal(), title: '   ' }, { ...goal(), title: 7 }, null, { ...goal(), target: -1 }];
+    const rewards = [reward(), { ...reward(), title: ' ' }, null, { ...reward(), pointsCost: 0 }];
+
+    const parsed = parseJSONImport(JSON.stringify({ goals, rewards }));
+
+    expect(parsed.data?.goals).toEqual([goal()]);
+    expect(parsed.data?.rewards).toEqual([reward()]);
+    expect(parsed.errors).toHaveLength(goals.length + rewards.length - 2);
+    for (const accepted of parsed.data!.goals) expect(isImportableGoal(accepted)).toBe(true);
+    for (const accepted of parsed.data!.rewards) expect(isImportableReward(accepted)).toBe(true);
+  });
+
+  // Regression: `typeof x === 'number'` let Infinity (JSON's 1e999) through.
+  // Saved, it becomes null: a goal with no target, a reward anyone can afford.
+  it('rejects numbers too large to store', () => {
+    // JSON.stringify cannot write 1e999 itself, so put it in by hand.
+    const json = JSON.stringify({
+      goals: [{ ...goal(), target: 'HUGE' }],
+      rewards: [{ ...reward(), pointsCost: 'HUGE' }],
+    }).replace(/"HUGE"/g, '1e999');
+
+    const parsed = parseJSONImport(json);
+
+    expect(parsed.data?.goals).toHaveLength(0);
+    expect(parsed.data?.rewards).toHaveLength(0);
   });
 });
 

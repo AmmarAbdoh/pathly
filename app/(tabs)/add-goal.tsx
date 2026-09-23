@@ -50,6 +50,9 @@ export default function AddGoalScreen() {
     ) => {
       try {
         await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description, icon, linkedRewardId, subgoalsAwardPoints, schedule);
+        // The form reads initialValues only when it mounts, and remounts on the
+        // template's id: left set, picking the same template again did nothing.
+        setSelectedTemplate(null);
         // Navigate back to home after successful creation
         router.push('/home');
       } catch (err) {

@@ -6,6 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REWARDS_KEY } from '../constants/storage-keys';
 import { Reward } from '../types';
+import { parseStoredList } from './storage';
 
 /**
  * Rewards storage operations
@@ -14,25 +15,22 @@ export const rewardsStorage = {
   /**
    * Load rewards from storage
    * @returns Array of rewards, or empty array if none are stored
-   * @throws Error if storage cannot be read, or holds something that is not a
-   *   rewards array - never [], which the next save would write over the
-   *   user's real rewards.
+   * @throws UnreadableDataError if what is stored is not a rewards list, or an
+   *   Error if storage cannot be read at all - never [], which the next save
+   *   would write over the user's real rewards.
    */
   async loadRewards(): Promise<Reward[]> {
+    let rewardsData: string | null;
     try {
-      const rewardsData = await AsyncStorage.getItem(REWARDS_KEY);
-      if (!rewardsData) {
-        return [];
-      }
-      const rewards: unknown = JSON.parse(rewardsData);
-      if (!Array.isArray(rewards)) {
-        throw new Error('Stored rewards are not an array');
-      }
-      return rewards as Reward[];
+      rewardsData = await AsyncStorage.getItem(REWARDS_KEY);
     } catch (error) {
       console.error('Error loading rewards:', error);
       throw new Error('Failed to load rewards');
     }
+    if (!rewardsData) {
+      return [];
+    }
+    return parseStoredList(rewardsData, 'rewards') as unknown as Reward[];
   },
 
   /**

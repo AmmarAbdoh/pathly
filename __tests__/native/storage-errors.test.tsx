@@ -14,6 +14,7 @@ import type { Goal } from '@/src/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -106,6 +107,83 @@ afterEach(() => {
   consoleError.mockRestore();
   getItem.mockImplementation(realGetItem);
   setItem.mockImplementation(realSetItem);
+});
+
+/**
+ * Hold the next storage call for `key` open until `release()`, keeping
+ * AsyncStorage's order: calls made meanwhile run after it, as on a device.
+ */
+function holdNext(mock: jest.Mock, real: (...args: never[]) => Promise<unknown>, key: string) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let chain: Promise<unknown> = Promise.resolve();
+  let held = false;
+  mock.mockImplementation((...args: [string, string?]) => {
+    const hold = !held && args[0] === key;
+    if (hold) held = true;
+    const run = chain.then(async () => {
+      if (hold) await gate;
+      return (real as (...a: unknown[]) => Promise<unknown>)(...args);
+    });
+    chain = run.catch(() => undefined);
+    return run;
+  });
+  return { release };
+}
+
+/** The handler GoalsProvider registers for app-state changes. */
+function captureAppState() {
+  let onChange!: (state: string) => void;
+  (AppState.addEventListener as jest.Mock).mockImplementationOnce((_, handler) => {
+    onChange = handler;
+    return { remove: jest.fn() };
+  });
+  return (state: string) => onChange(state);
+}
+
+describe('refreshing', () => {
+  // Regression: refresh re-read storage and put what it read over memory. A
+  // change made while the read was in flight vanished - and a completion
+  // reverted that way could pay out twice.
+  it('keeps a change made while it runs', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    const read = holdNext(getItem, realGetItem, STORAGE_KEYS.GOALS);
+
+    let refreshing!: Promise<void>;
+    await act(async () => {
+      refreshing = result.current.refreshGoals();
+      await result.current.updateGoal(1, 4);
+    });
+    read.release();
+    await act(async () => {
+      await refreshing;
+    });
+
+    expect(result.current.goals[0].current).toBe(4);
+  });
+
+  it('still rolls over a period that ended while the app was open', async () => {
+    const now = Date.now();
+    await seed([
+      makeGoal({ period: 'daily', isRecurring: true, periodStartDate: now, current: 10, isComplete: true, completedAt: now }),
+    ]);
+    const { result } = await renderGoals();
+    const later = jest.spyOn(Date, 'now').mockReturnValue(now + 2 * 24 * 60 * 60 * 1000);
+
+    try {
+      await act(async () => {
+        await result.current.refreshGoals();
+      });
+    } finally {
+      later.mockRestore();
+    }
+
+    expect(result.current.goals[0]).toMatchObject({ isComplete: false, current: 0 });
+    expect(result.current.goals[0].completionHistory).toHaveLength(1);
+  });
 });
 
 describe('failed saves', () => {
@@ -237,6 +315,82 @@ describe('failed saves', () => {
     expect(await storedGoals()).toEqual([expect.objectContaining({ id: 1, current: 6 })]);
   });
 
+  // Regression: the banner kept saying changes were unsaved after an import
+  // had replaced them, with nothing left to retry.
+  it('clears a failed-save report once an import replaces what was unsaved', async () => {
+    await seed([makeGoal()]);
+    const { result } = await renderGoals();
+    const storage = failWrites(STORAGE_KEYS.GOALS);
+    await act(async () => {
+      await result.current.updateGoal(1, 6);
+    });
+    await act(async () => {
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+    expect(result.current.storageError).toBe('save');
+
+    storage.recover();
+    await act(async () => {
+      await result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+    });
+
+    expect(result.current.storageError).toBeNull();
+  });
+
+  // Regression: unsaved edits stayed queued while the import was written, so
+  // a flush meanwhile (the app going to the background) wrote them after it -
+  // and the import silently vanished.
+  it('does not let a save made during an import land on top of it', async () => {
+    const background = captureAppState();
+    await seed([makeGoal({ id: 1, title: 'Old' })]);
+    const { result } = await renderGoals();
+    await act(async () => {
+      await result.current.updateGoal(1, 5); // queued, inside the debounce
+    });
+    const write = holdNext(setItem, realSetItem, STORAGE_KEYS.GOALS);
+
+    let importing!: Promise<void>;
+    await act(async () => {
+      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+      background('background');
+      // An edit while it is written is based on the goals being replaced.
+      await result.current.updateGoal(1, 7);
+    });
+    write.release();
+    await act(async () => {
+      await importing;
+      await sleep(SAVE_DEBOUNCE_MS + 100);
+    });
+
+    expect((await storedGoals()).map((g) => g.title)).toEqual(['Imported']);
+    expect(result.current.goals.map((g) => g.title)).toEqual(['Imported']);
+  });
+
+  // Regression: memory kept the old goals until the reload at the end of an
+  // import. A change in that time was built on them, and a flush then wrote
+  // them back over the import.
+  it('does not let a change made while an import finishes bring back the old goals', async () => {
+    const background = captureAppState();
+    await seed([makeGoal({ id: 1, title: 'Old' })]);
+    const { result } = await renderGoals();
+    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.LIFETIME_POINTS);
+
+    let importing!: Promise<void>;
+    await act(async () => {
+      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], 0);
+      await sleep(50); // the goals are written; the total is held
+      await result.current.updateGoal(1, 7);
+      background('background');
+    });
+    lifetimeWrite.release();
+    await act(async () => {
+      await importing;
+    });
+
+    expect((await storedGoals()).map((g) => g.title)).toEqual(['Imported']);
+    expect(result.current.goals.map((g) => g.title)).toEqual(['Imported']);
+  });
+
   // Regression: while storage keeps failing, a reload read the old total back
   // from disk over the unsaved in-memory one, and the next successful write
   // then persisted the stale value.
@@ -306,10 +460,16 @@ describe('failed loads', () => {
     expect(result.current.storageError).toBe('load');
   });
 
-  it('treats corrupt stored goals as a failed load, and leaves them on disk', async () => {
+  // Regression: corrupt goals failed every load - every launch, every Retry -
+  // and every edit was held and lost, with no way out but clearing the app's
+  // data. They are kept aside instead, and the app starts over.
+  it('keeps unreadable goals aside and starts over, rather than blocking for good', async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
-    await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '0');
+    await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '120');
     const { result } = await renderGoals();
+
+    expect(result.current.storageError).toBe('unreadable');
+    expect(result.current.lifetimePointsEarned).toBe(120);
 
     await act(async () => {
       await result.current.addGoal('New', 10, 0, 'x', 'increase', 1, 'daily');
@@ -318,8 +478,82 @@ describe('failed loads', () => {
       await sleep(SAVE_DEBOUNCE_MS + 100);
     });
 
+    expect((await storedGoals()).map((g) => g.title)).toEqual(['New']);
+    const keys = await AsyncStorage.getAllKeys();
+    const aside = keys.find((key) => key.startsWith(`${STORAGE_KEYS.GOALS}.unreadable.`))!;
+    expect(await AsyncStorage.getItem(aside)).toBe('{corrupt');
+  });
+
+  // Regression: they were kept aside - removed - before the lifetime total was
+  // read. When that read failed, Retry found no goals, and nothing said why.
+  it('says unreadable goals were kept aside, even when a later read failed first', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    failNextLoad(STORAGE_KEYS.LIFETIME_POINTS);
+    const { result } = await renderGoals();
+    expect(result.current.storageError).toBe('load');
+
+    await act(async () => {
+      await result.current.retryStorage();
+    });
+
+    expect(result.current.storageError).toBe('unreadable');
+    const keys = await AsyncStorage.getAllKeys();
+    expect(keys.filter((key) => key.startsWith(`${STORAGE_KEYS.GOALS}.unreadable.`))).toHaveLength(1);
+  });
+
+  it('stays blocked if unreadable goals cannot even be kept aside', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    setItem.mockImplementation(async (key: string, value: string) => {
+      if (key.includes('.unreadable.')) throw disk;
+      return realSetItem(key, value);
+    });
+
+    const { result } = await renderGoals();
+
     expect(result.current.storageError).toBe('load');
     expect(await AsyncStorage.getItem(STORAGE_KEYS.GOALS)).toBe('{corrupt');
+  });
+
+  // Regression: moving the rollover out of the load's try/catch meant one
+  // malformed goal made the load reject: the screen spun forever, and writes
+  // were not blocked.
+  it('loads the other goals when one cannot be processed', async () => {
+    await seed([
+      makeGoal({ id: 1, title: 'Fine' }),
+      makeGoal({
+        id: 2,
+        title: 'Malformed',
+        isRecurring: true,
+        period: 'daily',
+        completionHistory: { not: 'a list' } as unknown as number[],
+      }),
+    ]);
+
+    const { result } = await renderGoals();
+
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.storageError).toBeNull();
+    expect(result.current.goals.map((g) => g.title)).toEqual(['Fine', 'Malformed']);
+  });
+
+  // Regression: only a failed load was guarded. An import started before the
+  // first load finished merged into the empty list and wrote over every goal.
+  it('refuses to hand out goals, or replace them, before they have loaded', async () => {
+    await seed([makeGoal({ title: 'Keep me' })]);
+    const read = holdNext(getItem, realGetItem, STORAGE_KEYS.GOALS);
+    const { result } = renderHook(() => useGoals(), {
+      wrapper: ({ children }) => <GoalsProvider>{children}</GoalsProvider>,
+    });
+
+    expect(() => result.current.getCurrentGoals()).toThrow();
+    await act(async () => {
+      await expect(result.current.replaceAllGoals([makeGoal({ title: 'Imported' })], 0)).rejects.toThrow();
+    });
+
+    read.release();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect((await storedGoals()).map((g) => g.title)).toEqual(['Keep me']);
+    expect(result.current.getCurrentGoals().goals.map((g) => g.title)).toEqual(['Keep me']);
   });
 
   // Regression: lifetime points were written straight through, counting up
@@ -557,6 +791,14 @@ describe('StorageErrorBanner', () => {
     await renderBanner();
 
     expect(screen.getByText(en.loadFailed)).toBeTruthy();
+  });
+
+  it('says when unreadable data was set aside, without offering a Retry', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    await renderBanner();
+
+    expect(screen.getByText(en.unreadable)).toBeTruthy();
+    expect(screen.queryByLabelText(en.retry)).toBeNull();
   });
 
   it('reports rewards that could not be loaded, and Retry reloads them', async () => {

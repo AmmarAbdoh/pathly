@@ -12,6 +12,8 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Reward } from '@/src/types';
+import { formatNumber } from '@/src/utils/number-formatting';
+import { getAvailablePoints } from '@/src/utils/points';
 import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -32,7 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function RewardsScreen() {
   const { theme } = useTheme();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { goals, lifetimePointsEarned } = useGoals();
   const {
     rewards,
@@ -64,7 +66,7 @@ export default function RewardsScreen() {
     () => calculateStatistics(goals, rewards, lifetimePointsEarned),
     [goals, rewards, lifetimePointsEarned]
   );
-  const availablePoints = stats.lifetimePointsEarned - stats.spentPoints;
+  const availablePoints = getAvailablePoints(lifetimePointsEarned, rewards);
   const availableRewards = getAvailableRewards();
   const redeemedRewards = getRedeemedRewards();
 
@@ -122,13 +124,13 @@ export default function RewardsScreen() {
 
   const handleSave = async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a reward title');
+      Alert.alert(t.common.error, t.rewards.titleRequired);
       return;
     }
 
     const cost = parseInt(pointsCost);
     if (isNaN(cost) || cost < 1) {
-      Alert.alert('Invalid Points', 'Reward must cost at least 1 point');
+      Alert.alert(t.rewards.invalidCostTitle, t.rewards.invalidCost);
       return;
     }
 
@@ -146,7 +148,13 @@ export default function RewardsScreen() {
 
   const handleRedeem = async (rewardId: number, pointsCost: number) => {
     if (availablePoints < pointsCost) {
-      Alert.alert('Not Enough Points', `You need ${pointsCost - availablePoints} more points to redeem this reward.`);
+      Alert.alert(
+        t.rewards.notEnoughPoints,
+        t.rewards.notEnoughPointsMessage.replace(
+          '{points}',
+          formatNumber(pointsCost - availablePoints, language)
+        )
+      );
       return;
     }
     setConfirmRedeemId(rewardId);
@@ -201,7 +209,7 @@ export default function RewardsScreen() {
         <View style={styles.rewardFooter}>
           <View style={[styles.pointsBadge, { backgroundColor: isRedeemed ? '#10b981' : canAfford ? theme.colors.primary : '#94a3b8' }]}>
             <Ionicons name="star" size={16} color="#fff" />
-            <Text style={styles.pointsText}>{item.pointsCost}</Text>
+            <Text style={styles.pointsText}>{formatNumber(item.pointsCost, language)}</Text>
           </View>
 
           {isRedeemed ? (
@@ -252,7 +260,7 @@ export default function RewardsScreen() {
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>{t.rewards.title}</Text>
         <View style={[styles.pointsDisplay, { backgroundColor: theme.colors.primary }]}>
           <Ionicons name="star" size={20} color="#fff" />
-          <Text style={styles.pointsDisplayText}>{availablePoints}</Text>
+          <Text style={styles.pointsDisplayText}>{formatNumber(availablePoints, language)}</Text>
         </View>
       </View>
 
@@ -289,15 +297,15 @@ export default function RewardsScreen() {
             <View style={[styles.infoCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
               <View style={styles.infoRow}>
                 <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.totalEarned}</Text>
-                <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{stats.totalPoints}</Text>
+                <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{formatNumber(stats.totalPoints, language)}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.spent}</Text>
-                <Text style={[styles.infoValue, { color: '#ef4444' }]}>{stats.spentPoints}</Text>
+                <Text style={[styles.infoValue, { color: '#ef4444' }]}>{formatNumber(stats.spentPoints, language)}</Text>
               </View>
               <View style={[styles.infoRow, styles.infoRowBorder, { borderTopColor: theme.colors.border }]}>
                 <Text style={[styles.infoLabel, { color: theme.colors.text, fontWeight: '700' }]}>{t.rewards.available}</Text>
-                <Text style={[styles.infoValue, { color: '#10b981', fontWeight: '700' }]}>{availablePoints}</Text>
+                <Text style={[styles.infoValue, { color: '#10b981', fontWeight: '700' }]}>{formatNumber(availablePoints, language)}</Text>
               </View>
             </View>
           </>

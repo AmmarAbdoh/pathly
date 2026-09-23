@@ -7,9 +7,11 @@
  * so a failed write was invisible: the change looked saved, stayed in memory,
  * and was gone on the next launch.
  *
- * Covers both stores. Goals can fail to save (queued, retried) or to load;
- * rewards only report a failed load here, because a failed reward write is
- * undone and reported by the screen that made it.
+ * Covers both stores: a failed load (nothing is saved until it works), a
+ * failed save (queued and retried; for rewards, a linked reward that could not
+ * be redeemed), and stored data that could not be read at all and was set
+ * aside. Other failed reward writes are undone and reported by the screen
+ * that made them.
  */
 
 import { DURATION } from '@/src/constants/animation';
@@ -28,7 +30,7 @@ export default function StorageErrorBanner() {
     useGoals();
   const {
     storageError: rewardsError,
-    refreshRewards,
+    retryStorage: retryRewards,
     dismissStorageError: dismissRewardsError,
   } = useRewards();
   const { t } = useLanguage();
@@ -39,15 +41,16 @@ export default function StorageErrorBanner() {
   const handleRetry = useCallback(async () => {
     setIsRetrying(true);
     try {
-      // Independent stores: retry whichever failed.
+      // Independent stores: retry whichever failed. (Unreadable data has
+      // already been dealt with; there is nothing to retry.)
       await Promise.all([
-        goalsError ? retryStorage() : null,
-        rewardsError ? refreshRewards() : null,
+        goalsError === 'load' || goalsError === 'save' ? retryStorage() : null,
+        rewardsError === 'load' || rewardsError === 'save' ? retryRewards() : null,
       ]);
     } finally {
       setIsRetrying(false);
     }
-  }, [goalsError, rewardsError, retryStorage, refreshRewards]);
+  }, [goalsError, rewardsError, retryStorage, retryRewards]);
 
   const handleDismiss = useCallback(() => {
     dismissGoalsError();
@@ -62,11 +65,18 @@ export default function StorageErrorBanner() {
         ? t.storageErrors.rewardsLoadFailed
         : goalsError === 'save'
           ? t.storageErrors.saveFailed
-          : null;
+          : rewardsError === 'save'
+            ? t.storageErrors.rewardsSaveFailed
+            : goalsError === 'unreadable' || rewardsError === 'unreadable'
+              ? t.storageErrors.unreadable
+              : null;
 
   if (!message) {
     return null;
   }
+
+  // Unreadable data has already been set aside: there is nothing to retry.
+  const canRetry = [goalsError, rewardsError].some((e) => e === 'load' || e === 'save');
 
   return (
     <Animated.View
@@ -83,22 +93,24 @@ export default function StorageErrorBanner() {
         <Ionicons name="warning-outline" size={20} color="#FFF" />
         <Text style={styles.message}>{message}</Text>
 
-        <Pressable
-          onPress={handleRetry}
-          disabled={isRetrying}
-          style={styles.retry}
-          accessibilityRole="button"
-          accessibilityLabel={t.storageErrors.retry}
-          hitSlop={6}
-        >
-          {isRetrying ? (
-            <ActivityIndicator size="small" color={theme.colors.danger} />
-          ) : (
-            <Text style={[styles.retryText, { color: theme.colors.danger }]}>
-              {t.storageErrors.retry}
-            </Text>
-          )}
-        </Pressable>
+        {canRetry ? (
+          <Pressable
+            onPress={handleRetry}
+            disabled={isRetrying}
+            style={styles.retry}
+            accessibilityRole="button"
+            accessibilityLabel={t.storageErrors.retry}
+            hitSlop={6}
+          >
+            {isRetrying ? (
+              <ActivityIndicator size="small" color={theme.colors.danger} />
+            ) : (
+              <Text style={[styles.retryText, { color: theme.colors.danger }]}>
+                {t.storageErrors.retry}
+              </Text>
+            )}
+          </Pressable>
+        ) : null}
 
         <Pressable
           onPress={handleDismiss}

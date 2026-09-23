@@ -6,7 +6,7 @@
 import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
 import { RewardsProvider, useRewards } from '@/src/context/RewardsContext';
-import { useImportBackup } from '@/src/hooks/use-import-backup';
+import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-backup';
 import type { Goal, Reward } from '@/src/types';
 import { generateJSONExport, parseJSONImport } from '@/src/utils/export-data';
 import { type ImportMode } from '@/src/utils/import-data';
@@ -23,7 +23,9 @@ jest.mock('@/src/utils/notifications', () => ({
 const SAVE_DEBOUNCE_MS = 400;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const disk = new Error('disk full');
+const getItem = AsyncStorage.getItem as jest.Mock;
 const setItem = AsyncStorage.setItem as jest.Mock;
+const realGetItem = getItem.getMockImplementation()!;
 const realSetItem = setItem.getMockImplementation()!;
 const cancelled= notifications.cancelGoalNotifications as jest.Mock;
 
@@ -105,6 +107,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   consoleError.mockRestore();
+  getItem.mockImplementation(realGetItem);
   setItem.mockImplementation(realSetItem);
 });
 
@@ -319,6 +322,66 @@ describe('export, then import', () => {
     expect(rewards.rewards.map((r) => r.title)).toEqual(['My treat']);
     const storedRewards: Reward[] = JSON.parse((await AsyncStorage.getItem(REWARDS_KEY))!);
     expect(storedRewards.map((r) => r.title)).toEqual(['My treat']);
+  });
+
+  // Regression: if putting the rewards back failed too, that error replaced
+  // the real one, and the half-applied import went unreported.
+  it('says so when only part of a backup could be applied', async () => {
+    await seed([goal({ id: 1, title: 'Mine' })], [reward({ id: 2, title: 'My treat' })], 40);
+    const target = await renderApp();
+    const backup = generateJSONExport([goal({ id: 5 })], [reward({ id: 6, title: 'Backed-up treat' })], 100);
+    let rewardWrites = 0;
+    setItem.mockImplementation(async (key: string, value: string) => {
+      if (key === STORAGE_KEYS.GOALS) throw disk;
+      if (key === REWARDS_KEY && ++rewardWrites > 1) throw disk; // the import lands; putting it back fails
+      return realSetItem(key, value);
+    });
+
+    await expect(importFile(target.result, backup, 'merge')).rejects.toBeInstanceOf(PartialImportError);
+  });
+
+  // Regression: rewards were written before anything checked whether the
+  // goals could be - after a failed load, they were imported on their own.
+  it.each([
+    ['goals', STORAGE_KEYS.GOALS],
+    ['rewards', REWARDS_KEY],
+  ])('writes nothing if the %s have not loaded', async (_, unreadableKey) => {
+    await seed([goal({ id: 1, title: 'Mine' })], [reward({ id: 2, title: 'My treat' })], 40);
+    getItem.mockImplementation(async (key: string) => {
+      if (key === unreadableKey) throw disk;
+      return realGetItem(key);
+    });
+    const target = await renderApp();
+    setItem.mockClear();
+
+    await expect(
+      importFile(target.result, generateJSONExport([goal({ id: 5 })], [reward({ id: 6 })], 0), 'merge')
+    ).rejects.toThrow();
+
+    expect(setItem).not.toHaveBeenCalled();
+  });
+
+  // Regression: the import was built from the goals and rewards the screen
+  // had rendered before the file picker opened, so anything changed since was
+  // written over.
+  it('builds on the data as it is when applied, not when the screen rendered', async () => {
+    await seed([goal({ id: 1, title: 'Mine' })]);
+    const target = await renderApp();
+    const importBackup = target.result.current.importBackup; // captured, as the screen does
+    await act(async () => {
+      await target.result.current.goals.addGoal('Added meanwhile', 10, 0, 'x', 'increase', 1, 'daily');
+    });
+
+    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    await act(async () => {
+      await importBackup(parsed.data!, 'merge');
+    });
+
+    expect(target.result.current.goals.goals.map((g) => g.title).sort()).toEqual([
+      'Added meanwhile',
+      'Backed up',
+      'Mine',
+    ]);
   });
 
   it('adds everything alongside existing data with Merge, keeping the balance additive', async () => {

@@ -493,6 +493,66 @@ describe('repairing untrustworthy fields', () => {
     expect(kept.notes).toEqual([{ id: 'n', text: 'hi', createdAt: NOW }]);
   });
 
+  // Regression: a 'custom' period of 0 days (or none) ends as it starts, so
+  // an imported recurring goal reset on every launch and refresh.
+  it('only keeps a goal recurring if its period can end', () => {
+    const [zeroDays, noDays, ongoing, custom] = buildImport(
+      empty,
+      file({
+        goals: [
+          goal({ isRecurring: true, period: 'custom', customPeriodDays: 0 }),
+          goal({ isRecurring: true, period: 'custom' }),
+          goal({ isRecurring: true, period: 'ongoing' }),
+          goal({ isRecurring: true, period: 'custom', customPeriodDays: 3 }),
+        ],
+      }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(zeroDays).toMatchObject({ period: 'ongoing', isRecurring: undefined, customPeriodDays: undefined });
+    expect(noDays).toMatchObject({ period: 'ongoing', isRecurring: undefined });
+    expect(ongoing.isRecurring).toBeUndefined();
+    expect(custom).toMatchObject({ period: 'custom', isRecurring: true, customPeriodDays: 3 });
+  });
+
+  // Regression: import had its own copy of the rule, which let these in.
+  it('does not make a subgoal or an ultimate goal recurring', () => {
+    const [parent, child, ultimate] = buildImport(
+      empty,
+      file({
+        goals: [
+          goal({ id: 1, subGoals: [2], isRecurring: true, period: 'weekly' }),
+          goal({ id: 2, parentId: 1, isRecurring: true, period: 'daily' }),
+          goal({ id: 3, isUltimate: true, isRecurring: true, period: 'weekly' }),
+        ],
+      }),
+      'replace',
+      NOW
+    ).goals;
+
+    expect(parent.isRecurring).toBe(true);
+    expect(child.isRecurring).toBeUndefined();
+    expect(ultimate.isRecurring).toBeUndefined();
+  });
+
+  // Regression: target, current and cost were trusted to the parser, whose
+  // typeof check let Infinity through - saved as null.
+  it('drops records whose numbers cannot be stored', () => {
+    const next = buildImport(
+      empty,
+      file({
+        goals: [goal({ title: 'Kept' }), goal({ target: Infinity }), goal({ current: NaN }), goal({ title: ' ' })],
+        rewards: [reward({ title: 'Kept' }), reward({ pointsCost: Infinity })],
+      }),
+      'replace',
+      NOW
+    );
+
+    expect(next.goals.map((g) => g.title)).toEqual(['Kept']);
+    expect(next.rewards.map((r) => r.title)).toEqual(['Kept']);
+  });
+
   it('fills in reward defaults', () => {
     const broken = { ...reward(), description: undefined, icon: 3, createdAt: 'yesterday' } as unknown as Reward;
     const [repaired] = buildImport(empty, file({ rewards: [broken] }), 'replace', NOW).rewards;
@@ -571,6 +631,19 @@ describe('deriveLifetimePoints', () => {
 
   it('ignores a non-numeric points value', () => {
     expect(deriveLifetimePoints([goal({ isComplete: true, points: 'lots' as unknown as number })])).toBe(0);
+  });
+
+  // Regression: every subgoal was skipped, although awardPointsForGoal pays
+  // them out when their parent says so - so a derived total came up short.
+  it("counts subgoals whose parent awards their points, and only those", () => {
+    expect(
+      deriveLifetimePoints([
+        goal({ id: 1, subgoalsAwardPoints: true, points: 0 }),
+        goal({ id: 2, parentId: 1, isComplete: true, points: 30 }),
+        goal({ id: 3, points: 0 }),
+        goal({ id: 4, parentId: 3, isComplete: true, points: 99 }),
+      ])
+    ).toBe(30);
   });
 
   it('ignores a recurring goal with no usable points', () => {

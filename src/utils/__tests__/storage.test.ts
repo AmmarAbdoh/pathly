@@ -11,7 +11,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { REWARDS_KEY, STORAGE_KEYS } from '../../constants/storage-keys';
 import type { Goal, GoalTemplate, Reward } from '../../types';
 import { rewardsStorage } from '../rewards-storage';
-import { customTemplatesStorage, goalsStorage, storage, themeStorage } from '../storage';
+import {
+  customTemplatesStorage,
+  goalsStorage,
+  setAsideUnreadable,
+  storage,
+  themeStorage,
+  UnreadableDataError,
+} from '../storage';
 
 const getItem = AsyncStorage.getItem as jest.Mock;
 const setItem = AsyncStorage.setItem as jest.Mock;
@@ -48,14 +55,30 @@ describe('goalsStorage', () => {
 
   // Regression: these used to return [], which the context could not tell
   // apart from "no goals" - so the next save wrote over the unreadable data.
-  it('throws for stored data that is not an array', async () => {
-    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify({ not: 'an array' }));
-    await expect(goalsStorage.loadGoals()).rejects.toThrow('Failed to load goals');
+  // Retrying cannot fix data like this, so it is told apart from a failed
+  // read - and carries the raw value, so it can be kept aside.
+  it('throws UnreadableDataError, with the raw value, for data that is not a list', async () => {
+    const raw = JSON.stringify({ not: 'an array' });
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, raw);
+    await expect(goalsStorage.loadGoals()).rejects.toEqual(expect.any(UnreadableDataError));
+    await expect(goalsStorage.loadGoals()).rejects.toMatchObject({ raw });
   });
 
-  it('throws for corrupt JSON', async () => {
+  it('throws UnreadableDataError for corrupt JSON', async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
-    await expect(goalsStorage.loadGoals()).rejects.toThrow('Failed to load goals');
+    await expect(goalsStorage.loadGoals()).rejects.toMatchObject({ raw: '{corrupt' });
+  });
+
+  // Regression: a null entry crashed the migration (`goal.current`), which
+  // failed the load on every launch.
+  // Regression: a list is an object to typeof, and came out as a goal with no
+  // id or title.
+  it('skips entries that are not objects', async () => {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.GOALS,
+      JSON.stringify([null, 3, [1, 2], { id: 1, title: 'A', current: 0, target: 1 }])
+    );
+    expect((await goalsStorage.loadGoals()).map((g) => g.id)).toEqual([1]);
   });
 
   it('throws when the read itself fails', async () => {
@@ -137,6 +160,32 @@ describe('goalsStorage', () => {
 
   it('keeps `storage` as a backwards-compatible alias', () => {
     expect(storage).toBe(goalsStorage);
+  });
+});
+
+describe('setAsideUnreadable', () => {
+  it('keeps the value under a key beside it, and empties the original', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+
+    await setAsideUnreadable(STORAGE_KEYS.GOALS, '{corrupt');
+
+    const keys = await AsyncStorage.getAllKeys();
+    const aside = keys.find((key) => key.startsWith(`${STORAGE_KEYS.GOALS}.unreadable.`))!;
+    expect(await AsyncStorage.getItem(aside)).toBe('{corrupt');
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.GOALS)).toBeNull();
+  });
+
+  it('moves nothing when the copy cannot be written', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
+    setItem.mockRejectedValueOnce(disk);
+
+    await expect(setAsideUnreadable(STORAGE_KEYS.GOALS, '{corrupt')).rejects.toBe(disk);
+    expect(await AsyncStorage.getItem(STORAGE_KEYS.GOALS)).toBe('{corrupt');
+  });
+
+  it('still succeeds when only removing the original fails', async () => {
+    removeItem.mockRejectedValueOnce(disk);
+    await expect(setAsideUnreadable(STORAGE_KEYS.GOALS, 'x')).resolves.toBeUndefined();
   });
 });
 
@@ -240,10 +289,10 @@ describe('rewardsStorage', () => {
     await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
 
     await AsyncStorage.setItem(REWARDS_KEY, '{corrupt');
-    await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
+    await expect(rewardsStorage.loadRewards()).rejects.toEqual(expect.any(UnreadableDataError));
 
     await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify({ not: 'an array' }));
-    await expect(rewardsStorage.loadRewards()).rejects.toThrow('Failed to load rewards');
+    await expect(rewardsStorage.loadRewards()).rejects.toEqual(expect.any(UnreadableDataError));
   });
 
   it('clears rewards', async () => {

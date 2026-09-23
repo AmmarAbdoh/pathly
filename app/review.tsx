@@ -279,7 +279,7 @@ export default function ReviewScreen() {
                           {goal.title}
                         </Text>
                         <Text style={[styles.goalDate, { color: theme.colors.textSecondary }]}>
-                          {formattedDate} • {formatNumber(goal.points, language)} pts
+                          {formattedDate} • {formatNumber(goal.points, language)} {t.goalCard.points}
                         </Text>
                       </View>
                     </View>

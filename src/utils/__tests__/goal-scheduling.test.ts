@@ -112,39 +112,54 @@ describe('filterActiveGoals', () => {
 
 describe('getScheduleDescription', () => {
   it('describes no schedule as every day', () => {
-    expect(getScheduleDescription(undefined, en)).toBe('Every day');
+    expect(getScheduleDescription(undefined, en, 'en')).toBe('Every day');
   });
 
   it('lists chosen weekdays', () => {
-    expect(getScheduleDescription({ daysOfWeek: [1, 3, 5] }, en)).toBe('Every Mon, Wed, Fri');
+    expect(getScheduleDescription({ daysOfWeek: [1, 3, 5] }, en, 'en')).toBe('Every Mon, Wed, Fri');
   });
 
   it('lists dates of the month in ascending order', () => {
-    expect(getScheduleDescription({ datesOfMonth: [15, 1, 8] }, en)).toBe(
+    expect(getScheduleDescription({ datesOfMonth: [15, 1, 8] }, en, 'en')).toBe(
       'Monthly on day 1, 8, 15'
     );
   });
 
   it('does not mutate the caller\'s datesOfMonth array', () => {
     const schedule: GoalSchedule = { datesOfMonth: [15, 1, 8] };
-    getScheduleDescription(schedule, en);
+    getScheduleDescription(schedule, en, 'en');
     expect(schedule.datesOfMonth).toEqual([15, 1, 8]);
   });
 
   it('describes a date range', () => {
-    expect(getScheduleDescription({ dateRangeStart: 20, dateRangeEnd: 25 }, en)).toBe(
+    expect(getScheduleDescription({ dateRangeStart: 20, dateRangeEnd: 25 }, en, 'en')).toBe(
       'Monthly from day 20 to 25'
     );
   });
 
   it('localizes into Arabic', () => {
-    expect(getScheduleDescription(undefined, ar)).toBe('كل يوم');
-    expect(getScheduleDescription({ daysOfWeek: [1] }, ar)).toContain('إثنين');
-    expect(getScheduleDescription({ dateRangeStart: 20, dateRangeEnd: 25 }, ar)).toContain('20');
+    expect(getScheduleDescription(undefined, ar, 'ar')).toBe('كل يوم');
+    expect(getScheduleDescription({ daysOfWeek: [1] }, ar, 'ar')).toContain('إثنين');
+    expect(getScheduleDescription({ dateRangeStart: 20, dateRangeEnd: 25 }, ar, 'ar')).toContain('٢٠');
+  });
+
+  it('separates a list with the Arabic comma in Arabic', () => {
+    expect(getScheduleDescription({ daysOfWeek: [1, 3] }, ar, 'ar')).toBe(
+      ar.everyDays.replace('{days}', 'إثنين، أربعاء')
+    );
+    expect(getScheduleDescription({ datesOfMonth: [8, 1] }, ar, 'ar')).toBe(
+      ar.monthlyOnDays.replace('{dates}', '١، ٨')
+    );
+  });
+
+  it('writes the numbers in Arabic digits in Arabic', () => {
+    expect(getScheduleDescription({ dateRangeStart: 20, dateRangeEnd: 25 }, ar, 'ar')).toBe(
+      ar.monthlyFromTo.replace('{start}', '٢٠').replace('{end}', '٢٥')
+    );
   });
 
   it('falls back to every day for an empty schedule', () => {
-    expect(getScheduleDescription({}, en)).toBe('Every day');
+    expect(getScheduleDescription({}, en, 'en')).toBe('Every day');
   });
 });
 

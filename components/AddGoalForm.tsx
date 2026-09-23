@@ -8,6 +8,8 @@ import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
+import { formatNumber } from '@/src/utils/number-formatting';
+import { canRecur, isWholeDays } from '@/src/utils/recurring-goals';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -54,6 +56,8 @@ interface AddGoalFormProps {
     isRecurring?: boolean;
     icon?: string;
     linkedRewardId?: number;
+    subgoalsAwardPoints?: boolean;
+    schedule?: GoalSchedule;
   };
 }
 
@@ -62,7 +66,7 @@ interface AddGoalFormProps {
  */
 export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode = false, isCompleted = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
   const { theme } = useTheme();
-  const { t, isRTL } = useLanguage();
+  const { t, isRTL, language } = useLanguage();
   const { getAvailableRewards } = useRewards();
   
   const [title, setTitle] = useState(initialValues?.title || '');
@@ -76,8 +80,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
   const [customPeriodDays, setCustomPeriodDays] = useState(initialValues?.customPeriodDays?.toString() || '');
   const [isUltimate, setIsUltimate] = useState(initialValues?.isUltimate || false);
   const [isRecurring, setIsRecurring] = useState(initialValues?.isRecurring || false);
-  const [schedule, setSchedule] = useState<GoalSchedule | undefined>(undefined);
-  const [subgoalsAwardPoints, setSubgoalsAwardPoints] = useState(false); // Default: subgoals don't award points
+  const [schedule, setSchedule] = useState<GoalSchedule | undefined>(initialValues?.schedule);
+  // Default: subgoals don't award points
+  const [subgoalsAwardPoints, setSubgoalsAwardPoints] = useState(initialValues?.subgoalsAwardPoints ?? false);
   const [selectedIcon, setSelectedIcon] = useState(initialValues?.icon || DEFAULT_GOAL_ICON);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [selectedIconCategory, setSelectedIconCategory] = useState<string>('achievements'); // Track selected category in icon picker
@@ -88,6 +93,17 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingGoalData, setPendingGoalData] = useState<any>(null);
+
+  // The rule every other way in applies. A custom period needs its length
+  // before it can recur.
+  const canBeRecurring = canRecur({
+    period,
+    customPeriodDays: Number(customPeriodDays),
+    parentId,
+    isUltimate,
+  });
+  const recurring = isRecurring && canBeRecurring;
+  const resetHint = period === 'ongoing' ? null : t.goalForm.recurringResets[period];
 
   // Apply template data when it changes
   useEffect(() => {
@@ -155,7 +171,12 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     setCustomPeriodDays('');
     setIsUltimate(false);
     setIsRecurring(false);
+    setSchedule(undefined);
+    setSubgoalsAwardPoints(false);
     setSelectedIcon(DEFAULT_GOAL_ICON);
+    // The add screen stays mounted, so anything left here went into the next
+    // goal - which is how one reward came to be linked to two goals.
+    setLinkedRewardId(undefined);
     setErrors({});
     setShowConfirmModal(false);
     setPendingGoalData(null);
@@ -207,8 +228,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     
     if (period === 'custom' && !customPeriodDays.trim()) {
       newErrors.customPeriodDays = t.validation.customPeriodRequired;
-    } else if (period === 'custom' && (isNaN(parseFloat(customPeriodDays)) || parseFloat(customPeriodDays) <= 0)) {
-      newErrors.customPeriodDays = t.validation.customPeriodPositive;
+    } else if (period === 'custom' && !isWholeDays(Number(customPeriodDays))) {
+      // "1.5" used to pass, and an import then took the period away.
+      newErrors.customPeriodDays = t.validation.customPeriodWholeDays;
     }
     
     if (Object.keys(newErrors).length > 0) {
@@ -226,21 +248,23 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       direction,
       points: parentId ? (points.trim() ? parseFloat(points) : 0) : parseFloat(points), // For subgoals, default to 0 if empty
       period,
-      customPeriodDays: period === 'custom' ? parseFloat(customPeriodDays) : undefined,
+      customPeriodDays: period === 'custom' ? Number(customPeriodDays) : undefined,
       parentId,
       isUltimate,
-      isRecurring,
+      isRecurring: recurring,
       icon: selectedIcon,
       linkedRewardId,
       subgoalsAwardPoints: isUltimate ? subgoalsAwardPoints : undefined, // Only set for ultimate goals
-      schedule,
+      // Only offered for recurring goals. One left from before unticking
+      // recurring would still hide the goal on the other days.
+      schedule: recurring ? schedule : undefined,
     };
 
     // Clear errors and show confirmation
     setErrors({});
     setPendingGoalData(formData);
     setShowConfirmModal(true);
-  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t]);
+  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, recurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t]);
 
   /**
    * Confirm and add goal
@@ -319,6 +343,17 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     () => [styles.button, { backgroundColor: theme.colors.primary }],
     [theme]
   );
+
+  // An ultimate goal's target is its subgoals, not an amount to show.
+  const confirmMessage = pendingGoalData
+    ? [
+        `${t.goalForm.titleLabel}: ${pendingGoalData.title}`,
+        ...(pendingGoalData.isUltimate
+          ? []
+          : [`${t.goalForm.targetLabel}: ${formatNumber(pendingGoalData.target, language)} ${pendingGoalData.unit}`]),
+        `${t.goalForm.points}: ${formatNumber(pendingGoalData.points, language)}`,
+      ].join('\n')
+    : '';
 
   /**
    * Render error message for a field
@@ -496,7 +531,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
           {renderError('target')}
 
           {/* Progress Preview */}
-          {current && target && (
+          {current && target ? (
             <View style={[styles.previewContainer, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
               <Text style={[styles.previewText, { color: theme.colors.primary }]}>
                 {direction === 'increase' 
@@ -508,7 +543,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
                 📊 {t.goalForm.progressPreview.replace('{{current}}', current).replace('{{target}}', target)}
               </Text>
             </View>
-          )}
+          ) : null}
 
       {/* Unit Input with Suggestions */}
       <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.unit}</Text>
@@ -631,7 +666,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         // Subgoals: Make points optional
         <>
           <Text style={[labelStyle, styles.sectionLabel]}>
-            {t.goalForm.points} (Optional)
+            {t.goalForm.pointsOptional}
           </Text>
           <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
             {t.goalForm.subgoalPointsHelper}
@@ -652,7 +687,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
             }}
             editable={!isCompleted}
             accessibilityLabel={t.goalForm.pointsLabel}
-            accessibilityHint="Optional points to award when completing this subgoal"
+            accessibilityHint={t.goalForm.subgoalPointsHint}
           />
           {renderError('points')}
         </>
@@ -681,8 +716,8 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         </>
       )}
 
-      {/* Recurring Goal Checkbox (only if not ultimate and not subgoal) */}
-      {!parentId && !isUltimate && (
+      {/* Recurring Goal Checkbox (only for top-level goals whose period ends) */}
+      {canBeRecurring ? (
         <Pressable
           style={styles.checkboxContainer}
           onPress={() => !isCompleted && setIsRecurring(!isRecurring)}
@@ -702,20 +737,20 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
               {t.goalForm.recurringGoal}
             </Text>
             <Text style={[styles.checkboxHint, { color: theme.colors.textSecondary }]}>
-              {t.messages.automaticallyResets.replace('{period}', period !== 'custom' ? period : customPeriodDays + ' ' + t.messages.day)}
+              {resetHint}
             </Text>
           </View>
         </Pressable>
-      )}
+      ) : null}
 
       {/* Goal Schedule Picker (only if recurring) */}
-      {!parentId && !isUltimate && (
+      {canBeRecurring ? (
         <GoalSchedulePicker
           schedule={schedule}
           onScheduleChange={setSchedule}
           isRecurring={isRecurring}
         />
-      )}
+      ) : null}
 
       {/* Linked Reward Dropdown */}
       <Text style={[labelStyle, styles.sectionLabel]}>{t.goalForm.linkedReward}</Text>
@@ -728,7 +763,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
           items={[
             { label: t.goalForm.noReward, value: 0 },
             ...getAvailableRewards().map(reward => ({
-              label: `${reward.icon} ${reward.title} - ${reward.pointsCost} pts`,
+              label: `${reward.icon} ${reward.title} - ${formatNumber(reward.pointsCost, language)} ${t.goalCard.points}`,
               value: reward.id,
             }))
           ]}
@@ -840,9 +875,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       {/* Confirmation Modal */}
       <ConfirmationModal
         visible={showConfirmModal}
-        title={t.common.add + ' ' + t.home.addGoal}
-        message={`${t.goalForm.titleLabel}: ${pendingGoalData?.title}\n${t.goalForm.targetLabel}: ${pendingGoalData?.target} ${pendingGoalData?.unit}\n${t.goalForm.points}: ${pendingGoalData?.points}`}
-        confirmText={t.common.add}
+        title={editMode ? t.goalForm.confirmEditTitle : t.goalForm.confirmAddTitle}
+        message={confirmMessage}
+        confirmText={editMode ? t.common.save : t.common.add}
         cancelText={t.common.cancel}
         onConfirm={confirmAddGoal}
         onCancel={cancelAddGoal}

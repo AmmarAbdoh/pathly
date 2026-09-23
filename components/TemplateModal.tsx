@@ -3,6 +3,7 @@
  * Reusable modal for goal/reward templates with category filtering
  */
 
+import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
@@ -76,6 +77,7 @@ function TemplateModal<TItem, TCategory extends string>({
   searchPlaceholder,
 }: TemplateModalProps<TItem, TCategory>) {
   const { theme } = useTheme();
+  const { t } = useLanguage();
   const [selectedCategory, setSelectedCategory] = useState<TCategory | 'all'>(initialCategory);
   const [renderedCategory, setRenderedCategory] = useState<TCategory | 'all'>(initialCategory);
   const [isListReady, setIsListReady] = useState(false);
@@ -165,7 +167,7 @@ function TemplateModal<TItem, TCategory extends string>({
                 <TouchableOpacity
                   style={styles.clearSearchButton}
                   onPress={() => setSearchQuery('')}
-                  accessibilityLabel="Clear search"
+                  accessibilityLabel={t.common.clear}
                 >
                   <Ionicons name="close-circle" size={18} color={theme.colors.textSecondary} />
                 </TouchableOpacity>

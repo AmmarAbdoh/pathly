@@ -4,7 +4,8 @@
  */
 
 import type { Translations } from '../i18n/translations';
-import { Goal, GoalSchedule } from '../types';
+import { Goal, GoalSchedule, Language } from '../types';
+import { formatNumber } from './number-formatting';
 
 /** The slice of translations the schedule formatters need. */
 export type ScheduleTranslations = Translations['schedule'];
@@ -73,8 +74,11 @@ export function isEveryDaySchedule(schedule?: GoalSchedule): boolean {
  */
 export function getScheduleDescription(
   schedule: GoalSchedule | undefined,
-  t: ScheduleTranslations
+  t: ScheduleTranslations,
+  language: Language
 ): string {
+  const n = (value: number) => formatNumber(value, language);
+
   if (!schedule) {
     return t.everyDay;
   }
@@ -83,22 +87,25 @@ export function getScheduleDescription(
   if (schedule.daysOfWeek && schedule.daysOfWeek.length > 0) {
     const days = schedule.daysOfWeek
       .map((d) => t.weekdayShort[d] ?? String(d))
-      .join(', ');
+      .join(t.listSeparator);
     return t.everyDays.replace('{days}', days);
   }
 
   // Specific dates of month. Copy before sorting - the array belongs to the
   // stored goal and must not be mutated.
   if (schedule.datesOfMonth && schedule.datesOfMonth.length > 0) {
-    const dates = [...schedule.datesOfMonth].sort((a, b) => a - b).join(', ');
+    const dates = [...schedule.datesOfMonth]
+      .sort((a, b) => a - b)
+      .map(n)
+      .join(t.listSeparator);
     return t.monthlyOnDays.replace('{dates}', dates);
   }
 
   // Date range
   if (schedule.dateRangeStart !== undefined && schedule.dateRangeEnd !== undefined) {
     return t.monthlyFromTo
-      .replace('{start}', String(schedule.dateRangeStart))
-      .replace('{end}', String(schedule.dateRangeEnd));
+      .replace('{start}', n(schedule.dateRangeStart))
+      .replace('{end}', n(schedule.dateRangeEnd));
   }
 
   return t.everyDay;

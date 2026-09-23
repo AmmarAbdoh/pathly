@@ -82,6 +82,29 @@ function failRewardsReads() {
   });
 }
 
+/** Fail every write of `key` until `recover()` is called. */
+function failWrites(key: string) {
+  let failing = true;
+  setItem.mockImplementation(async (writeKey: string, value: string) => {
+    if (failing && writeKey === key) throw disk;
+    return realSetItem(writeKey, value);
+  });
+  return {
+    recover: () => {
+      failing = false;
+    },
+  };
+}
+
+async function seedLinkedGoal(rewardCost: number, lifetime = 0, goalPoints = 50) {
+  await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7, pointsCost: rewardCost })]));
+  await AsyncStorage.setItem(
+    STORAGE_KEYS.GOALS,
+    JSON.stringify([makeGoal({ linkedRewardId: 7, points: goalPoints })])
+  );
+  await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, String(lifetime));
+}
+
 let consoleError: jest.SpyInstance;
 
 beforeEach(async () => {
@@ -223,6 +246,25 @@ it('takes a change back off the screen when it cannot be saved', async () => {
   expect(result.current.getAvailableRewards()).toHaveLength(1);
 });
 
+// Regression: changes overlapped. When the later one's write failed, its
+// undo restored the state it had built on - including an earlier change whose
+// own write had failed too, and which the user had been told failed.
+it('never shows a change that failed, however changes overlap', async () => {
+  await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward()]));
+  const { result } = await renderRewards();
+  const before = result.current.rewards;
+  failWrites(REWARDS_KEY);
+
+  await act(async () => {
+    const redeem = result.current.redeemReward(1);
+    const add = result.current.addReward('New', '', 10, '🎁');
+    await expect(redeem).rejects.toBe(disk);
+    await expect(add).rejects.toBe(disk);
+  });
+
+  expect(result.current.rewards).toEqual(before);
+});
+
 it('does not write when a change changes nothing', async () => {
   await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward()]));
   const { result } = await renderRewards();
@@ -237,7 +279,7 @@ it('does not write when a change changes nothing', async () => {
 
 describe('linked rewards', () => {
   it('redeems a goal-linked reward, in memory and on disk, when the goal is finished', async () => {
-    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7 })]));
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7, pointsCost: 30 })]));
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify([makeGoal({ linkedRewardId: 7 })]));
     const { result } = await renderBoth();
 
@@ -253,7 +295,7 @@ describe('linked rewards', () => {
   // this provider still held the reward as unredeemed - and its next save
   // wrote that back, un-redeeming it and effectively refunding its cost.
   it('keeps the redemption through later reward changes', async () => {
-    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7 })]));
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7, pointsCost: 30 })]));
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify([makeGoal({ linkedRewardId: 7 })]));
     const { result } = await renderBoth();
 
@@ -265,6 +307,134 @@ describe('linked rewards', () => {
     });
 
     expect((await storedRewards()).find((r) => r.id === 7)?.isRedeemed).toBe(true);
+  });
+
+  // Regression: the detail screen's "Mark complete" sets the target (which
+  // completes the goal) and then calls finishGoal - which saw the goal already
+  // complete, so nothing was ever redeemed.
+  it('redeems when the goal is completed by reaching its target', async () => {
+    await seedLinkedGoal(30);
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.updateGoal(1, 10);
+      await result.current.goals.finishGoal(1);
+    });
+
+    expect(result.current.rewards.getRedeemedRewards().map((r) => r.id)).toEqual([7]);
+  });
+
+  // Regression: auto-redeem skipped the check the Rewards screen makes, so
+  // the available balance (earned - spent) could go negative.
+  it('leaves a reward the user cannot afford yet to be redeemed by hand', async () => {
+    await seedLinkedGoal(500, 40, 10);
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+
+    expect(result.current.rewards.getAvailableRewards().map((r) => r.id)).toEqual([7]);
+    expect(result.current.rewards.storageError).toBeNull();
+  });
+
+  it('counts what has already been spent', async () => {
+    // 100 earned + 20 from the goal, 80 already spent: 40 left, short of 50.
+    await seedLinkedGoal(50, 100, 20);
+    await AsyncStorage.setItem(
+      REWARDS_KEY,
+      JSON.stringify([
+        makeReward({ id: 7, pointsCost: 50 }),
+        makeReward({ id: 8, pointsCost: 80, isRedeemed: true, redeemedAt: 1 }),
+      ])
+    );
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+
+    expect(result.current.rewards.getAvailableRewards().map((r) => r.id)).toEqual([7]);
+  });
+
+  it('counts the points the goal itself just earned', async () => {
+    await seedLinkedGoal(50, 0, 50);
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+
+    expect(result.current.rewards.getRedeemedRewards().map((r) => r.id)).toEqual([7]);
+  });
+
+  // Regression: the listener fired even when the completion itself could not
+  // be saved, redeeming for good a reward whose completion the reload then
+  // threw away.
+  it('redeems nothing for a completion that cannot be saved', async () => {
+    await seedLinkedGoal(30);
+    let goalsReadFails = true;
+    getItem.mockImplementation(async (key: string) => {
+      if (goalsReadFails && key === STORAGE_KEYS.GOALS) throw disk;
+      return realGetItem(key);
+    });
+    const { result } = await renderBoth();
+    goalsReadFails = false;
+
+    await act(async () => {
+      // Worth more than the reward costs, so only the unsaved completion
+      // stops the redemption.
+      await result.current.goals.addGoal(
+        'Linked', 10, 0, 'x', 'increase', 50, 'daily',
+        undefined, undefined, false, false, undefined, undefined, 7 // linkedRewardId
+      );
+    });
+    const [added] = result.current.goals.goals;
+    await act(async () => {
+      await result.current.goals.finishGoal(added.id);
+    });
+
+    expect((await storedRewards())[0].isRedeemed).toBe(false);
+  });
+
+  // Regression: a redemption that failed was only logged - never retried, and
+  // never shown to the user.
+  it('reports a redemption that could not be saved, and Retry makes it', async () => {
+    await seedLinkedGoal(30);
+    const { result } = await renderBoth();
+    const storage = failWrites(REWARDS_KEY);
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+    expect(result.current.rewards.storageError).toBe('save');
+    expect(result.current.goals.goals[0].isComplete).toBe(true);
+
+    storage.recover();
+    await act(async () => {
+      await result.current.rewards.retryStorage();
+    });
+
+    expect(result.current.rewards.storageError).toBeNull();
+    expect((await storedRewards())[0].isRedeemed).toBe(true);
+  });
+
+  it('makes a redemption once rewards that failed to load are loaded', async () => {
+    await seedLinkedGoal(30);
+    failRewardsReads();
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+    expect(result.current.rewards.storageError).toBe('load');
+
+    getItem.mockImplementation(realGetItem);
+    await act(async () => {
+      await result.current.rewards.retryStorage();
+    });
+
+    expect(result.current.rewards.getRedeemedRewards().map((r) => r.id)).toEqual([7]);
   });
 
   it('leaves an already-redeemed or missing linked reward alone', async () => {
@@ -285,7 +455,7 @@ describe('linked rewards', () => {
   });
 
   it('still completes the goal when the linked reward cannot be redeemed', async () => {
-    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7 })]));
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7, pointsCost: 30 })]));
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify([makeGoal({ linkedRewardId: 7 })]));
     const { result } = await renderBoth();
     setItem.mockImplementation(async (key: string, value: string) => {
@@ -303,7 +473,7 @@ describe('linked rewards', () => {
   });
 
   it('stops listening once unmounted', async () => {
-    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7 })]));
+    await AsyncStorage.setItem(REWARDS_KEY, JSON.stringify([makeReward({ id: 7, pointsCost: 30 })]));
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify([makeGoal({ linkedRewardId: 7 })]));
     const { result, unmount } = await renderBoth();
     const { finishGoal } = result.current.goals;
@@ -335,15 +505,21 @@ describe('a failed load', () => {
     expect((await storedRewards()).map((r) => r.title)).toEqual(['Keep me']);
   });
 
-  it('treats corrupt data as a failed load, not as no rewards', async () => {
+  // Regression: corrupt data failed every load, so nothing could ever be
+  // changed again - with no way out but clearing the app's data.
+  it('keeps unreadable data aside and starts over, rather than blocking for good', async () => {
     await AsyncStorage.setItem(REWARDS_KEY, '{corrupt');
     const { result } = await renderRewards();
 
-    expect(result.current.storageError).toBe('load');
+    expect(result.current.storageError).toBe('unreadable');
     await act(async () => {
-      await expect(result.current.addReward('New', '', 10, '🎁')).rejects.toThrow();
+      await result.current.addReward('New', '', 10, '🎁');
     });
-    expect(await AsyncStorage.getItem(REWARDS_KEY)).toBe('{corrupt');
+
+    expect((await storedRewards()).map((r) => r.title)).toEqual(['New']);
+    const keys = await AsyncStorage.getAllKeys();
+    const aside = keys.find((key) => key.startsWith(`${REWARDS_KEY}.unreadable.`))!;
+    expect(await AsyncStorage.getItem(aside)).toBe('{corrupt');
   });
 
   it('raises the error again on the next change after it was dismissed', async () => {

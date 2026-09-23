@@ -7,6 +7,7 @@ import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { formatNumber } from '@/src/utils/number-formatting';
 import {
   formatHourOfDay,
   generateAnalyticsInsights,
@@ -144,7 +145,7 @@ export default function AnalyticsScreen() {
                 </View>
                 <View style={[styles.statItem, { backgroundColor: theme.colors.background }]}>
                   <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-                    {analytics.overallCompletionRate.toFixed(0)}%
+                    {formatNumber(Math.round(analytics.overallCompletionRate), language)}%
                   </Text>
                   <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
                     {t.analytics.rate}
@@ -178,15 +179,16 @@ export default function AnalyticsScreen() {
                           {getCategoryName(category.category)}
                         </Text>
                         <Text style={[styles.performanceRate, { color: theme.colors.primary }]}>
-                          {category.completionRate.toFixed(0)}%
+                          {formatNumber(Math.round(category.completionRate), language)}%
                         </Text>
                       </View>
                       <View style={styles.performanceStats}>
                         <Text style={[styles.performanceDetail, { color: theme.colors.textSecondary }]}>
-                          {category.completedGoals}/{category.totalGoals} {t.analytics.goals}
+                          {formatNumber(category.completedGoals, language)}/
+                          {formatNumber(category.totalGoals, language)} {t.analytics.goals}
                         </Text>
                         <Text style={[styles.performanceDetail, { color: theme.colors.textSecondary }]}>
-                          {category.totalPoints} {t.analytics.points}
+                          {formatNumber(category.totalPoints, language)} {t.analytics.points}
                         </Text>
                       </View>
                       {/* Progress bar */}
@@ -224,16 +226,18 @@ export default function AnalyticsScreen() {
                           {getPeriodName(period.period)}
                         </Text>
                         <Text style={[styles.performanceRate, { color: theme.colors.primary }]}>
-                          {period.completionRate.toFixed(0)}%
+                          {formatNumber(Math.round(period.completionRate), language)}%
                         </Text>
                       </View>
                       <View style={styles.performanceStats}>
                         <Text style={[styles.performanceDetail, { color: theme.colors.textSecondary }]}>
-                          {period.completedGoals}/{period.totalGoals} {t.analytics.goals}
+                          {formatNumber(period.completedGoals, language)}/
+                          {formatNumber(period.totalGoals, language)} {t.analytics.goals}
                         </Text>
                         {period.averageCompletionTime !== undefined && (
                           <Text style={[styles.performanceDetail, { color: theme.colors.textSecondary }]}>
-                            ~{Math.round(period.averageCompletionTime)} {t.analytics.days}
+                            ~{formatNumber(Math.round(period.averageCompletionTime), language)}{' '}
+                            {t.analytics.days}
                           </Text>
                         )}
                       </View>

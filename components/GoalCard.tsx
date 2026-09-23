@@ -107,8 +107,9 @@ const GoalCard = memo<GoalCardProps>(
     );
 
     const scheduleText = useMemo(
-      () => (isEveryDaySchedule(schedule) ? null : getScheduleDescription(schedule, t.schedule)),
-      [schedule, t.schedule]
+      () =>
+        isEveryDaySchedule(schedule) ? null : getScheduleDescription(schedule, t.schedule, language),
+      [schedule, t.schedule, language]
     );
 
     /**

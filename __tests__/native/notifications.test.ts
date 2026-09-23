@@ -10,6 +10,7 @@
 
 import { Platform } from 'react-native';
 import { parseTrigger } from 'expo-notifications/build/scheduleNotificationAsync';
+import { translations } from '@/src/i18n/translations';
 import type { Goal } from '@/src/types';
 // jest.mock calls are hoisted above imports, so the mocks below apply to them.
 import * as Notifications from 'expo-notifications';
@@ -56,6 +57,9 @@ const goal = (overrides: Partial<Goal> = {}): Goal =>
     ...overrides,
   }) as Goal;
 
+const en = translations.en.notifications;
+const ar = translations.ar.notifications;
+
 let consoleError: jest.SpyInstance;
 
 beforeEach(() => {
@@ -73,7 +77,7 @@ afterEach(() => {
 
 describe('permissions', () => {
   it('does not prompt when permission is already granted', async () => {
-    expect(await requestNotificationPermissions()).toBe(true);
+    expect(await requestNotificationPermissions(en.channelName)).toBe(true);
     expect(mocked.requestPermissionsAsync).not.toHaveBeenCalled();
   });
 
@@ -81,29 +85,30 @@ describe('permissions', () => {
     mocked.getPermissionsAsync.mockResolvedValue(denied);
 
     mocked.requestPermissionsAsync.mockResolvedValueOnce(granted);
-    expect(await requestNotificationPermissions()).toBe(true);
+    expect(await requestNotificationPermissions(en.channelName)).toBe(true);
 
     mocked.requestPermissionsAsync.mockResolvedValueOnce(denied);
-    expect(await requestNotificationPermissions()).toBe(false);
+    expect(await requestNotificationPermissions(en.channelName)).toBe(false);
   });
 
   it('creates the Android channel only on Android', async () => {
-    await requestNotificationPermissions();
+    await requestNotificationPermissions(en.channelName);
     expect(mocked.setNotificationChannelAsync).not.toHaveBeenCalled();
 
     const os = jest.replaceProperty(Platform, 'OS', 'android');
-    await requestNotificationPermissions();
+    await requestNotificationPermissions(ar.channelName);
     os.restore();
 
+    // Named in the user's language: Android shows it in the app's settings.
     expect(mocked.setNotificationChannelAsync).toHaveBeenCalledWith(
       'goal-reminders',
-      expect.objectContaining({ importance: Notifications.AndroidImportance.HIGH })
+      expect.objectContaining({ name: ar.channelName, importance: Notifications.AndroidImportance.HIGH })
     );
   });
 
   it('reports false instead of throwing when the platform call fails', async () => {
     mocked.getPermissionsAsync.mockRejectedValue(new Error('boom'));
-    expect(await requestNotificationPermissions()).toBe(false);
+    expect(await requestNotificationPermissions(en.channelName)).toBe(false);
     expect(await checkNotificationPermissions()).toBe(false);
   });
 
@@ -115,13 +120,28 @@ describe('permissions', () => {
 });
 
 describe('scheduleGoalNotification', () => {
+  // Regression: the ones scheduled before the failure were never returned, so
+  // nothing could cancel them - they fired weekly for good.
+  it('cancels what it scheduled when a later one fails', async () => {
+    mocked.scheduleNotificationAsync
+      .mockResolvedValueOnce('first')
+      .mockResolvedValueOnce('second')
+      .mockRejectedValueOnce(new Error('too many pending'));
+
+    await expect(scheduleGoalNotification(goal({ notificationDays: [1, 2, 3, 4] }), en)).rejects.toThrow(
+      'too many pending'
+    );
+
+    expect(mocked.cancelScheduledNotificationAsync.mock.calls.map(([id]) => id)).toEqual(['first', 'second']);
+  });
+
   const triggers = () =>
     mocked.scheduleNotificationAsync.mock.calls.map(([request]) => request.trigger);
 
   // Regression: the trigger had no `type`, so expo-notifications treated it as
   // "deliver now" - once, immediately - instead of weekly at the chosen time.
   it('produces triggers the library parses as weekly at the chosen time', async () => {
-    await scheduleGoalNotification(goal({ notificationDays: [1] })); // Monday
+    await scheduleGoalNotification(goal({ notificationDays: [1] }), en); // Monday
 
     const [trigger] = triggers();
     expect(parseTrigger(trigger as never)).toEqual({
@@ -134,19 +154,28 @@ describe('scheduleGoalNotification', () => {
   });
 
   it('schedules one reminder per selected day and returns their ids', async () => {
-    const ids = await scheduleGoalNotification(goal({ notificationDays: [0, 3, 6] }));
+    const ids = await scheduleGoalNotification(goal({ notificationDays: [0, 3, 6] }), en);
 
     expect(ids).toEqual(['id-0', 'id-1', 'id-2']);
     expect(triggers().map((t) => (t as { weekday: number }).weekday)).toEqual([1, 4, 7]);
   });
 
   it('defaults to every day when no days are chosen', async () => {
-    const ids = await scheduleGoalNotification(goal({ notificationDays: [] }));
+    const ids = await scheduleGoalNotification(goal({ notificationDays: [] }), en);
     expect(ids).toHaveLength(7);
   });
 
+  // Regression: the reminder was always in English.
+  it('writes the reminder in the language it is given', async () => {
+    await scheduleGoalNotification(goal({ title: 'قراءة', notificationDays: [2] }), ar);
+
+    const [[request]] = mocked.scheduleNotificationAsync.mock.calls;
+    expect(request.content.title).toBe(ar.reminderTitle);
+    expect(request.content.body).toBe(ar.reminderBody.replace('{goal}', 'قراءة'));
+  });
+
   it('names the goal in the reminder and links back to it', async () => {
-    await scheduleGoalNotification(goal({ notificationDays: [2] }));
+    await scheduleGoalNotification(goal({ notificationDays: [2] }), en);
 
     const [[request]] = mocked.scheduleNotificationAsync.mock.calls;
     expect(request.content.body).toContain('Read');
@@ -154,31 +183,38 @@ describe('scheduleGoalNotification', () => {
   });
 
   it('cancels a goal’s previous reminders before rescheduling', async () => {
-    await scheduleGoalNotification(goal({ notificationIds: ['old-1', 'old-2'], notificationDays: [1] }));
+    await scheduleGoalNotification(goal({ notificationIds: ['old-1', 'old-2'], notificationDays: [1] }), en);
 
     expect(mocked.cancelScheduledNotificationAsync.mock.calls).toEqual([['old-1'], ['old-2']]);
   });
 
   it('schedules nothing when reminders are disabled or have no time', async () => {
-    expect(await scheduleGoalNotification(goal({ notificationsEnabled: false }))).toEqual([]);
-    expect(await scheduleGoalNotification(goal({ notificationTime: undefined }))).toEqual([]);
+    expect(await scheduleGoalNotification(goal({ notificationsEnabled: false }), en)).toEqual([]);
+    expect(await scheduleGoalNotification(goal({ notificationTime: undefined }), en)).toEqual([]);
     expect(mocked.scheduleNotificationAsync).not.toHaveBeenCalled();
   });
 
   it('refuses without permission', async () => {
     mocked.getPermissionsAsync.mockResolvedValue(denied);
-    await expect(scheduleGoalNotification(goal())).rejects.toThrow('permissions not granted');
+    await expect(scheduleGoalNotification(goal(), en)).rejects.toThrow('permissions not granted');
   });
 
   it('propagates a scheduling failure', async () => {
     mocked.scheduleNotificationAsync.mockRejectedValueOnce(new Error('os said no'));
-    await expect(scheduleGoalNotification(goal({ notificationDays: [1] }))).rejects.toThrow('os said no');
+    await expect(scheduleGoalNotification(goal({ notificationDays: [1] }), en)).rejects.toThrow('os said no');
   });
 });
 
 describe('scheduleTestNotification', () => {
+  it('is written in the language it is given', async () => {
+    await scheduleTestNotification(ar);
+
+    const [[request]] = mocked.scheduleNotificationAsync.mock.calls;
+    expect(request.content).toMatchObject({ title: ar.testTitle, body: ar.testBody });
+  });
+
   it('fires once, a couple of seconds from now', async () => {
-    await scheduleTestNotification();
+    await scheduleTestNotification(en);
 
     const [[request]] = mocked.scheduleNotificationAsync.mock.calls;
     expect(parseTrigger(request.trigger as never)).toMatchObject({
@@ -190,7 +226,7 @@ describe('scheduleTestNotification', () => {
 
   it('refuses without permission', async () => {
     mocked.getPermissionsAsync.mockResolvedValue(denied);
-    await expect(scheduleTestNotification()).rejects.toThrow('permissions not granted');
+    await expect(scheduleTestNotification(en)).rejects.toThrow('permissions not granted');
   });
 });
 

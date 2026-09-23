@@ -226,16 +226,21 @@ export function parseJSONImport(jsonString: string): ImportResult {
     }
     
     // Validate and filter goals
+    // The titles are checked as buildImport checks them (isImportableGoal):
+    // one of only spaces passed here and was dropped there, so the counts the
+    // user was shown did not match what was imported.
     const validGoals = data.goals.filter((goal: any, index: number) => {
-      if (!goal.title || typeof goal.title !== 'string') {
+      if (typeof goal?.title !== 'string' || goal.title.trim() === '') {
         errors.push(`Goal ${index + 1}: Missing or invalid title`);
         return false;
       }
-      if (typeof goal.target !== 'number' || goal.target <= 0) {
+      // Number.isFinite, not typeof: JSON's 1e999 parses as Infinity, which
+      // is saved as null.
+      if (!Number.isFinite(goal.target) || goal.target <= 0) {
         errors.push(`Goal ${index + 1}: Invalid target value`);
         return false;
       }
-      if (typeof goal.current !== 'number') {
+      if (!Number.isFinite(goal.current)) {
         errors.push(`Goal ${index + 1}: Invalid current value`);
         return false;
       }
@@ -244,11 +249,11 @@ export function parseJSONImport(jsonString: string): ImportResult {
     
     // Validate and filter rewards
     const validRewards = data.rewards.filter((reward: any, index: number) => {
-      if (!reward.title || typeof reward.title !== 'string') {
+      if (typeof reward?.title !== 'string' || reward.title.trim() === '') {
         errors.push(`Reward ${index + 1}: Missing or invalid title`);
         return false;
       }
-      if (typeof reward.pointsCost !== 'number' || reward.pointsCost <= 0) {
+      if (!Number.isFinite(reward.pointsCost) || reward.pointsCost <= 0) {
         errors.push(`Reward ${index + 1}: Invalid points cost`);
         return false;
       }

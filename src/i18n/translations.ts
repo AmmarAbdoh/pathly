@@ -95,6 +95,10 @@ export interface Translations {
     redeemConfirmMessage: string;
     redeemSuccess: string;
     notEnoughPoints: string;
+    titleRequired: string;
+    invalidCostTitle: string;
+    invalidCost: string;
+    notEnoughPointsMessage: string; // {points}
     saveError: string;
     redeemError: string;
     deleteError: string;
@@ -197,6 +201,7 @@ export interface Translations {
   };
   goalForm: {
     subgoalPointsHelper: string;
+    subgoalPointsHint: string;
     addError: string;
     title: string;
     titlePlaceholder: string;
@@ -257,6 +262,17 @@ export interface Translations {
     subgoalNoPoints: string;
     subgoalsAwardPoints: string;
     subgoalsAwardPointsHint: string;
+    pointsOptional: string;
+    confirmAddTitle: string;
+    confirmEditTitle: string;
+    /** The recurring checkbox's hint, for each period that can recur. */
+    recurringResets: {
+      daily: string;
+      weekly: string;
+      monthly: string;
+      yearly: string;
+      custom: string;
+    };
   };
   goalCard: {
     points: string;
@@ -278,6 +294,7 @@ export interface Translations {
   };
   goalDetail: {
     notFound: string;
+    recurringBadge: string;
     updateProgress: string;
     deleteGoal: string;
     archiveGoal: string;
@@ -347,6 +364,25 @@ export interface Translations {
     dependencyCompleted: string;
     dependencyIncomplete: string;
     removeDependency: string;
+    invalidDays: string;
+    noteSaveError: string;
+    noteDeleteError: string;
+    dependenciesUpdateError: string;
+    dependencyRemoveError: string;
+    noAvailableDependencies: string;
+    goalUpdateSuccess: string;
+    goalUpdateError: string;
+    subgoalAddSuccess: string;
+    subgoalAddError: string;
+    resetTitle: string;
+    resetMessage: string;
+    resetNow: string;
+    resetSuccess: string;
+    resetError: string;
+    cancelEdit: string;
+    cancelAddSubgoal: string;
+    newProgressValue: string;
+    timesCompleted: string; // {count}
   };
   review: {
     title: string;
@@ -401,6 +437,7 @@ export interface Translations {
     csvUnsupported: string;
     invalidFile: string;
     skipped: string; // {count}
+    partialError: string;
   };
   notifications: {
     title: string;
@@ -417,6 +454,11 @@ export interface Translations {
     testNotificationDescription: string;
     testNotificationSent: string;
     testNotificationError: string;
+    reminderTitle: string;
+    reminderBody: string; // {goal}: the goal title
+    testTitle: string;
+    testBody: string;
+    channelName: string; // how Android lists the reminders in system settings
     permissionsRequired: string;
     permissionsDescription: string;
     enablePermissions: string;
@@ -470,6 +512,10 @@ export interface Translations {
     about: string;
     aboutText: string;
     version: string;
+    languageChangedRestart: string; // shown in the language just chosen
+    themeOptionLabel: string; // {theme}
+    themeOptionHint: string; // {theme}
+    languageOptionLabel: string; // {language}: the language's name
   };
   validation: {
     invalidNumber: string;
@@ -491,7 +537,7 @@ export interface Translations {
     pointsMin: string;
     pointsMax: string;
     customPeriodRequired: string;
-    customPeriodPositive: string;
+    customPeriodWholeDays: string;
   };
   achievements: {
     first_goal: { title: string; description: string };
@@ -555,9 +601,6 @@ export interface Translations {
   };
   messages: {
     goalsCompleted: string;
-    automaticallyResets: string;
-    day: string;
-    period: string;
   };
   periods: {
     daily: string;
@@ -597,6 +640,8 @@ export interface Translations {
     saveFailed: string;
     loadFailed: string;
     rewardsLoadFailed: string;
+    rewardsSaveFailed: string;
+    unreadable: string;
     retry: string;
   };
   schedule: {
@@ -616,8 +661,7 @@ export interface Translations {
     selectWeekdays: string;
     selectDates: string;
     selectRange: string;
-    monthlyShort: string;
-    monthlyRangeShort: string;
+    listSeparator: string; // between listed days or dates
   };
 }
 
@@ -712,6 +756,10 @@ export const translations: Record<Language, Translations> = {
       redeemConfirmMessage: 'Are you sure you want to redeem this reward? Points will be deducted from your balance.',
       redeemSuccess: 'Success! 🎉\nReward redeemed! Enjoy your treat!',
       notEnoughPoints: 'Not Enough Points',
+      titleRequired: 'Please enter a reward title',
+      invalidCostTitle: 'Invalid Points',
+      invalidCost: 'A reward must cost at least 1 point',
+      notEnoughPointsMessage: 'You need {points} more points to redeem this reward.',
       saveError: 'Failed to save reward',
       redeemError: 'Failed to redeem reward',
       deleteError: 'Failed to delete reward',
@@ -812,6 +860,7 @@ export const translations: Record<Language, Translations> = {
     },
     goalForm: {
       subgoalPointsHelper: 'Leave at 0 if you do not want this subgoal to award points',
+      subgoalPointsHint: 'Optional points to award when completing this subgoal',
       addError: 'Failed to add goal',
       title: 'Add a new goal',
       titlePlaceholder: 'Goal title (e.g. Lose Weight)',
@@ -872,6 +921,16 @@ export const translations: Record<Language, Translations> = {
       subgoalNoPoints: 'Subgoals don\'t award points individually. Points are awarded when the parent goal completes.',
       subgoalsAwardPoints: 'Subgoals award their own points',
       subgoalsAwardPointsHint: 'If checked, each subgoal will award points individually when completed. If unchecked, only the parent goal awards points.',
+      pointsOptional: 'Reward Points (Optional)',
+      confirmAddTitle: 'Add this goal?',
+      confirmEditTitle: 'Save these changes?',
+      recurringResets: {
+        daily: 'Resets automatically at the end of each day',
+        weekly: 'Resets automatically every week',
+        monthly: 'Resets automatically every month',
+        yearly: 'Resets automatically every year',
+        custom: 'Resets automatically at the end of each period',
+      },
     },
     goalCard: {
       points: 'points',
@@ -893,6 +952,7 @@ export const translations: Record<Language, Translations> = {
     },
     goalDetail: {
       notFound: 'Goal not found',
+      recurringBadge: 'Recurring',
       updateProgress: 'Update Progress',
       deleteGoal: 'Delete Goal',
       archiveGoal: 'Archive Goal',
@@ -962,6 +1022,25 @@ export const translations: Record<Language, Translations> = {
       dependencyCompleted: '✅ Completed',
       dependencyIncomplete: '⏳ In Progress',
       removeDependency: 'Remove',
+      invalidDays: 'Please enter a valid number of days',
+      noteSaveError: 'Failed to save note',
+      noteDeleteError: 'Failed to delete note',
+      dependenciesUpdateError: 'Failed to update dependencies',
+      dependencyRemoveError: 'Failed to remove dependency',
+      noAvailableDependencies: 'No goals available to add as dependencies',
+      goalUpdateSuccess: 'Goal updated successfully',
+      goalUpdateError: 'Failed to update goal',
+      subgoalAddSuccess: 'Subgoal added successfully',
+      subgoalAddError: 'Failed to add subgoal',
+      resetTitle: 'Reset Recurring Goal',
+      resetMessage: 'Start a new period for this goal now? Its progress goes back to the start, and if it was completed, the completion is kept in its history.',
+      resetNow: 'Reset Now',
+      resetSuccess: 'A new period has started.',
+      resetError: 'Failed to reset the goal',
+      cancelEdit: 'Cancel editing',
+      cancelAddSubgoal: 'Cancel adding a subgoal',
+      newProgressValue: 'New progress value',
+      timesCompleted: '× {count} completions',
     },
     review: {
       title: 'Review',
@@ -1016,6 +1095,7 @@ export const translations: Record<Language, Translations> = {
       csvUnsupported: 'CSV import is not supported yet. Please import a JSON backup.',
       invalidFile: 'This file is not a valid Pathly backup.',
       skipped: '{count} invalid records in the file will be skipped.',
+      partialError: "Only part of the backup was imported: its rewards were added, but its goals couldn't be saved. Free up some storage before importing again.",
     },
     notifications: {
       title: 'Notifications',
@@ -1032,6 +1112,11 @@ export const translations: Record<Language, Translations> = {
       testNotificationDescription: 'Send a test notification to verify settings',
       testNotificationSent: 'Test notification sent!',
       testNotificationError: 'Failed to send test notification',
+      reminderTitle: '🎯 Goal Reminder',
+      reminderBody: 'Time to work on: {goal}',
+      testTitle: '🎯 Test Notification',
+      testBody: 'Notifications are working! You will receive goal reminders at your scheduled times.',
+      channelName: 'Goal Reminders',
       permissionsRequired: 'Notification Permissions Required',
       permissionsDescription: 'Enable notifications to receive goal reminders',
       enablePermissions: 'Enable Permissions',
@@ -1085,11 +1170,15 @@ export const translations: Record<Language, Translations> = {
       about: 'About',
       aboutText: 'Pathly helps you track and achieve your goals with a simple and intuitive interface. Set your targets, monitor progress, and celebrate your achievements.',
       version: 'Version',
+      languageChangedRestart: 'Language changed to English. Restart the app for it to apply everywhere.',
+      themeOptionLabel: '{theme} theme',
+      themeOptionHint: 'Switch to the {theme} theme',
+      languageOptionLabel: '{language} language',
     },
     validation: {
       invalidNumber: 'Please enter a valid number',
       customPeriodRequired: 'Custom period days is required',
-      customPeriodPositive: 'Custom period must be a positive number',
+      customPeriodWholeDays: 'Enter a whole number of days, 1 or more',
       requiredField: 'This field is required',
       titleRequired: 'Title is required',
       titleTooLong: 'Title must be less than 100 characters',
@@ -1191,9 +1280,6 @@ export const translations: Record<Language, Translations> = {
     },
     messages: {
       goalsCompleted: 'of {total} goals completed',
-      automaticallyResets: 'Automatically resets after each {period} period',
-      day: 'day',
-      period: 'period',
     },
     periods: {
       daily: 'Daily',
@@ -1228,6 +1314,8 @@ export const translations: Record<Language, Translations> = {
       saveFailed: "Your latest changes couldn't be saved. They're kept on this screen; tap Retry.",
       loadFailed: "Your goals couldn't be loaded. Nothing will be saved until they load - tap Retry.",
       rewardsLoadFailed: "Your rewards couldn't be loaded. They can't be changed until they load - tap Retry.",
+      rewardsSaveFailed: "A reward linked to a completed goal couldn't be redeemed. Tap Retry.",
+      unreadable: "Some saved data was damaged and couldn't be read. It has been kept aside, and Pathly has started fresh.",
       retry: 'Retry',
     },
     schedule: {
@@ -1255,8 +1343,7 @@ export const translations: Record<Language, Translations> = {
       selectWeekdays: 'Select days of the week:',
       selectDates: 'Select dates of the month:',
       selectRange: 'Select date range (e.g., 20-25):',
-      monthlyShort: 'Monthly: day {dates}',
-      monthlyRangeShort: 'Monthly: days {start}-{end}',
+      listSeparator: ', ',
     },
   },
   ar: {
@@ -1349,6 +1436,10 @@ export const translations: Record<Language, Translations> = {
       redeemConfirmMessage: 'هل أنت متأكد أنك تريد استبدال هذه المكافأة؟ سيتم خصم النقاط من رصيدك.',
       redeemSuccess: 'نجح! 🎉\nتم استبدال المكافأة! استمتع بها!',
       notEnoughPoints: 'نقاط غير كافية',
+      titleRequired: 'يرجى إدخال عنوان المكافأة',
+      invalidCostTitle: 'نقاط غير صالحة',
+      invalidCost: 'يجب أن تكلّف المكافأة نقطة واحدة على الأقل',
+      notEnoughPointsMessage: 'تحتاج إلى {points} نقطة إضافية لاسترداد هذه المكافأة.',
       saveError: 'فشل حفظ المكافأة',
       redeemError: 'فشل استبدال المكافأة',
       deleteError: 'فشل حذف المكافأة',
@@ -1449,6 +1540,7 @@ export const translations: Record<Language, Translations> = {
     },
     goalForm: {
       subgoalPointsHelper: 'اتركه 0 إذا كنت لا تريد أن يمنح هذا الهدف الفرعي نقاطاً',
+      subgoalPointsHint: 'نقاط اختيارية تُمنح عند إكمال هذا الهدف الفرعي',
       addError: 'فشل إضافة الهدف',
       title: 'إضافة هدف جديد',
       titlePlaceholder: 'عنوان الهدف (مثال: فقدان الوزن)',
@@ -1509,6 +1601,16 @@ export const translations: Record<Language, Translations> = {
       subgoalNoPoints: 'الأهداف الفرعية لا تمنح نقاطًا بشكل فردي. يتم منح النقاط عند إكمال الهدف الرئيسي.',
       subgoalsAwardPoints: 'الأهداف الفرعية تمنح نقاطها الخاصة',
       subgoalsAwardPointsHint: 'إذا تم التحديد، سيمنح كل هدف فرعي نقاطًا بشكل فردي عند إكماله. إذا لم يتم التحديد، فقط الهدف الرئيسي يمنح النقاط.',
+      pointsOptional: 'نقاط المكافأة (اختياري)',
+      confirmAddTitle: 'إضافة هذا الهدف؟',
+      confirmEditTitle: 'حفظ هذه التغييرات؟',
+      recurringResets: {
+        daily: 'يُعاد تعيينه تلقائيًا في نهاية كل يوم',
+        weekly: 'يُعاد تعيينه تلقائيًا كل أسبوع',
+        monthly: 'يُعاد تعيينه تلقائيًا كل شهر',
+        yearly: 'يُعاد تعيينه تلقائيًا كل سنة',
+        custom: 'يُعاد تعيينه تلقائيًا في نهاية كل فترة',
+      },
     },
     goalCard: {
       points: 'نقطة',
@@ -1530,6 +1632,7 @@ export const translations: Record<Language, Translations> = {
     },
     goalDetail: {
       notFound: 'الهدف غير موجود',
+      recurringBadge: 'متكرر',
       updateProgress: 'تحديث التقدم',
       deleteGoal: 'حذف الهدف',
       archiveGoal: 'أرشفة الهدف',
@@ -1599,6 +1702,25 @@ export const translations: Record<Language, Translations> = {
       dependencyCompleted: '✅ مكتمل',
       dependencyIncomplete: '⏳ قيد التقدم',
       removeDependency: 'إزالة',
+      invalidDays: 'يرجى إدخال عدد أيام صالح',
+      noteSaveError: 'فشل حفظ الملاحظة',
+      noteDeleteError: 'فشل حذف الملاحظة',
+      dependenciesUpdateError: 'فشل تحديث التبعيات',
+      dependencyRemoveError: 'فشلت إزالة التبعية',
+      noAvailableDependencies: 'لا توجد أهداف متاحة لإضافتها كتبعيات',
+      goalUpdateSuccess: 'تم تحديث الهدف بنجاح',
+      goalUpdateError: 'فشل تحديث الهدف',
+      subgoalAddSuccess: 'تمت إضافة الهدف الفرعي بنجاح',
+      subgoalAddError: 'فشلت إضافة الهدف الفرعي',
+      resetTitle: 'إعادة تعيين الهدف المتكرر',
+      resetMessage: 'هل تريد بدء فترة جديدة لهذا الهدف الآن؟ سيعود تقدمه إلى البداية، وإذا كان مكتملاً فسيُحفظ الإكمال في سجله.',
+      resetNow: 'إعادة التعيين الآن',
+      resetSuccess: 'بدأت فترة جديدة.',
+      resetError: 'فشلت إعادة تعيين الهدف',
+      cancelEdit: 'إلغاء التعديل',
+      cancelAddSubgoal: 'إلغاء إضافة هدف فرعي',
+      newProgressValue: 'قيمة التقدم الجديدة',
+      timesCompleted: '× {count} مرات إكمال',
     },
     review: {
       title: 'المراجعة',
@@ -1653,6 +1775,7 @@ export const translations: Record<Language, Translations> = {
       csvUnsupported: 'استيراد CSV غير مدعوم بعد. يرجى استيراد نسخة احتياطية بصيغة JSON.',
       invalidFile: 'هذا الملف ليس نسخة احتياطية صالحة من Pathly.',
       skipped: 'سيتم تجاهل {count} من السجلات غير الصالحة في الملف.',
+      partialError: 'تم استيراد جزء فقط من النسخة الاحتياطية: أُضيفت مكافآتها، لكن تعذّر حفظ أهدافها. وفّر بعض مساحة التخزين قبل الاستيراد مرة أخرى.',
     },
     notifications: {
       title: 'الإشعارات',
@@ -1669,6 +1792,11 @@ export const translations: Record<Language, Translations> = {
       testNotificationDescription: 'إرسال إشعار تجريبي للتحقق من الإعدادات',
       testNotificationSent: 'تم إرسال الإشعار التجريبي!',
       testNotificationError: 'فشل إرسال الإشعار التجريبي',
+      reminderTitle: '🎯 تذكير بالهدف',
+      reminderBody: 'حان وقت العمل على: {goal}',
+      testTitle: '🎯 إشعار تجريبي',
+      testBody: 'الإشعارات تعمل! ستصلك تذكيرات أهدافك في الأوقات المحددة.',
+      channelName: 'تذكيرات الأهداف',
       permissionsRequired: 'مطلوب أذونات الإشعارات',
       permissionsDescription: 'قم بتمكين الإشعارات لتلقي تذكيرات الأهداف',
       enablePermissions: 'تمكين الأذونات',
@@ -1722,10 +1850,14 @@ export const translations: Record<Language, Translations> = {
       about: 'حول',
       aboutText: 'يساعدك باثلي على تتبع أهدافك وتحقيقها من خلال واجهة بسيطة وبديهية. حدد أهدافك، راقب التقدم، واحتفل بإنجازاتك.',
       version: 'الإصدار',
+      languageChangedRestart: 'تم تغيير اللغة إلى العربية. أعد تشغيل التطبيق لتفعيل الاتجاه من اليمين إلى اليسار بالكامل.',
+      themeOptionLabel: 'مظهر {theme}',
+      themeOptionHint: 'التبديل إلى مظهر {theme}',
+      languageOptionLabel: 'اللغة {language}',
     },
     validation: {
       customPeriodRequired: 'عدد أيام الفترة المخصصة مطلوب',
-      customPeriodPositive: 'يجب أن تكون الفترة المخصصة رقماً موجباً',
+      customPeriodWholeDays: 'أدخل عدداً صحيحاً من الأيام، يوماً واحداً أو أكثر',
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',
@@ -1828,9 +1960,6 @@ export const translations: Record<Language, Translations> = {
     },
     messages: {
       goalsCompleted: 'من أصل {total} أهداف مكتملة',
-      automaticallyResets: 'يتم إعادة التعيين تلقائيًا بعد كل فترة {period}',
-      day: 'يوم',
-      period: 'فترة',
     },
     periods: {
       daily: 'يومي',
@@ -1865,6 +1994,8 @@ export const translations: Record<Language, Translations> = {
       saveFailed: 'تعذّر حفظ آخر تغييراتك. ما زالت محفوظة في هذه الشاشة؛ اضغط إعادة المحاولة.',
       loadFailed: 'تعذّر تحميل أهدافك. لن يُحفظ أي شيء حتى يتم تحميلها - اضغط إعادة المحاولة.',
       rewardsLoadFailed: 'تعذّر تحميل مكافآتك. لا يمكن تعديلها حتى يتم تحميلها - اضغط إعادة المحاولة.',
+      rewardsSaveFailed: 'تعذّر استرداد مكافأة مرتبطة بهدف مكتمل. اضغط إعادة المحاولة.',
+      unreadable: 'بعض البيانات المحفوظة تالفة ولم تمكن قراءتها. تم الاحتفاظ بها جانبًا، وبدأ Pathly من جديد.',
       retry: 'إعادة المحاولة',
     },
     schedule: {
@@ -1892,8 +2023,7 @@ export const translations: Record<Language, Translations> = {
       selectWeekdays: 'اختر أيام الأسبوع:',
       selectDates: 'اختر أيام الشهر:',
       selectRange: 'اختر نطاق التواريخ (مثال: 20-25):',
-      monthlyShort: 'شهرياً: يوم {dates}',
-      monthlyRangeShort: 'شهرياً: أيام {start}-{end}',
+      listSeparator: '، ',
     },
   },
 };

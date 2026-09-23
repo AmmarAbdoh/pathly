@@ -9,7 +9,9 @@ import { Goal, TimePeriod } from '../types';
  * Check if a goal's period has ended and needs to be reset
  */
 export function shouldResetGoal(goal: Goal): boolean {
-  if (!goal.isRecurring || !goal.periodStartDate) {
+  // One that cannot recur has no period end to pass: an 'ongoing' goal's is
+  // its start, so it would reset every time this is asked.
+  if (!goal.isRecurring || !goal.periodStartDate || !canRecur(goal)) {
     return false;
   }
 
@@ -20,6 +22,31 @@ export function shouldResetGoal(goal: Goal): boolean {
   // If current time is past the period end, goal should reset
   // This applies to both completed and incomplete goals
   return now >= periodEnd;
+}
+
+/**
+ * Whether a goal can be recurring: the one rule, which adding, editing,
+ * importing and loading goals, and the goal form, all apply.
+ *
+ * Only a top-level goal that is not ultimate - no form offers recurring for a
+ * subgoal, or for an ultimate goal, whose progress comes from subgoals a reset
+ * leaves as they are. And only with a period that ends: `getPeriodEndDate`
+ * puts the end of an 'ongoing' period at its start, so such a goal would reset
+ * on every load, and likewise a 'custom' one without a length.
+ */
+export function canRecur(
+  goal: Pick<Goal, 'period' | 'customPeriodDays' | 'parentId' | 'isUltimate'>
+): boolean {
+  if (goal.parentId || goal.isUltimate || goal.period === 'ongoing') return false;
+  return goal.period !== 'custom' || isWholeDays(goal.customPeriodDays);
+}
+
+/**
+ * A custom period's length: a whole number of days, at least one. The deadline
+ * shown counts whole days, and imports keep only these.
+ */
+export function isWholeDays(days: unknown): days is number {
+  return typeof days === 'number' && Number.isInteger(days) && days >= 1;
 }
 
 /**
@@ -105,6 +132,12 @@ export function processRecurringGoals(goals: Goal[]): Goal[] {
     // Skip non-recurring goals
     if (!goal.isRecurring) {
       return goal;
+    }
+
+    // Saved before every way in checked canRecur - the form offered recurring
+    // with 'Ongoing', and such a goal reset on every load. It stops recurring.
+    if (!canRecur(goal)) {
+      return { ...goal, isRecurring: false };
     }
     
     // If goal has no periodStartDate, initialize it now

@@ -8,6 +8,58 @@ import { STORAGE_KEYS } from '../constants/storage-keys';
 import { Goal, GoalTemplate } from '../types';
 
 /**
+ * Stored data that was read but cannot be used: not JSON, or not a list.
+ *
+ * Unlike a failed read, retrying will never fix it. Carries the raw value so
+ * the caller can keep it aside (see setAsideUnreadable) before starting over.
+ */
+export class UnreadableDataError extends Error {
+  constructor(
+    message: string,
+    readonly raw: string
+  ) {
+    super(message);
+    this.name = 'UnreadableDataError';
+  }
+}
+
+/** Parse a stored list, or throw UnreadableDataError. */
+export function parseStoredList(raw: string, what: string): Record<string, unknown>[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new UnreadableDataError(`Stored ${what} are not valid JSON`, raw);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new UnreadableDataError(`Stored ${what} are not a list`, raw);
+  }
+  // An entry that is not an object (null, a number, a list) holds nothing to
+  // keep, and would crash everything that reads a field from it. A list is an
+  // object to typeof, and came out as a goal with no id or title.
+  return parsed.filter(
+    (entry): entry is Record<string, unknown> =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+  );
+}
+
+/**
+ * Move an unreadable value out of `key`, keeping it under a timestamped key
+ * beside it, so the app can start over without destroying anything.
+ *
+ * @throws if the copy cannot be written - then nothing has been moved.
+ */
+export async function setAsideUnreadable(key: string, raw: string): Promise<void> {
+  await AsyncStorage.setItem(`${key}.unreadable.${Date.now()}`, raw);
+  try {
+    await AsyncStorage.removeItem(key);
+  } catch (error) {
+    // The copy is safe; the value is simply set aside again next time.
+    console.error('Error removing unreadable data:', error);
+  }
+}
+
+/**
  * Storage service for goals data
  */
 export const goalsStorage = {
@@ -29,67 +81,62 @@ export const goalsStorage = {
   /**
    * Load goals array from AsyncStorage
    * @returns Array of goals, or empty array if none are stored
-   * @throws Error if storage cannot be read, or holds something that is not a
-   *   goals array. This used to return [] instead, and the caller could not
-   *   tell "unreadable" from "no goals": the next save wrote over everything.
+   * @throws UnreadableDataError if what is stored is not a goals list, or an
+   *   Error if storage cannot be read at all. This used to return [] instead,
+   *   and the caller could not tell "unreadable" from "no goals": the next
+   *   save wrote over everything.
    */
   async loadGoals(): Promise<Goal[]> {
+    let jsonData: string | null;
     try {
-      const jsonData = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
-
-      if (!jsonData) {
-        return [];
-      }
-
-      const goals: Goal[] = JSON.parse(jsonData);
-
-      // Validate that the data is an array
-      if (!Array.isArray(goals)) {
-        throw new Error('Stored goals are not an array');
-      }
-
-      // Migrate old goals that don't have new fields
-      const migratedGoals = goals.map(goal => {
-        const migrated: Goal = { ...goal };
-        
-        // Migrate initialValue field
-        if (migrated.initialValue === undefined) {
-          migrated.initialValue = goal.current;
-        }
-        
-        // Migrate period field (default to 'custom' for existing goals)
-        if (!migrated.period) {
-          migrated.period = 'custom';
-        }
-        
-        // Ensure subGoals array exists
-        if (!migrated.subGoals) {
-          migrated.subGoals = [];
-        }
-        
-        // Set periodStartDate if not present
-        if (!migrated.periodStartDate) {
-          migrated.periodStartDate = goal.createdAt || Date.now();
-        }
-        
-        // Migrate isUltimate field (default to false)
-        if (migrated.isUltimate === undefined) {
-          migrated.isUltimate = false;
-        }
-        
-        // Migrate isComplete field (default to false)
-        if (migrated.isComplete === undefined) {
-          migrated.isComplete = false;
-        }
-        
-        return migrated;
-      });
-
-      return migratedGoals;
+      jsonData = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
     } catch (error) {
       console.error('Error loading goals:', error);
       throw new Error('Failed to load goals');
     }
+
+    if (!jsonData) {
+      return [];
+    }
+
+    const goals = parseStoredList(jsonData, 'goals') as unknown as Goal[];
+
+    // Migrate old goals that don't have new fields
+    return goals.map(goal => {
+      const migrated: Goal = { ...goal };
+
+      // Migrate initialValue field
+      if (migrated.initialValue === undefined) {
+        migrated.initialValue = goal.current;
+      }
+
+      // Migrate period field (default to 'custom' for existing goals)
+      if (!migrated.period) {
+        migrated.period = 'custom';
+      }
+
+      // Ensure subGoals array exists
+      if (!migrated.subGoals) {
+        migrated.subGoals = [];
+      }
+
+      // Set periodStartDate if not present
+      if (!migrated.periodStartDate) {
+        migrated.periodStartDate = goal.createdAt || Date.now();
+      }
+
+      // Migrate isUltimate field (default to false)
+      if (migrated.isUltimate === undefined) {
+        migrated.isUltimate = false;
+      }
+
+      // Migrate isComplete field (default to false)
+      if (migrated.isComplete === undefined) {
+        migrated.isComplete = false;
+      }
+
+      return migrated;
+    });
   },
 
   /**
