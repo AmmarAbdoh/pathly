@@ -138,9 +138,14 @@ export const calculatePeriodEndDate = (
     case 'yearly':
       endDate.setFullYear(endDate.getFullYear() + 1);
       break;
-    case 'custom':
-      endDate.setDate(endDate.getDate() + (customPeriodDays || 1));
+    case 'custom': {
+      // Whole days by the calendar, then any part of one: setDate alone
+      // dropped the fraction, and a 1.5-day period showed as over too soon.
+      const days = customPeriodDays || 1;
+      endDate.setDate(endDate.getDate() + Math.floor(days));
+      endDate.setTime(endDate.getTime() + (days % 1) * 24 * 60 * 60 * 1000);
       break;
+    }
   }
 
   // Set time to end of day (23:59:59.999) to include the full last day

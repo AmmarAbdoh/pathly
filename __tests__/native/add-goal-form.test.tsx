@@ -177,7 +177,7 @@ describe('custom period', () => {
     type(t.goalForm.customPeriodPlaceholder, '0.5');
     fireEvent.press(screen.getByLabelText(t.goalForm.addButton));
 
-    expect(screen.getByText(t.validation.customPeriodMinimum)).toBeTruthy();
+    expect(screen.getByText(t.validation.customPeriodRange.replace('{max}', '3650'))).toBeTruthy();
     expect(onAddGoal).not.toHaveBeenCalled();
   });
 

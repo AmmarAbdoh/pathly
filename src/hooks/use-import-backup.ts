@@ -31,15 +31,16 @@ export class PartialImportError extends Error {
  * cancelled reminders - that could not be undone.)
  */
 export function useImportBackup() {
-  const { getCurrentGoals, replaceAllGoals } = useGoals();
+  const { getCurrentGoals, replaceAllGoals, withGoalsHeld } = useGoals();
   const { withRewardsHeld } = useRewards();
 
   return useCallback(
     (incoming: ImportedData, mode: ImportMode) =>
-      // With the rewards queue held, so no reward change - a linked reward
-      // being redeemed - runs between reading the rewards and writing the
-      // import, only to be undone by it.
-      withRewardsHeld(async (currentRewards, writeRewards) => {
+      // With the rewards and the goals held, so no change - a linked reward
+      // redeemed, a goal edited or completed, reminders saved - runs between
+      // reading them and writing the import, only to be undone by it.
+      withRewardsHeld((currentRewards, writeRewards) =>
+        withGoalsHeld(async () => {
         // The data as it is now, not when the screen last rendered: picking a
         // file and confirming take a while, and an import built on an older
         // copy - or on the empty lists from before loading finished - writes
@@ -64,7 +65,8 @@ export function useImportBackup() {
           }
           throw goalsError;
         }
-      }),
-    [getCurrentGoals, replaceAllGoals, withRewardsHeld]
+        })
+      ),
+    [getCurrentGoals, replaceAllGoals, withGoalsHeld, withRewardsHeld]
   );
 }

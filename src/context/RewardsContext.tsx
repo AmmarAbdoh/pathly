@@ -10,6 +10,7 @@ import { nextId } from '@/src/utils/ids';
 import { getAvailablePoints } from '@/src/utils/points';
 import { rewardsStorage } from '@/src/utils/rewards-storage';
 import { setAsideUnreadable, UnreadableDataError } from '@/src/utils/storage';
+import { useSerialQueue } from '@/src/hooks/use-serial-queue';
 import React, {
   createContext,
   ReactNode,
@@ -58,11 +59,8 @@ interface RewardsContextType {
    * change can land between reading them and writing what was built from them.
    * Built from a copy read earlier, the import undid a linked reward redeemed
    * meanwhile. `write` saves rewards, rejecting - and leaving them as they
-   * were - if the write fails. Rejects unless the rewards have loaded.
-   *
-   * Goals completed while it runs redeem nothing: the import puts in the goals
-   * it read at the start, so those completions are gone. If it fails, they
-   * stand, and are redeemed after all.
+   * were - if the write fails; it works only while the hold lasts. Rejects
+   * unless the rewards have loaded.
    */
   withRewardsHeld: <T>(
     task: (rewards: Reward[], write: (next: Reward[]) => Promise<void>) => Promise<T>
@@ -115,12 +113,6 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
   const pendingRedemptions = useRef(new Map<number, number>());
 
   /**
-   * Linked rewards of goals completed while an import runs (see
-   * withRewardsHeld), set aside rather than redeemed; null otherwise.
-   */
-  const heldRedemptions = useRef<Map<number, number> | null>(null);
-
-  /**
    * Every read and write of rewards storage, one at a time.
    *
    * Overlapping changes could not be undone correctly: a change that failed
@@ -128,12 +120,7 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
    * later one's undo, although it never reached disk. A reload overlapping a
    * write could read the rewards from before it.
    */
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const enqueue = useCallback(<T,>(task: () => Promise<T>): Promise<T> => {
-    const run = queue.current.then(task);
-    queue.current = run.catch(() => undefined);
-    return run;
-  }, []);
+  const enqueue = useSerialQueue();
 
   /** Throw - and say so, after a failed load - unless the rewards have loaded. */
   const assertLoaded = useCallback(() => {
@@ -299,20 +286,20 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     <T,>(task: (rewards: Reward[], write: (next: Reward[]) => Promise<void>) => Promise<T>) =>
       enqueue(async () => {
         assertLoaded();
-        const held = new Map<number, number>();
-        heldRedemptions.current = held;
+        // Only while the hold lasts: after it, a write would land outside the
+        // queue, over changes it knows nothing of.
+        let holding = true;
+        const heldWrite = async (next: Reward[]) => {
+          if (!holding) throw new Error('The rewards are no longer held');
+          await write(next);
+        };
         try {
-          return await task(rewardsRef.current, write);
-        } catch (err) {
-          // Nothing was replaced, so those completions stand.
-          for (const [rewardId, points] of held) pendingRedemptions.current.set(rewardId, points);
-          if (held.size > 0) void redeemPending();
-          throw err;
+          return await task(rewardsRef.current, heldWrite);
         } finally {
-          heldRedemptions.current = null;
+          holding = false;
         }
       }),
-    [enqueue, assertLoaded, write, redeemPending]
+    [enqueue, assertLoaded, write]
   );
 
   // Auto-redeem a goal's linked reward the first time the goal is completed.
@@ -323,12 +310,6 @@ export function RewardsProvider({ children }: RewardsProviderProps) {
     () =>
       onGoalCompleted(async (goal, lifetimePoints) => {
         if (goal.linkedRewardId === undefined) return;
-
-        // An import is running: it is about to throw this completion away.
-        if (heldRedemptions.current) {
-          heldRedemptions.current.set(goal.linkedRewardId, lifetimePoints);
-          return;
-        }
 
         pendingRedemptions.current.set(goal.linkedRewardId, lifetimePoints);
         if (loadStateRef.current === 'loaded') {

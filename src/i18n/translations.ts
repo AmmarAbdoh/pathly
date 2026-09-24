@@ -461,6 +461,7 @@ export interface Translations {
     testBody: string;
     channelName: string; // how Android lists the reminders in system settings
     remindersTurnedOff: string;
+    remindersNotUpdated: string;
     permissionsRequired: string;
     permissionsDescription: string;
     enablePermissions: string;
@@ -539,7 +540,7 @@ export interface Translations {
     pointsMin: string;
     pointsMax: string;
     customPeriodRequired: string;
-    customPeriodMinimum: string;
+    customPeriodRange: string; // {max}: the most days allowed
   };
   achievements: {
     first_goal: { title: string; description: string };
@@ -1121,6 +1122,7 @@ export const translations: Record<Language, Translations> = {
       testBody: 'Notifications are working! You will receive goal reminders at your scheduled times.',
       channelName: 'Goal Reminders',
       remindersTurnedOff: "Some reminders couldn't be scheduled again, so they were turned off. You can turn them back on from the goal's page.",
+      remindersNotUpdated: "Notifications are off for this app, so reminders keep their old wording. Once they're allowed, save a goal's reminders to update them.",
       permissionsRequired: 'Notification Permissions Required',
       permissionsDescription: 'Enable notifications to receive goal reminders',
       enablePermissions: 'Enable Permissions',
@@ -1182,7 +1184,7 @@ export const translations: Record<Language, Translations> = {
     validation: {
       invalidNumber: 'Please enter a valid number',
       customPeriodRequired: 'Custom period days is required',
-      customPeriodMinimum: 'Enter a number of days, 1 or more',
+      customPeriodRange: 'Enter a number of days from 1 to {max}',
       requiredField: 'This field is required',
       titleRequired: 'Title is required',
       titleTooLong: 'Title must be less than 100 characters',
@@ -1803,6 +1805,7 @@ export const translations: Record<Language, Translations> = {
       testBody: 'الإشعارات تعمل! ستصلك تذكيرات أهدافك في الأوقات المحددة.',
       channelName: 'تذكيرات الأهداف',
       remindersTurnedOff: 'تعذّرت إعادة جدولة بعض التذكيرات، فأُوقفت. يمكنك تشغيلها مجدداً من صفحة الهدف.',
+      remindersNotUpdated: 'الإشعارات متوقفة لهذا التطبيق، لذا تبقى التذكيرات بصياغتها القديمة. بعد السماح بها، احفظ تذكيرات الهدف لتحديثها.',
       permissionsRequired: 'مطلوب أذونات الإشعارات',
       permissionsDescription: 'قم بتمكين الإشعارات لتلقي تذكيرات الأهداف',
       enablePermissions: 'تمكين الأذونات',
@@ -1863,7 +1866,7 @@ export const translations: Record<Language, Translations> = {
     },
     validation: {
       customPeriodRequired: 'عدد أيام الفترة المخصصة مطلوب',
-      customPeriodMinimum: 'أدخل عدد الأيام، يوماً واحداً أو أكثر',
+      customPeriodRange: 'أدخل عدد الأيام من ١ إلى {max}',
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',

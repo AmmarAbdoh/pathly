@@ -512,3 +512,12 @@ describe('formatEndDateTime defaults', () => {
   });
 });
 
+describe('calculatePeriodEndDate for part of a day', () => {
+  // Regression: setDate dropped the fraction, so a 1.5-day period started on
+  // Monday night showed as over on Tuesday - its reset comes on Wednesday.
+  it('counts the part of a day too', () => {
+    const mondayNight = new Date(2026, 0, 5, 22, 0).getTime(); // a Monday
+    const end = new Date(calculatePeriodEndDate(mondayNight, 'custom', 1.5));
+    expect(end.getDate()).toBe(7); // Wednesday
+  });
+});

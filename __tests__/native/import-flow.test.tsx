@@ -4,7 +4,7 @@
  */
 
 import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
-import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
+import { GoalsBusyError, GoalsProvider, useGoals } from '@/src/context/GoalsContext';
 import { RewardsProvider, useRewards } from '@/src/context/RewardsContext';
 import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-backup';
 import type { Goal, Reward } from '@/src/types';
@@ -234,7 +234,10 @@ describe('withRewardsHeld', () => {
   it('puts the rewards back when the write fails', async () => {
     await seed([], [reward({ title: 'Old' })]);
     const { result } = await renderApp();
-    setItem.mockRejectedValueOnce(disk);
+    setItem.mockImplementation(async (key: string, value: string) => {
+      if (key === REWARDS_KEY) throw disk;
+      return realSetItem(key, value);
+    });
 
     await act(async () => {
       await expect(
@@ -242,6 +245,22 @@ describe('withRewardsHeld', () => {
       ).rejects.toBe(disk);
     });
 
+    expect(result.current.rewards.rewards.map((r) => r.title)).toEqual(['Old']);
+  });
+
+  // It would write outside the queue, over changes it knows nothing of.
+  it('lets the task write only while the hold lasts', async () => {
+    await seed([], [reward({ title: 'Old' })]);
+    const { result } = await renderApp();
+    let kept!: (next: Reward[]) => Promise<void>;
+
+    await act(async () => {
+      await result.current.rewards.withRewardsHeld(async (_, write) => {
+        kept = write;
+      });
+    });
+
+    await expect(kept([reward({ id: 3, title: 'Late' })])).rejects.toThrow();
     expect(result.current.rewards.rewards.map((r) => r.title)).toEqual(['Old']);
   });
 });
@@ -452,66 +471,67 @@ describe('export, then import', () => {
     return release;
   }
 
-  // Regression: the import throws away a completion made while it runs - it
-  // puts in the goals it read at the start - but the completion's reward was
-  // still redeemed once the import let go of the rewards.
-  it('redeems nothing for a completion the import threw away', async () => {
+  // Regression: a change made while an import ran was built on goals it was
+  // about to replace. An edit was lost; a completion kept its points and its
+  // redeemed reward though the goal came back incomplete.
+  it('refuses goal changes while an import runs, and allows them after', async () => {
     await seed([goal({ id: 1, points: 50, linkedRewardId: 2 })], [reward({ id: 2, title: 'Treat', pointsCost: 20 })]);
     const target = await renderApp();
     const release = holdGoalsWrite();
     const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
 
     let importing!: Promise<void>;
-    let finishing!: Promise<void>;
     await act(async () => {
       importing = target.result.current.importBackup(parsed.data!, 'merge');
       await sleep(20); // the rewards are written; the goals are held
-      finishing = target.result.current.goals.finishGoal(1);
-      await sleep(20);
+      await expect(target.result.current.goals.finishGoal(1)).rejects.toBeInstanceOf(GoalsBusyError);
+      await expect(target.result.current.goals.updateGoal(1, 3)).rejects.toBeInstanceOf(GoalsBusyError);
     });
     release();
     await act(async () => {
       await importing;
-      await finishing;
     });
 
-    expect(target.result.current.goals.goals.find((g) => g.id === 1)?.isComplete).toBe(false);
+    expect(target.result.current.goals.lifetimePointsEarned).toBe(0);
     expect(target.result.current.rewards.rewards.find((r) => r.id === 2)?.isRedeemed).toBe(false);
+    await act(async () => {
+      await target.result.current.goals.updateGoal(1, 3);
+    });
+    expect(target.result.current.goals.goals.find((g) => g.id === 1)?.current).toBe(3);
   });
 
-  it('redeems it after all if the import fails, as the completion then stands', async () => {
-    await seed([goal({ id: 1, points: 50, linkedRewardId: 2 })], [reward({ id: 2, title: 'Treat', pointsCost: 20 })]);
+  // Regression: reminders saved while an import ran were scheduled, and their
+  // ids stored on goals the import then replaced - firing, with nothing to
+  // cancel them.
+  it('holds a reminder save until the import is done', async () => {
+    const scheduled = notifications.scheduleGoalNotification as jest.Mock;
+    scheduled.mockImplementation(async () => ['n1']);
+    await seed([goal({ id: 1 })]);
     const target = await renderApp();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => (release = resolve));
-    let importWrite = true;
-    setItem.mockImplementation(async (key: string, value: string) => {
-      if (key === STORAGE_KEYS.GOALS && importWrite) {
-        importWrite = false;
-        await gate;
-        throw disk; // the import's goals write fails
-      }
-      return realSetItem(key, value);
-    });
+    const release = holdGoalsWrite();
     const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    const text = { reminderTitle: 'Reminder', reminderBody: '{goal}' };
 
     let importing!: Promise<void>;
-    let finishing!: Promise<void>;
+    let saving!: Promise<void>;
     await act(async () => {
       importing = target.result.current.importBackup(parsed.data!, 'merge');
       await sleep(20);
-      finishing = target.result.current.goals.finishGoal(1);
+      saving = target.result.current.goals.updateNotificationSettings(1, true, text, 540, [1]);
       await sleep(20);
     });
+    expect(scheduled).not.toHaveBeenCalled();
+
     release();
     await act(async () => {
-      await expect(importing).rejects.toThrow('Failed to save goals');
-      await finishing;
-      await sleep(50);
+      await importing;
+      await saving;
     });
-
-    expect(target.result.current.goals.goals.find((g) => g.id === 1)?.isComplete).toBe(true);
-    expect(target.result.current.rewards.rewards.find((r) => r.id === 2)?.isRedeemed).toBe(true);
+    expect(target.result.current.goals.goals.find((g) => g.id === 1)).toMatchObject({
+      notificationsEnabled: true,
+      notificationIds: ['n1'],
+    });
+    scheduled.mockImplementation(async () => []);
   });
 
   it('adds everything alongside existing data with Merge, keeping the balance additive', async () => {

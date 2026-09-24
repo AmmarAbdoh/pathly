@@ -63,8 +63,6 @@ const goal = (overrides: Partial<Goal> = {}): Goal =>
 const en = translations.en.notifications;
 const ar = translations.ar.notifications;
 
-let consoleError: jest.SpyInstance;
-
 beforeEach(() => {
   jest.clearAllMocks();
   mocked.getPermissionsAsync.mockResolvedValue(granted);
@@ -73,12 +71,11 @@ beforeEach(() => {
   mocked.scheduleNotificationAsync.mockImplementation(async () => `id-${n++}`);
   // Clears what a test queued and did not use, which clearAllMocks keeps.
   mocked.getNotificationChannelAsync.mockReset();
-  consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+  jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
 afterEach(() => {
-  consoleError.mockRestore();
-  // Platform.OS too, even if a test failed before putting it back.
+  // console.error and Platform.OS, even if a test failed before putting it back.
   jest.restoreAllMocks();
 });
 

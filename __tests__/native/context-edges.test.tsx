@@ -5,7 +5,7 @@
  */
 
 import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
-import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
+import { GoalsProvider, useGoals, type RescheduleOutcome } from '@/src/context/GoalsContext';
 import { LanguageProvider, useLanguage } from '@/src/context/LanguageContext';
 import { RewardsProvider, useRewards } from '@/src/context/RewardsContext';
 import { ThemeProvider, useTheme } from '@/src/context/ThemeContext';
@@ -100,8 +100,10 @@ describe('GoalsContext: loading', () => {
     expect(stored[0].completionHistory).toHaveLength(1);
   });
 
+  // A recurring goal is streak-checked on every load: handing back a copy even
+  // when nothing changed would write the goals on every launch.
   it('does not rewrite storage on load when nothing changed', async () => {
-    await seed([makeGoal()]);
+    await seed([makeGoal(), makeGoal({ id: 2, period: 'weekly', isRecurring: true, currentStreak: 0, longestStreak: 0 })]);
     setItem.mockClear();
 
     await renderGoals();
@@ -323,15 +325,43 @@ describe('GoalsContext: notification settings', () => {
     expect(result.current.error).toBe('Failed to update notification settings');
   });
 
-  it('does nothing for a goal that does not exist', async () => {
+  // Regression: it returned quietly, and the screen said the reminders were set.
+  it('says so for a goal that does not exist', async () => {
     await seed([makeGoal()]);
     const { result } = await renderGoals();
 
     await act(async () => {
-      await result.current.updateNotificationSettings(999, true, reminder, 540);
+      await expect(result.current.updateNotificationSettings(999, true, reminder, 540)).rejects.toThrow();
     });
 
     expect(scheduled).not.toHaveBeenCalled();
+  });
+
+  // Regression: a failure part-way had already cancelled the old reminders,
+  // but the goal kept them on - shown as set, with nothing to fire.
+  it('turns reminders off when saving them fails part-way', async () => {
+    scheduled.mockRejectedValueOnce(new Error('too many pending'));
+    await seed([makeGoal({ notificationsEnabled: true, notificationTime: 540, notificationIds: ['old'] })]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await expect(result.current.updateNotificationSettings(1, true, reminder, 600, [1])).rejects.toThrow();
+    });
+
+    expect(result.current.goals[0]).toMatchObject({ notificationsEnabled: false, notificationIds: [] });
+  });
+
+  it('leaves reminders as they were when notifications are not allowed', async () => {
+    scheduled.mockRejectedValueOnce(new notifications.NotificationPermissionError());
+    const withReminders = { notificationsEnabled: true, notificationTime: 540, notificationIds: ['old'] };
+    await seed([makeGoal(withReminders)]);
+    const { result } = await renderGoals();
+
+    await act(async () => {
+      await expect(result.current.updateNotificationSettings(1, true, reminder, 600, [1])).rejects.toThrow();
+    });
+
+    expect(result.current.goals[0]).toMatchObject(withReminders);
   });
 
   // Regression: the goal was copied before the OS call and the copy written
@@ -498,12 +528,13 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let turnedOff = -1;
+    let outcome!: RescheduleOutcome;
     await act(async () => {
-      turnedOff = await result.current.rescheduleReminders(ar);
+      outcome = await result.current.rescheduleReminders(ar);
     });
 
-    expect(turnedOff).toBe(0);
+    // Counted, so the screen can say why the wording hasn't changed.
+    expect(outcome).toEqual({ turnedOff: 0, notAllowed: 1 });
     expect(result.current.goals[0]).toMatchObject(withReminders);
     expect(cancelled).not.toHaveBeenCalled();
   });
@@ -515,15 +546,16 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders }), makeGoal({ id: 2, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let turnedOff = 0;
+    let outcome!: RescheduleOutcome;
     await act(async () => {
-      turnedOff = await result.current.rescheduleReminders(ar);
+      outcome = await result.current.rescheduleReminders(ar);
     });
 
-    expect(turnedOff).toBe(1);
+    expect(outcome).toEqual({ turnedOff: 1, notAllowed: 0 });
     expect(result.current.goals[0]).toMatchObject({ notificationsEnabled: false, notificationIds: [] });
     expect(result.current.goals[1].notificationIds).toEqual(['n1', 'n2']);
-    expect(cancelled).toHaveBeenCalledWith(['old']);
+    // Already cancelled by the failed scheduling: nothing to do twice.
+    expect(cancelled).not.toHaveBeenCalled();
   });
 
   /** Hold the next scheduling open; resolve it with the ids to return. */
@@ -540,7 +572,7 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<number>;
+    let rescheduling!: Promise<RescheduleOutcome>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);
     });
@@ -565,8 +597,8 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let first!: Promise<number>;
-    let second!: Promise<number>;
+    let first!: Promise<RescheduleOutcome>;
+    let second!: Promise<RescheduleOutcome>;
     await act(async () => {
       first = result.current.rescheduleReminders(ar);
       second = result.current.rescheduleReminders(reminder);
@@ -611,7 +643,7 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders }), makeGoal({ id: 2, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<number>;
+    let rescheduling!: Promise<RescheduleOutcome>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);
     });
@@ -628,7 +660,7 @@ describe('GoalsContext: rescheduleReminders', () => {
     await seed([makeGoal({ id: 1, ...withReminders })]);
     const { result } = await renderGoals();
 
-    let rescheduling!: Promise<number>;
+    let rescheduling!: Promise<RescheduleOutcome>;
     let saving!: Promise<void>;
     await act(async () => {
       rescheduling = result.current.rescheduleReminders(ar);

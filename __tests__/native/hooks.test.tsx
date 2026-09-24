@@ -8,6 +8,7 @@ import { PRESS_SCALE, SPRING } from '@/src/constants/animation';
 import { usePressAnimation } from '@/src/hooks/use-app-animations';
 import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useDebouncedValue } from '@/src/hooks/use-debounced-value';
+import { useSerialQueue } from '@/src/hooks/use-serial-queue';
 
 const mockRouter = {
   back: jest.fn(),
@@ -148,5 +149,38 @@ describe('usePressAnimation', () => {
 
     expect(spring).not.toHaveBeenCalled();
     reduced.mockRestore();
+  });
+});
+
+describe('useSerialQueue', () => {
+  it('runs tasks one at a time, in order, and carries on past one that fails', async () => {
+    const { result } = renderHook(() => useSerialQueue());
+    const order: string[] = [];
+    let releaseFirst!: () => void;
+
+    const first = result.current(async () => {
+      await new Promise<void>((resolve) => (releaseFirst = resolve));
+      order.push('first');
+      throw new Error('first failed');
+    });
+    const second = result.current(async () => {
+      order.push('second');
+      return 2;
+    });
+
+    await Promise.resolve();
+    expect(order).toEqual([]); // the second waits for the first
+    releaseFirst();
+
+    await expect(first).rejects.toThrow('first failed');
+    await expect(second).resolves.toBe(2);
+    expect(order).toEqual(['first', 'second']);
+  });
+
+  it('keeps the same function across renders', () => {
+    const { result, rerender } = renderHook(() => useSerialQueue());
+    const queue = result.current;
+    rerender({});
+    expect(result.current).toBe(queue);
   });
 });

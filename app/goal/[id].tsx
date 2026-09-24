@@ -44,7 +44,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
  */
 export default function GoalDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, editGoal, addSubgoal, extendDeadline, togglePause, resetRecurringGoal, rescheduleReminders, addNote,deleteNote, addDependency, removeDependency, checkDependencies, updateNotificationSettings } = useGoals();
+  const { goals, updateGoal, archiveGoal, finishGoal, getSubgoals, editGoal, addSubgoal, extendDeadline, togglePause, resetRecurringGoal, rescheduleReminders, getCurrentGoals, addNote,deleteNote, addDependency, removeDependency, checkDependencies, updateNotificationSettings } = useGoals();
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const router = useRouter();
@@ -725,11 +725,13 @@ export default function GoalDetail() {
       // Reminders carry the title they were scheduled with. Not awaited: it
       // may wait its turn behind other reminder work, a language change's say.
       if (title !== goal.title) {
-        void rescheduleReminders(t.notifications, goal.id).then((turnedOff) => {
+        void rescheduleReminders(t.notifications, goal.id).then(({ turnedOff, notAllowed }) => {
           if (turnedOff > 0) {
             // This screen's toggle keeps its own copy.
             setNotificationsEnabled(false);
             Alert.alert(t.common.error, t.notifications.remindersTurnedOff);
+          } else if (notAllowed > 0) {
+            Alert.alert(t.common.error, t.notifications.remindersNotUpdated);
           }
         });
       }
@@ -970,9 +972,12 @@ export default function GoalDetail() {
       Alert.alert(t.common.success, t.notifications.scheduleSuccess);
     } catch (error) {
       console.error('Failed to update notification settings:', error);
+      // A failure part-way turns the goal's reminders off: show what it has.
+      const saved = getCurrentGoals().goals.find((g) => g.id === goal.id);
+      setNotificationsEnabled(saved?.notificationsEnabled ?? false);
       Alert.alert(t.common.error, t.notifications.scheduleError);
     }
-  }, [goal, notificationsEnabled, notificationTime, selectedDays, t, updateNotificationSettings]);
+  }, [goal, notificationsEnabled, notificationTime, selectedDays, t, updateNotificationSettings, getCurrentGoals]);
 
   /**
    * Test notification

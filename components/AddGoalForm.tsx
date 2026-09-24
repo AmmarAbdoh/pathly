@@ -9,7 +9,7 @@ import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
 import { formatNumber } from '@/src/utils/number-formatting';
-import { canRecur, isPeriodLength } from '@/src/utils/recurring-goals';
+import { canRecur, isPeriodLength, MAX_PERIOD_DAYS } from '@/src/utils/recurring-goals';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -231,7 +231,10 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     } else if (period === 'custom' && !isPeriodLength(Number(customPeriodDays))) {
       // The rule for saved goals, too: asking for whole days here blocked any
       // edit to a goal saved with "1.5" until its period was changed.
-      newErrors.customPeriodDays = t.validation.customPeriodMinimum;
+      newErrors.customPeriodDays = t.validation.customPeriodRange.replace(
+        '{max}',
+        formatNumber(MAX_PERIOD_DAYS, language)
+      );
     }
     
     if (Object.keys(newErrors).length > 0) {
@@ -265,7 +268,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     setErrors({});
     setPendingGoalData(formData);
     setShowConfirmModal(true);
-  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, recurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t]);
+  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, recurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t, language]);
 
   /**
    * Confirm and add goal

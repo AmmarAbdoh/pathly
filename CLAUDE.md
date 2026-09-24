@@ -73,9 +73,10 @@ a write from outside leaves that ref stale, and the owner's next save writes the
 react to another provider, subscribe: RewardsContext redeems linked rewards via `onGoalCompleted`,
 which fires on a goal's first completion by *any* path (`updateGoal` reaching the target, or
 `finishGoal`) and only once goals have loaded - a completion that can't be saved redeems nothing.
-"First" means never completed before: `completedAt` stays when a goal is set back, so -1 then +1
-pays nothing again; a recurring goal's new period clears it. Points follow the same rule. Test it
-with `typeof completedAt === 'number'`, never truthiness: 0 is a time too.
+"First" means never completed before - `hasBeenCompleted` in `recurring-goals.ts`, the one rule
+for points and redemption: `completedAt` stays when a goal is set back, so -1 then +1 pays nothing
+again; a recurring goal's new period clears it; and it is a number check, not truthiness (0 is a
+time too).
 Auto-redemption follows the Rewards screen's rule (`getAvailablePoints` in `src/utils/points.ts`,
 used by both): a reward the user can't afford stays available.
 
@@ -104,10 +105,15 @@ used by both): a reward the user can't afford stays available.
   memory and retries failed saves. Only the first load and Retry after a failed load read
   storage, and each discards the save queue. An import is not read back either: that threw
   away changes made while it finished. It goes into memory and is rolled over there.
+- What a load or refresh applies (`rollOver`, `archivedRemindersOff`) hands back every goal it
+  leaves alone *as it was*, and the save is decided by identity. Keep it that way in anything
+  added there: a hand-kept list of changed fields missed each field added later, and a copy
+  made when nothing changed writes the goals on every launch.
 - An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
-- Rewards changes run **one at a time** (a queue), so a failed one can be undone exactly; the
-  screen reports it. A linked reward that can't be redeemed yet (not loaded, write failed) is
-  queued and redeemed on the next load or Retry (`'save'`).
+- Rewards changes run **one at a time** (a queue - `useSerialQueue`, which reminder changes use
+  too), so a failed one can be undone exactly; the screen reports it. A linked reward that can't
+  be redeemed yet (not loaded, write failed) is queued and redeemed on the next load or Retry
+  (`'save'`).
 
 **Import keeps records whole, and is all or nothing.** `buildImport` (`src/utils/import-data.ts`)
 builds the next state; `useImportBackup` (`src/hooks/`) applies it - rewards first, put back if the
@@ -115,9 +121,11 @@ goals then fail (`PartialImportError` if even that fails - its message differs f
 Replace). It builds from `getCurrentGoals()` and the rewards `withRewardsHeld` hands it, at the
 moment it applies - never from a screen's render-time copy, which is stale after the file picker,
 or empty before loading finishes; both reject until loaded. `withRewardsHeld` holds the rewards
-queue for the whole import, so a reward redeemed meanwhile isn't undone by it. A goal completed
-*while* it runs redeems nothing: the import puts in the goals it read at the start, so that
-completion is gone (if the import fails, it stands, and is redeemed then).
+queue for the whole import, so a reward redeemed meanwhile isn't undone by it, and
+`withGoalsHeld` the goals: until the import is in, goal changes are refused (`GoalsBusyError`)
+and reminder changes wait their turn. Made meanwhile, a change was built on goals the import was
+about to replace - an edit was lost, a completion kept its points and redeemed reward though the
+goal came back incomplete, and reminders were scheduled that nothing kept.
 While the import is written, queued goal saves are held so none can land on top of it, and once
 it is written memory holds it at once, so no change made in the meantime is built on the goals
 it replaced. Never
@@ -277,9 +285,10 @@ Gotchas:
 - **Which goals can recur is one rule: `canRecur` (`recurring-goals.ts`).** A top-level,
   non-ultimate goal whose period ends: `getPeriodEndDate` returns the start date for `'ongoing'`,
   and for `'custom'` without a length, so such a goal would reset on every load - as it would with
-  a length of a moment. `isPeriodLength` is the rule: a day or more, fractions allowed.`addGoal`, `editGoal`, `buildImport`, the
-  form and loading (`processRecurringGoals`, which turns recurring off for a saved goal that
-  breaks it) all call it. Don't write a local copy: two copies that disagreed let recurring
+  a length of a moment. `isPeriodLength` is the rule: a day or more, fractions allowed, up to
+  `MAX_PERIOD_DAYS` (past that the deadline maths runs out of dates). `addGoal`, `editGoal`,
+  `buildImport`, the form and loading (`processRecurringGoals`, which turns recurring off for a
+  saved goal that breaks it) all call it. Don't write a local copy: two copies that disagreed let recurring
   subgoals in through import. Only a recurring goal keeps a `schedule` - on any other it hid the
   goal on unscheduled days, and the form (which offers it only for recurring) couldn't show why.
 - `Number.isFinite`, not `typeof x === 'number'`, for numbers from outside: JSON's `1e999` parses
@@ -308,9 +317,11 @@ Gotchas:
   ids for a goal archived, deleted or imported over while they worked (the settings save then
   rejects, so the screen doesn't say it worked). Those two run one at a time (a queue), or
   overlapping calls each start from the same ids and the first to finish wins - so a screen
-  shouldn't await a reschedule to carry on. Reminders that failed part-way are turned off and
-  counted for the screen to report; a refusal (`NotificationPermissionError`, thrown before
-  anything is cancelled) leaves them as they are.
+  shouldn't await a reschedule to carry on. Reminders that failed part-way (their old ones are
+  already cancelled by then) are turned off; a refusal (`NotificationPermissionError`, thrown
+  before anything is cancelled) leaves them as they are. `rescheduleReminders` counts both
+  (`{ turnedOff, notAllowed }`) for the screen to report; a failed settings save does the same
+  turning off, and rejects.
 - `app.json` ships a real bundle id / package name. Changing them after a store release breaks
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications

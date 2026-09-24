@@ -79,8 +79,9 @@ export default function SettingsScreen() {
         // Scheduled reminders are still worded in the old language, and
         // Android lists them under the old channel name.
         void renameReminderChannel(next.notifications.channelName);
-        void rescheduleReminders(next.notifications).then((turnedOff) => {
+        void rescheduleReminders(next.notifications).then(({ turnedOff, notAllowed }) => {
           if (turnedOff > 0) Alert.alert(next.common.error, next.notifications.remindersTurnedOff);
+          else if (notAllowed > 0) Alert.alert(next.common.error, next.notifications.remindersNotUpdated);
         });
         Alert.alert(next.common.success, next.settings.languageChangedRestart, [
           { text: next.common.close, style: 'cancel' },

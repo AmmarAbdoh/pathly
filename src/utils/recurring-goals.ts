@@ -41,13 +41,26 @@ export function canRecur(
   return goal.period !== 'custom' || isPeriodLength(goal.customPeriodDays);
 }
 
+/** The longest custom period: ten years. Past it, the deadline maths runs out of dates. */
+export const MAX_PERIOD_DAYS = 3650;
+
 /**
  * A custom period's length: a day or more. Fractions are fine -
  * getPeriodEndDate handles them, and the form once took "1.5" - but a period
  * of a moment ends as it starts, and resets its goal on every load.
  */
 export function isPeriodLength(days: unknown): days is number {
-  return typeof days === 'number' && Number.isFinite(days) && days >= 1;
+  return typeof days === 'number' && Number.isFinite(days) && days >= 1 && days <= MAX_PERIOD_DAYS;
+}
+
+/**
+ * Whether a goal has been completed - now, or earlier and set back since. Only
+ * a first completion pays out its points and redeems its linked reward: -1
+ * then +1 paid again. A recurring goal's new period clears completedAt. Tested
+ * as a number, not by truthiness: 0 is a time too.
+ */
+export function hasBeenCompleted(goal: Pick<Goal, 'isComplete' | 'completedAt'>): boolean {
+  return Boolean(goal.isComplete) || typeof goal.completedAt === 'number';
 }
 
 /**
@@ -310,10 +323,13 @@ export function updateGoalStreaks(goal: Goal): Goal {
   }
 
   const { currentStreak, longestStreak } = calculateStreak(goal);
-  
-  return {
-    ...goal,
-    currentStreak,
-    longestStreak: Math.max(longestStreak, goal.longestStreak || 0),
-  };
+  const longest = Math.max(longestStreak, goal.longestStreak || 0);
+
+  // As it was when nothing changed: that is how a load tells it has nothing
+  // to save.
+  if (currentStreak === goal.currentStreak && longest === goal.longestStreak) {
+    return goal;
+  }
+
+  return { ...goal, currentStreak, longestStreak: longest };
 }

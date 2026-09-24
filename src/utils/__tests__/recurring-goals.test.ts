@@ -11,7 +11,9 @@ import {
   getPeriodEndDate,
   getTimeRemaining,
   getTotalPointsEarned,
+  hasBeenCompleted,
   isPeriodLength,
+  MAX_PERIOD_DAYS,
   processRecurringGoals,
   recordCompletion,
   resetGoal,
@@ -746,6 +748,14 @@ describe('canRecur', () => {
     }
   });
 
+  // Regression: no upper limit, and 1e9 days ran the deadline maths out of
+  // dates - an Invalid Date on screen, and a goal that never reset.
+  it('takes a custom period of at most ten years', () => {
+    expect(isPeriodLength(MAX_PERIOD_DAYS)).toBe(true);
+    expect(isPeriodLength(MAX_PERIOD_DAYS + 1)).toBe(false);
+    expect(isPeriodLength(1e9)).toBe(false);
+  });
+
   it('is only for top-level goals that are not ultimate', () => {
     expect(canRecur({ ...topLevel('daily'), parentId: 1 })).toBe(false);
     expect(canRecur({ ...topLevel('daily'), isUltimate: true })).toBe(false);
@@ -802,5 +812,49 @@ describe('a goal saved as recurring that cannot recur', () => {
     expect(turnedOff.schedule).toBeUndefined();
     expect(oneOff.schedule).toBeUndefined();
     expect(recurring.schedule).toEqual(schedule);
+  });
+});
+
+describe('hasBeenCompleted', () => {
+  it('is true for a goal complete now, or completed before and set back', () => {
+    expect(hasBeenCompleted({ isComplete: true })).toBe(true);
+    expect(hasBeenCompleted({ isComplete: false, completedAt: 5 })).toBe(true);
+  });
+
+  // 0 is a time too: by truthiness, a goal completed then paid out again.
+  it('counts a completion at time 0', () => {
+    expect(hasBeenCompleted({ isComplete: false, completedAt: 0 })).toBe(true);
+  });
+
+  it('is false for a goal never completed, or starting a new period', () => {
+    expect(hasBeenCompleted({ isComplete: false })).toBe(false);
+    expect(hasBeenCompleted({ isComplete: false, completedAt: undefined })).toBe(false);
+  });
+});
+
+describe('updateGoalStreaks', () => {
+  // A load saves only what changed, and tells by identity.
+  it('hands back the same goal when its streaks are already right', () => {
+    const goal = {
+      id: 1,
+      title: 'Run',
+      current: 0,
+      target: 1,
+      unit: 'x',
+      initialValue: 0,
+      direction: 'increase',
+      progress: 0,
+      points: 1,
+      period: 'weekly',
+      createdAt: 0,
+      isRecurring: true,
+      isComplete: false,
+      completionHistory: [],
+      currentStreak: 0,
+      longestStreak: 0,
+    } as Goal;
+
+    expect(updateGoalStreaks(goal)).toBe(goal);
+    expect(updateGoalStreaks({ ...goal, currentStreak: 3 })).toMatchObject({ currentStreak: 0, longestStreak: 0 });
   });
 });
