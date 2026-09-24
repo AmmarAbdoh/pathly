@@ -4,7 +4,7 @@
  */
 
 import { translations } from '../../i18n/translations';
-import { Goal } from '../../types';
+import { Goal, TimePeriod } from '../../types';
 import {
   calculateGoalProgress,
   calculatePeriodEndDate,
@@ -15,6 +15,7 @@ import {
   formatTimeRemaining,
   isGoalCompleted,
 } from '../goal-calculations';
+import { shouldResetGoal } from '../recurring-goals';
 
 describe('Goal Progress Calculations', () => {
   const createMockGoal = (overrides: Partial<Goal>): Goal => ({
@@ -519,5 +520,72 @@ describe('calculatePeriodEndDate for part of a day', () => {
     const mondayNight = new Date(2026, 0, 5, 22, 0).getTime(); // a Monday
     const end = new Date(calculatePeriodEndDate(mondayNight, 'custom', 1.5));
     expect(end.getDate()).toBe(7); // Wednesday
+  });
+});
+
+describe("a recurring goal's deadline", () => {
+  // Regression: the card counted down to a one-off goal's deadline - for a
+  // daily goal, the end of tomorrow - while the goal reset at midnight tonight.
+  const start = new Date(2026, 0, 5, 9, 0).getTime(); // a Monday morning
+  const recurring = (period: TimePeriod, customPeriodDays?: number): Goal => ({
+    id: 1,
+    title: 'Read',
+    current: 0,
+    target: 1,
+    unit: 'book',
+    initialValue: 0,
+    direction: 'increase',
+    progress: 0,
+    points: 10,
+    isComplete: false,
+    isRecurring: true,
+    period,
+    customPeriodDays,
+    periodStartDate: start,
+    createdAt: start,
+  });
+  const at = (time: number) => jest.spyOn(Date, 'now').mockReturnValue(time);
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('counts a daily goal down to midnight tonight', () => {
+    at(new Date(2026, 0, 5, 12, 0).getTime());
+
+    expect(calculateTimeRemaining(start, 'daily', undefined, true)).toMatchObject({
+      days: 0,
+      hours: 11,
+      minutes: 59,
+    });
+    expect(formatEndDateTime(start, 'daily', undefined, 'en', true)).toMatch(/^Jan 5,/);
+  });
+
+  it.each([
+    { label: 'daily', period: 'daily' },
+    { label: 'weekly', period: 'weekly' },
+    { label: 'monthly', period: 'monthly' },
+    { label: 'yearly', period: 'yearly' },
+    { label: '1.5-day', period: 'custom', days: 1.5 },
+    { label: '14-day', period: 'custom', days: 14 },
+  ] as { label: string; period: TimePeriod; days?: number }[])(
+    'runs out as a $label goal resets',
+    ({ period, days }) => {
+      const goal = recurring(period, days);
+      const end = calculatePeriodEndDate(start, period, days, true);
+
+      at(end - 60_000);
+      expect(calculateTimeRemaining(start, period, days, true).totalMs).toBeGreaterThan(0);
+      expect(shouldResetGoal(goal)).toBe(false);
+
+      at(end);
+      expect(calculateTimeRemaining(start, period, days, true).totalMs).toBe(0);
+      expect(shouldResetGoal(goal)).toBe(true);
+    }
+  );
+
+  it("keeps a one-off goal's deadline at the end of its last day", () => {
+    const end = new Date(calculatePeriodEndDate(start, 'weekly'));
+    expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([12, 23, 59]);
   });
 });

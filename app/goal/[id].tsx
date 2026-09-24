@@ -1218,7 +1218,8 @@ export default function GoalDetail() {
               goal.periodStartDate,
               goal.period,
               goal.customPeriodDays,
-              language
+              language,
+              goal.isRecurring
             );
             
             return !timeRemainingData.isExpired && (

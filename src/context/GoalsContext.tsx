@@ -613,21 +613,6 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     void loadGoals();
   }, [loadGoals]);
 
-  // Flush pending writes when the app leaves the foreground, and on unmount,
-  // so a debounced save can never be lost.
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState !== 'active') {
-        void flushSave();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-      void flushSave();
-    };
-  }, [flushSave]);
-
   /**
    * Increment lifetime points earned (never decreases)
    */
@@ -692,7 +677,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     // Not while an import runs: it rolls its own goals over.
     if (loadStateRef.current !== 'loaded' || heldRef.current) return;
 
-    // Once loaded, memory is the source of truth.Nothing else writes goals
+    // Once loaded, memory is the source of truth. Nothing else writes goals
     // storage, so re-reading it can only return what this provider wrote - or
     // something older, whenever a save is queued, in flight or failed.
     // Refreshing used to re-read, and each time it raced a save it put older
@@ -702,6 +687,27 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     rollOverInMemory();
     await flushSave();
   }, [rollOverInMemory, flushSave, loadGoals]);
+
+  // Flush pending writes when the app leaves the foreground, and on unmount,
+  // so a debounced save can never be lost. And roll periods over when it comes
+  // back, as a launch does: left in the background overnight, a daily goal
+  // kept yesterday's period until a pull to refresh - a completion made
+  // meanwhile was put down to yesterday, and paid again once the goal reset.
+  // Not while an import runs: goal changes wait, and it rolls its own over.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') {
+        void flushSave();
+      } else if (!heldRef.current) {
+        rollOverInMemory();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      void flushSave();
+    };
+  }, [flushSave, rollOverInMemory]);
 
   const retryStorage = useCallback(async () => {
     if (loadStateRef.current === 'failed') {

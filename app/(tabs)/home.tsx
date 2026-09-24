@@ -247,7 +247,8 @@ export default function HomeScreen() {
           goal.periodStartDate,
           goal.period,
           goal.customPeriodDays,
-          language
+          language,
+          goal.isRecurring
         );
 
         const timeRemaining =

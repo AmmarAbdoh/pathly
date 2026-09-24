@@ -169,6 +169,68 @@ describe('GoalsContext: persistence', () => {
     expect(await stored()).toBe(8);
   });
 
+  describe('coming back to the foreground', () => {
+    let onChange: (state: string) => void;
+
+    /** A daily goal completed today, loaded; then it is tomorrow morning. */
+    async function overnight() {
+      (AppState.addEventListener as jest.Mock).mockImplementationOnce((_, handler) => {
+        onChange = handler;
+        return { remove: jest.fn() };
+      });
+      await seed([
+        makeGoal({
+          period: 'daily',
+          isRecurring: true,
+          current: 10,
+          progress: 100,
+          isComplete: true,
+          completedAt: Date.now(),
+        }),
+      ]);
+      const view = await renderGoals();
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(8, 0, 0, 0);
+      jest.spyOn(Date, 'now').mockReturnValue(tomorrow.getTime());
+      return view;
+    }
+
+    afterEach(() => {
+      (Date.now as jest.Mock).mockRestore();
+    });
+
+    // Regression: periods rolled over only at launch and on pull to refresh.
+    // Left in the background overnight, a daily goal kept yesterday's period:
+    // completed in the morning, it was put down to yesterday, reset, and paid
+    // again when completed once more.
+    it('starts the new period', async () => {
+      const { result } = await overnight();
+
+      await act(async () => onChange('active'));
+
+      expect(result.current.goals[0]).toMatchObject({ isComplete: false, current: 0 });
+      expect(result.current.goals[0].completionHistory).toHaveLength(1);
+    });
+
+    it('leaves the goals alone while an import holds them', async () => {
+      const { result } = await overnight();
+      let release!: () => void;
+      let held!: Promise<void>;
+      await act(async () => {
+        held = result.current.withGoalsHeld(() => new Promise<void>((done) => (release = done)));
+      });
+
+      await act(async () => onChange('active'));
+      expect(result.current.goals[0].isComplete).toBe(true);
+
+      await act(async () => {
+        release();
+        await held;
+      });
+    });
+  });
+
   it('skips the write entirely when a mutation changes nothing', async () => {
     await seed([makeGoal()]);
     const { result } = await renderGoals();

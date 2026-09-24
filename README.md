@@ -125,7 +125,7 @@ pathly/
 - **Expo Router** for file-based navigation
 - **React Context** + **AsyncStorage** for state and persistence
 - **Reanimated 4.5** for UI-thread animations
-- **Jest** + **@testing-library/react-native** — 796 tests, ~97% coverage with no files excluded
+- **Jest** + **@testing-library/react-native** — 806 tests, ~97% coverage with no files excluded
 
 ---
 

@@ -102,7 +102,9 @@ used by both): a reward the user can't afford stays available.
 - **Once loaded, memory is the source of truth: refresh never re-reads storage.** Nothing else
   writes it, so a re-read can only return what was written - or something older, whenever a save
   is queued or in flight. Re-reading raced saves and lost edits. Refresh rolls periods over in
-  memory and retries failed saves. Only the first load and Retry after a failed load read
+  memory and retries failed saves; so does the app coming back to the foreground (the rollover,
+  not the retry) - a daily goal left in the background overnight kept yesterday's period, and a
+  completion made in it was paid twice. Only the first load and Retry after a failed load read
   storage, and each discards the save queue. An import is not read back either: that threw
   away changes made while it finished. It goes into memory and is rolled over there.
 - What a load or refresh applies (`rollOver`, `archivedRemindersOff`) hands back every goal it
@@ -291,6 +293,9 @@ Gotchas:
   saved goal that breaks it) all call it. Don't write a local copy: two copies that disagreed let recurring
   subgoals in through import. Only a recurring goal keeps a `schedule` - on any other it hid the
   goal on unscheduled days, and the form (which offers it only for recurring) couldn't show why.
+- **A recurring goal's deadline is its reset** (`getPeriodEndDate`); a one-off goal's is the end
+  of its last day. Pass `isRecurring` to `calculateTimeRemaining` and `formatEndDateTime`:
+  without it, a daily goal counted down to the end of tomorrow while it reset at midnight tonight.
 - `Number.isFinite`, not `typeof x === 'number'`, for numbers from outside: JSON's `1e999` parses
   as `Infinity`, which `JSON.stringify` saves as `null`.
 - A backup file is untrusted input: it can contain duplicate ids, dangling links, missing fields,

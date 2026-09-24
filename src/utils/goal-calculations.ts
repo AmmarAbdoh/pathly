@@ -4,6 +4,7 @@
  */
 
 import { Goal, GoalDirection } from '../types';
+import { getPeriodEndDate } from './recurring-goals';
 
 /**
  * Calculate progress percentage for a goal with subgoals
@@ -109,16 +110,25 @@ export const isGoalCompleted = (progress: number): boolean => {
  * @param periodStartDate - Start date timestamp
  * @param period - Time period type
  * @param customPeriodDays - Number of days for custom period
+ * @param isRecurring - Whether the goal is recurring: its period ends when it resets
  * @returns End date timestamp (set to 23:59:59.999 of the final day)
  */
 export const calculatePeriodEndDate = (
   periodStartDate: number,
   period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing',
-  customPeriodDays?: number
+  customPeriodDays?: number,
+  isRecurring?: boolean
 ): number => {
   // Ongoing goals never expire
   if (period === 'ongoing') {
     return Infinity;
+  }
+
+  // A recurring goal's period ends when it resets, by the reset's own rule.
+  // With a one-off goal's deadline instead, a daily goal counted down to the
+  // end of tomorrow while it reset at midnight tonight.
+  if (isRecurring) {
+    return getPeriodEndDate(periodStartDate, period, customPeriodDays);
   }
 
   const startDate = new Date(periodStartDate);
@@ -184,7 +194,7 @@ export const calculateTimeRemaining = (
     return { days: 0, hours: 0, minutes: 0, isExpired: false, totalMs: 0 };
   }
 
-  const endDate = calculatePeriodEndDate(periodStartDate, period, customPeriodDays);
+  const endDate = calculatePeriodEndDate(periodStartDate, period, customPeriodDays, isRecurring);
   const now = Date.now();
   const diff = endDate - now;
 
@@ -301,13 +311,15 @@ export const formatTimeRemaining = (
  * @param period - Time period type
  * @param customPeriodDays - Number of days for custom period
  * @param language - Language for date formatting ('en' or 'ar')
+ * @param isRecurring - Whether the goal is recurring: its period ends when it resets
  * @returns Formatted string like "Oct 30, 11:59 PM" or "٣٠ أكتوبر، ١١:٥٩ م"
  */
 export const formatEndDateTime = (
   periodStartDate: number | undefined,
   period: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing',
   customPeriodDays?: number,
-  language: 'en' | 'ar' = 'en'
+  language: 'en' | 'ar' = 'en',
+  isRecurring?: boolean
 ): string => {
   // Ongoing goals have no end date
   if (period === 'ongoing') {
@@ -318,7 +330,9 @@ export const formatEndDateTime = (
     return '';
   }
 
-  const endDate = new Date(calculatePeriodEndDate(periodStartDate, period, customPeriodDays));
+  const endDate = new Date(
+    calculatePeriodEndDate(periodStartDate, period, customPeriodDays, isRecurring)
+  );
   
   // Format date based on language
   const locale = language === 'ar' ? 'ar-SA' : 'en-US';
