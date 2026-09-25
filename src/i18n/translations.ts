@@ -281,7 +281,8 @@ export interface Translations {
     ultimate: string;
     completed: string;
     streak: string;
-    weekStreak: string;
+    /** After the count: a recurring goal's streak is counted in its periods. */
+    periodStreak: Record<'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom' | 'ongoing', string>;
     paused: string;
     blocked: string;
     openHint: string;
@@ -383,6 +384,9 @@ export interface Translations {
     cancelAddSubgoal: string;
     newProgressValue: string;
     timesCompleted: string; // {count}
+    timesCompletedOne: string;
+    increaseByOne: string;
+    decreaseByOne: string;
   };
   review: {
     title: string;
@@ -533,6 +537,8 @@ export interface Translations {
     currentValid: string;
     currentMin: string;
     currentMax: string;
+    currentBelowTarget: string;
+    currentAboveTarget: string;
     unitRequired: string;
     unitTooLong: string;
     pointsRequired: string;
@@ -611,6 +617,7 @@ export interface Translations {
     monthly: string;
     yearly: string;
     custom: string;
+    ongoing: string;
   };
   time: {
     days: string;
@@ -942,7 +949,14 @@ export const translations: Record<Language, Translations> = {
       ultimate: '⭐ ULTIMATE',
       completed: 'Completed',
       streak: 'streak',
-      weekStreak: 'week streak',
+      periodStreak: {
+        daily: 'day streak',
+        weekly: 'week streak',
+        monthly: 'month streak',
+        yearly: 'year streak',
+        custom: 'period streak',
+        ongoing: 'streak',
+      },
       paused: 'Paused',
       blocked: 'Blocked',
       openHint: 'Tap to view and edit goal details',
@@ -1044,6 +1058,9 @@ export const translations: Record<Language, Translations> = {
       cancelAddSubgoal: 'Cancel adding a subgoal',
       newProgressValue: 'New progress value',
       timesCompleted: '× {count} completions',
+      timesCompletedOne: '× 1 completion',
+      increaseByOne: 'Add 1',
+      decreaseByOne: 'Take away 1',
     },
     review: {
       title: 'Review',
@@ -1196,6 +1213,8 @@ export const translations: Record<Language, Translations> = {
       currentValid: 'Current must be a valid number',
       currentMin: 'Current value must be at least 0',
       currentMax: 'Current value must be less than 1,000,000',
+      currentBelowTarget: 'Current progress must be below the target',
+      currentAboveTarget: 'For a decreasing goal, current progress must be above the target',
       unitRequired: 'Unit is required',
       unitTooLong: 'Unit must be less than 20 characters',
       pointsRequired: 'Points are required',
@@ -1204,7 +1223,7 @@ export const translations: Record<Language, Translations> = {
       pointsMax: 'Points must be less than 100,000',
     },
     achievements: {
-      first_goal: { title: 'Getting Started', description: 'Create your first goal' },
+      first_goal: { title: 'Getting Started', description: 'Complete your first goal' },
       goal_master: { title: 'Goal Master', description: 'Complete 10 goals' },
       century_club: { title: 'Century Club', description: 'Complete 100 goals' },
       point_collector: { title: 'Point Collector', description: 'Earn 1000 points' },
@@ -1293,6 +1312,7 @@ export const translations: Record<Language, Translations> = {
       monthly: 'Monthly',
       yearly: 'Yearly',
       custom: 'Custom',
+      ongoing: 'Ongoing',
     },
     time: {
       days: 'days',
@@ -1419,7 +1439,7 @@ export const translations: Record<Language, Translations> = {
       subtitle: 'أنفق نقاطك على المكافآت',
       all: 'الكل',
       useTemplate: 'استخدم قالب',
-      quickRewards: 'مكافآت سريعة من أكثر من 100 فكرة',
+      quickRewards: 'مكافآت سريعة من أكثر من ١٠٠ فكرة',
       totalEarned: 'إجمالي المكتسب',
       spent: 'المنفق',
       available: 'المتاح',
@@ -1511,7 +1531,7 @@ export const translations: Record<Language, Translations> = {
       periodPerformance: 'أداء الفترات',
       timeOfDay: 'الوقت من اليوم',
       completionTrend: 'اتجاه الإنجاز',
-      last30Days: 'آخر 30 يوم',
+      last30Days: 'آخر ٣٠ يوم',
       bestCategory: 'أفضل فئة',
       worstCategory: 'تحتاج إلى انتباه',
       bestDay: 'أفضل يوم',
@@ -1545,7 +1565,7 @@ export const translations: Record<Language, Translations> = {
       },
     },
     goalForm: {
-      subgoalPointsHelper: 'اتركه 0 إذا كنت لا تريد أن يمنح هذا الهدف الفرعي نقاطاً',
+      subgoalPointsHelper: 'اتركه ٠ إذا كنت لا تريد أن يمنح هذا الهدف الفرعي نقاطاً',
       subgoalPointsHint: 'نقاط اختيارية تُمنح عند إكمال هذا الهدف الفرعي',
       addError: 'فشل إضافة الهدف',
       title: 'إضافة هدف جديد',
@@ -1556,11 +1576,11 @@ export const translations: Record<Language, Translations> = {
       descriptionLabel: 'الوصف',
       descriptionPlaceholder: 'أضف المزيد من التفاصيل حول هدفك...',
       targetAmount: 'المبلغ المستهدف',
-      targetPlaceholder: 'المبلغ المستهدف (مثال: 20)',
+      targetPlaceholder: 'المبلغ المستهدف (مثال: ٢٠)',
       targetLabel: 'المبلغ المستهدف',
       targetHint: 'أدخل القيمة المستهدفة التي تريد الوصول إليها',
       currentProgress: 'التقدم الحالي',
-      currentPlaceholder: 'التقدم الحالي (مثال: 5)',
+      currentPlaceholder: 'التقدم الحالي (مثال: ٥)',
       currentLabel: 'التقدم الحالي',
       currentHint: 'أدخل قيمتك الحالية أو البدائية',
       startingValue: 'القيمة البدائية',
@@ -1587,7 +1607,7 @@ export const translations: Record<Language, Translations> = {
       customPeriodDays: 'فترة مخصصة (أيام)',
       customPeriodPlaceholder: 'عدد الأيام',
       points: 'نقاط المكافأة',
-      pointsPlaceholder: 'النقاط عند الإنجاز (مثال: 100)',
+      pointsPlaceholder: 'النقاط عند الإنجاز (مثال: ١٠٠)',
       pointsLabel: 'نقاط المكافأة',
       pointsHint: 'أدخل النقاط التي ستكسبها عند إكمال هذا الهدف',
       addButton: 'إضافة الهدف',
@@ -1625,7 +1645,14 @@ export const translations: Record<Language, Translations> = {
       ultimate: '⭐ أسمى',
       completed: 'مكتمل',
       streak: 'سلسلة',
-      weekStreak: 'سلسلة أسبوعية',
+      periodStreak: {
+        daily: 'سلسلة يومية',
+        weekly: 'سلسلة أسبوعية',
+        monthly: 'سلسلة شهرية',
+        yearly: 'سلسلة سنوية',
+        custom: 'سلسلة فترات',
+        ongoing: 'سلسلة',
+      },
       paused: 'متوقف',
       blocked: 'محجوب',
       openHint: 'اضغط لعرض وتعديل تفاصيل الهدف',
@@ -1659,7 +1686,7 @@ export const translations: Record<Language, Translations> = {
       editGoal: 'تحرير الهدف',
       finishGoal: 'تحديد كمكتمل',
       finishConfirmTitle: 'إكمال الهدف',
-      finishConfirmMessage: 'تحديد هقذا الهدف كمكتمل 100٪؟',
+      finishConfirmMessage: 'تحديد هذا الهدف كمكتمل ١٠٠٪؟',
       finishSuccess: 'تم تحديد الهدف كمكتمل!',
       finishError: 'فشل في إكمال الهدف',
       useSlider: 'استخدم المنزلق لضبط التقدم',
@@ -1676,8 +1703,8 @@ export const translations: Record<Language, Translations> = {
       pauseSuccess: 'تم إيقاف الهدف مؤقتًا بنجاح',
       resumeSuccess: 'تم استئناف الهدف بنجاح',
       pauseError: 'فشل في إيقاف/استئناف الهدف',
-      complete100Title: 'الهدف وصل إلى 100٪',
-      complete100Message: 'لقد وصلت إلى تقدم 100٪! عدّل القيمة أدناه أو احفظها كما هي.',
+      complete100Title: 'الهدف وصل إلى ١٠٠٪',
+      complete100Message: 'لقد وصلت إلى تقدم ١٠٠٪! عدّل القيمة أدناه أو احفظها كما هي.',
       markComplete: 'تحديد كمكتمل',
       setTo99: 'ليس بعد',
       notYetLabel: 'تعديل القيمة (اختياري)',
@@ -1695,7 +1722,7 @@ export const translations: Record<Language, Translations> = {
       notesTitle: 'ملاحظات ويوميات',
       noNotes: 'لا توجد ملاحظات بعد. أضف ملاحظتك الأولى لتتبع التقدم والأفكار!',
       addNote: 'إضافة ملاحظة',
-      noteInputPlaceholder: 'اكتب ملاحظتك هنا... (مثال: "الأسبوع 3: تقدم رائع!")',
+      noteInputPlaceholder: 'اكتب ملاحظتك هنا... (مثال: "الأسبوع ٣: تقدم رائع!")',
       noteSaved: 'تم حفظ الملاحظة بنجاح',
       deleteNote: 'حذف الملاحظة',
       deleteNoteConfirm: 'حذف هذه الملاحظة؟ لا يمكن التراجع عن هذا الإجراء.',
@@ -1727,6 +1754,9 @@ export const translations: Record<Language, Translations> = {
       cancelAddSubgoal: 'إلغاء إضافة هدف فرعي',
       newProgressValue: 'قيمة التقدم الجديدة',
       timesCompleted: '× {count} مرات إكمال',
+      timesCompletedOne: '× إكمال واحد',
+      increaseByOne: 'زيادة ١',
+      decreaseByOne: 'إنقاص ١',
     },
     review: {
       title: 'المراجعة',
@@ -1870,32 +1900,34 @@ export const translations: Record<Language, Translations> = {
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',
-      titleTooLong: 'يجب أن يكون العنوان أقل من 100 حرف',
+      titleTooLong: 'يجب أن يكون العنوان أقل من ١٠٠ حرف',
       targetRequired: 'الهدف مطلوب',
       targetPositive: 'يجب أن يكون الهدف رقمًا موجبًا',
-      targetMin: 'يجب أن يكون الهدف على الأقل 0.01',
-      targetMax: 'يجب أن يكون الهدف أقل من 1,000,000',
+      targetMin: 'يجب أن يكون الهدف على الأقل ٠٫٠١',
+      targetMax: 'يجب أن يكون الهدف أقل من ١٬٠٠٠٬٠٠٠',
       currentRequired: 'القيمة الحالية مطلوبة',
       currentValid: 'يجب أن تكون القيمة الحالية رقمًا صحيحًا',
-      currentMin: 'يجب أن تكون القيمة الحالية على الأقل 0',
-      currentMax: 'يجب أن تكون القيمة الحالية أقل من 1,000,000',
+      currentMin: 'يجب أن تكون القيمة الحالية على الأقل ٠',
+      currentMax: 'يجب أن تكون القيمة الحالية أقل من ١٬٠٠٠٬٠٠٠',
+      currentBelowTarget: 'يجب أن يكون التقدم الحالي أقل من الهدف',
+      currentAboveTarget: 'في الهدف التنازلي، يجب أن يكون التقدم الحالي أعلى من الهدف',
       unitRequired: 'الوحدة مطلوبة',
-      unitTooLong: 'يجب أن تكون الوحدة أقل من 20 حرفًا',
+      unitTooLong: 'يجب أن تكون الوحدة أقل من ٢٠ حرفًا',
       pointsRequired: 'النقاط مطلوبة',
       pointsValid: 'يجب أن تكون النقاط رقمًا صحيحًا',
-      pointsMin: 'يجب أن تكون النقاط على الأقل 0',
-      pointsMax: 'يجب أن تكون النقاط أقل من 100,000',
+      pointsMin: 'يجب أن تكون النقاط على الأقل ٠',
+      pointsMax: 'يجب أن تكون النقاط أقل من ١٠٠٬٠٠٠',
     },
     achievements: {
-      first_goal: { title: 'البداية', description: 'أنشئ هدفك الأول' },
-      goal_master: { title: 'سيد الأهداف', description: 'أكمل 10 أهداف' },
-      century_club: { title: 'نادي المئة', description: 'أكمل 100 هدف' },
-      point_collector: { title: 'جامع النقاط', description: 'اكسب 1000 نقطة' },
-      point_legend: { title: 'أسطورة النقاط', description: 'اكسب 10,000 نقطة' },
-      week_warrior: { title: 'محارب الأسبوع', description: 'حافظ على سلسلة 7 أيام' },
-      month_champion: { title: 'بطل الشهر', description: 'حافظ على سلسلة 30 يومًا' },
-      unstoppable: { title: 'لا يُقهر', description: 'حافظ على سلسلة 100 يوم' },
-      ultimate_creator: { title: 'منشئ الأهداف الأسمى', description: 'أنشئ 5 أهداف أسمى' },
+      first_goal: { title: 'البداية', description: 'أكمل هدفك الأول' },
+      goal_master: { title: 'سيد الأهداف', description: 'أكمل ١٠ أهداف' },
+      century_club: { title: 'نادي المئة', description: 'أكمل ١٠٠ هدف' },
+      point_collector: { title: 'جامع النقاط', description: 'اكسب ١٠٠٠ نقطة' },
+      point_legend: { title: 'أسطورة النقاط', description: 'اكسب ١٠٬٠٠٠ نقطة' },
+      week_warrior: { title: 'محارب الأسبوع', description: 'حافظ على سلسلة ٧ أيام' },
+      month_champion: { title: 'بطل الشهر', description: 'حافظ على سلسلة ٣٠ يومًا' },
+      unstoppable: { title: 'لا يُقهر', description: 'حافظ على سلسلة ١٠٠ يوم' },
+      ultimate_creator: { title: 'منشئ الأهداف الأسمى', description: 'أنشئ ٥ أهداف أسمى' },
       perfectionist: { title: 'الكمالي', description: 'أكمل جميع الأهداف في أسبوع' },
     },
     quotes: [
@@ -1976,6 +2008,7 @@ export const translations: Record<Language, Translations> = {
       monthly: 'شهري',
       yearly: 'سنوي',
       custom: 'مخصص',
+      ongoing: 'مستمر',
     },
     time: {
       days: 'أيام',          // 3-10 days
@@ -2031,7 +2064,7 @@ export const translations: Record<Language, Translations> = {
       monthlyDates: 'تواريخ شهرية',
       selectWeekdays: 'اختر أيام الأسبوع:',
       selectDates: 'اختر أيام الشهر:',
-      selectRange: 'اختر نطاق التواريخ (مثال: 20-25):',
+      selectRange: 'اختر نطاق التواريخ (مثال: ٢٠-٢٥):',
       listSeparator: '، ',
     },
   },

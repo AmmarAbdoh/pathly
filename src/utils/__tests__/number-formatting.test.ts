@@ -3,7 +3,7 @@
  * Verify locale-specific number display
  */
 
-import { formatNumber, formatPercentage, parseFormattedNumber } from '../number-formatting';
+import { formatNumber, formatPercentage, parseFormattedNumber, toArabicDigits } from '../number-formatting';
 
 describe('Number Formatting Utilities', () => {
   describe('formatNumber', () => {
@@ -153,5 +153,13 @@ describe('Number Formatting Utilities', () => {
       const arParsed = parseFormattedNumber(arFormatted);
       expect(arParsed).toBeCloseTo(originalNumber);
     });
+  });
+});
+
+describe('toArabicDigits', () => {
+  it('changes digits and nothing else', () => {
+    expect(toArabicDigits('🔥 12.5%')).toBe('🔥 ١٢.٥%');
+    expect(toArabicDigits('0123456789')).toBe('٠١٢٣٤٥٦٧٨٩');
+    expect(toArabicDigits('')).toBe('');
   });
 });

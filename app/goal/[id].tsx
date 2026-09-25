@@ -800,20 +800,23 @@ export default function GoalDetail() {
     router.push(`/goal/${subgoalId}`);
   }, [router]);
 
+  // A subgoal earns its points only when its parent lets subgoals award them.
+  const subgoalsPay = goal?.subgoalsAwardPoints === true;
+
   const renderSubgoalItem = useCallback(
     ({ item }: { item: Goal }) => (
       <GoalCard
         id={item.id}
         title={item.title}
         progress={item.progress}
-        points={item.points}
+        points={subgoalsPay ? item.points : 0}
         subgoalCount={item.subGoals?.length || 0}
         isUltimate={item.isUltimate}
         isComplete={item.isComplete}
         onPress={handleSubgoalPress}
       />
     ),
-    [handleSubgoalPress]
+    [handleSubgoalPress, subgoalsPay]
   );
 
   const subgoalKeyExtractor = useCallback((item: Goal) => `subgoal-${item.id}`, []);
@@ -1045,8 +1048,20 @@ export default function GoalDetail() {
     );
   }
 
-  const progressText = formatProgressText(goal.current, goal.target, goal.unit);
+  // An ultimate goal's target is its subgoals: stored as "0 / 100 subgoals",
+  // which the page showed whatever the subgoals were.
+  const completedSubgoals = (goal.subGoals ?? []).filter(
+    (subId) => goals.find((g) => g.id === subId)?.isComplete
+  ).length;
+  const progressText = goal.isUltimate
+    ? `${formatNumber(completedSubgoals, language)} / ${formatNumber(goal.subGoals?.length ?? 0, language)} ${t.goalCard.subgoals}`
+    : formatProgressText(goal.current, goal.target, goal.unit, language);
   const progressPercentage = Math.round(goal.progress);
+
+  // A subgoal's points are paid only when its parent lets subgoals award them;
+  // the form asked for them, and the page showed them, either way.
+  const parentGoal = goal.parentId ? goals.find((g) => g.id === goal.parentId) : undefined;
+  const earnsPoints = !goal.parentId || parentGoal?.subgoalsAwardPoints === true;
 
   // Show edit form if in edit mode
   if (isEditMode) {
@@ -1080,6 +1095,7 @@ export default function GoalDetail() {
             // A subgoal is edited in the subgoal form: points optional, and no
             // ultimate or recurring options.
             parentId={goal.parentId}
+            parentAwardsPoints={earnsPoints}
             initialValues={{
               ...goal,
               isRecurring: goal.isRecurring || false,
@@ -1124,6 +1140,7 @@ export default function GoalDetail() {
           <AddGoalForm
             parentId={goal.id}
             parentTitle={goal.title}
+            parentAwardsPoints={goal.subgoalsAwardPoints === true}
             onAddGoal={handleSubgoalSubmit}
           />
         </ScrollView>
@@ -1186,23 +1203,26 @@ export default function GoalDetail() {
           <Text style={[styles.percentage, { color: theme.colors.primary }]}>
             {formatNumber(progressPercentage, language)}% {t.goalDetail.complete}
           </Text>
-          {goal.points > 0 && (
+          {earnsPoints && goal.points > 0 && (
             <Text style={[styles.points, { color: theme.colors.primary }]}>
               🎯 {formatNumber(goal.points, language)} {t.goalCard.points}
               {goal.isRecurring && goal.completionHistory && goal.completionHistory.length > 0 && (
                 <Text style={{ fontSize: 14 }}>
                   {' '}
-                  {t.goalDetail.timesCompleted.replace(
-                    '{count}',
-                    formatNumber(goal.completionHistory.length + (goal.isComplete ? 1 : 0), language)
-                  )}
+                  {goal.completionHistory.length + (goal.isComplete ? 1 : 0) === 1
+                    ? t.goalDetail.timesCompletedOne
+                    : t.goalDetail.timesCompleted.replace(
+                        '{count}',
+                        formatNumber(goal.completionHistory.length + (goal.isComplete ? 1 : 0), language)
+                      )}
                 </Text>
               )}
             </Text>
           )}
           
           {/* Time Remaining Display */}
-          {!goal.isComplete && goal.periodStartDate && (() => {
+          {/* Nothing to count down to for an ongoing goal: it showed an empty box. */}
+          {!goal.isComplete && goal.period !== 'ongoing' && goal.periodStartDate ? (() => {
             const timeRemainingData = calculateTimeRemaining(
               goal.periodStartDate,
               goal.period,
@@ -1212,7 +1232,8 @@ export default function GoalDetail() {
             const timeRemainingText = formatTimeRemaining(
               timeRemainingData,
               t.time,
-              goal.isRecurring
+              goal.isRecurring,
+              language
             );
             const endDateTime = formatEndDateTime(
               goal.periodStartDate,
@@ -1234,7 +1255,7 @@ export default function GoalDetail() {
                 ) : null}
               </View>
             );
-          })()}
+          })() : null}
         </View>
 
         {/* Expired Warning */}
@@ -1269,7 +1290,7 @@ export default function GoalDetail() {
               <Text style={styles.buttonText}>{t.goalDetail.editGoal}</Text>
             </TouchableOpacity>
 
-            {!goal.isComplete && (
+            {!goal.isComplete && !isBlocked && (
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: '#22c55e' }]}
                 onPress={handleFinishGoal}
@@ -1345,42 +1366,42 @@ export default function GoalDetail() {
                   onPress={() => handleJump(-50)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>-50</Text>
+                  <Text style={styles.jumpButtonText}>{formatNumber(-50, language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.jumpButton, { backgroundColor: theme.colors.primary }]}
                   onPress={() => handleJump(-10)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>-10</Text>
+                  <Text style={styles.jumpButtonText}>{formatNumber(-10, language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.jumpButton, { backgroundColor: theme.colors.primary }]}
                   onPress={() => handleJump(-5)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>-5</Text>
+                  <Text style={styles.jumpButtonText}>{formatNumber(-5, language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.jumpButton, { backgroundColor: theme.colors.primary }]}
                   onPress={() => handleJump(5)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>+5</Text>
+                  <Text style={styles.jumpButtonText}>+{formatNumber(5, language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.jumpButton, { backgroundColor: theme.colors.primary }]}
                   onPress={() => handleJump(10)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>+10</Text>
+                  <Text style={styles.jumpButtonText}>+{formatNumber(10, language)}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.jumpButton, { backgroundColor: theme.colors.primary }]}
                   onPress={() => handleJump(50)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.jumpButtonText}>+50</Text>
+                  <Text style={styles.jumpButtonText}>+{formatNumber(50, language)}</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
@@ -1394,6 +1415,8 @@ export default function GoalDetail() {
                   style={[styles.incrementButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleDecrement}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.goalDetail.decreaseByOne}
                 >
                   <Ionicons name="remove" size={24} color="#FFF" />
                 </TouchableOpacity>
@@ -1413,6 +1436,8 @@ export default function GoalDetail() {
                   style={[styles.incrementButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleIncrement}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.goalDetail.increaseByOne}
                 >
                   <Ionicons name="add" size={24} color="#FFF" />
                 </TouchableOpacity>
@@ -1446,6 +1471,8 @@ export default function GoalDetail() {
                   style={[styles.updateButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleUpdateProgress}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.goalDetail.updateProgress}
                 >
                   <Ionicons name="checkmark" size={24} color="#FFF" />
                 </TouchableOpacity>
@@ -1466,6 +1493,8 @@ export default function GoalDetail() {
                   style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleAddSubgoal}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t.goalDetail.addSubgoal}
                 >
                   <Ionicons name="add" size={20} color="#FFF" />
                 </TouchableOpacity>
@@ -1504,6 +1533,8 @@ export default function GoalDetail() {
               style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
               onPress={handleAddNote}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t.goalDetail.addNote}
             >
               <Ionicons name="add" size={20} color="#FFF" />
             </TouchableOpacity>
@@ -1558,6 +1589,8 @@ export default function GoalDetail() {
               style={[styles.addButton, { backgroundColor: theme.colors.primary }]}
               onPress={handleAddDependencies}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={t.goalDetail.addDependency}
             >
               <Ionicons name="add" size={20} color="#FFF" />
             </TouchableOpacity>

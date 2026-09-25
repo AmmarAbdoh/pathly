@@ -325,6 +325,33 @@ describe('GoalsContext: completion listeners', () => {
     expect(result.current.goals[0].isComplete).toBe(true);
   });
 
+  // Regression: Mark as Complete finished a goal still waiting on another,
+  // paying its points and redeeming its linked reward.
+  it('does not complete a goal waiting on one that must come first', async () => {
+    await seed([makeGoal({ id: 1 }), makeGoal({ id: 2, title: 'Report', dependsOn: [1] })]);
+    const { result } = await renderGoals();
+    const listener = jest.fn();
+    act(() => {
+      result.current.onGoalCompleted(listener);
+    });
+
+    await act(async () => {
+      await result.current.finishGoal(2);
+    });
+
+    expect(result.current.goals[1].isComplete).toBe(false);
+    expect(result.current.lifetimePointsEarned).toBe(0);
+    expect(listener).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.finishGoal(1);
+      await result.current.finishGoal(2);
+    });
+
+    expect(result.current.goals[1].isComplete).toBe(true);
+    expect(result.current.lifetimePointsEarned).toBe(100);
+  });
+
   it('archives rather than deletes on removeGoal', async () => {
     await seed([makeGoal()]);
     const { result } = await renderGoals();

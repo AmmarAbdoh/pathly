@@ -1110,6 +1110,14 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         const goal = goalsRef.current.find((g) => g.id === id);
         if (!goal) return;
 
+        // Not while it waits on goals that must come first. The detail
+        // screen hid only the progress slider, and Mark as Complete finished a
+        // blocked goal, paying its points and redeeming its reward.
+        const completeIds = new Set(
+          goalsRef.current.filter((g) => g.isComplete).map((g) => g.id)
+        );
+        if (goal.dependsOn?.some((depId) => !completeIds.has(depId))) return;
+
         const isFirstCompletion = !hasBeenCompleted(goal);
 
         const next = commit((prev) => {

@@ -154,6 +154,16 @@ export function generateCSVExport(
 }
 
 /**
+ * The name an export is saved under, dated in the user's own time zone.
+ * toISOString gave the UTC date: just after midnight east of UTC, a file made
+ * on the 25th was named for the 24th.
+ */
+export function exportFileName(extension: 'json' | 'csv', now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `pathly-export-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}.${extension}`;
+}
+
+/**
  * Share data using the native Share API
  * On mobile, this will trigger the share sheet
  * On web, it will download the file or show share options

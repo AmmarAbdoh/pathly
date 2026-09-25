@@ -12,7 +12,7 @@ import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-back
 import { translations } from '@/src/i18n/translations';
 import { renameReminderChannel } from '@/src/utils/notifications';
 import { Language, ThemeMode } from '@/src/types';
-import { generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
+import { exportFileName, generateCSVExport, generateJSONExport, parseJSONImport, shareData } from '@/src/utils/export-data';
 import { type ImportMode } from '@/src/utils/import-data';
 import { formatNumber } from '@/src/utils/number-formatting';
 import { Ionicons } from '@expo/vector-icons';
@@ -334,7 +334,7 @@ export default function SettingsScreen() {
     setIsExporting(true);
     try {
       const jsonData = generateJSONExport(goals, rewards, lifetimePointsEarned);
-      const filename = `pathly-export-${new Date().toISOString().split('T')[0]}.json`;
+      const filename = exportFileName('json');
       await shareData(jsonData, filename);
       Alert.alert(t.common.success, t.export.exportSuccess);
     } catch (error) {
@@ -357,7 +357,7 @@ export default function SettingsScreen() {
     setIsExporting(true);
     try {
       const csvData = generateCSVExport(goals, rewards, lifetimePointsEarned);
-      const filename = `pathly-export-${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = exportFileName('csv');
       await shareData(csvData, filename);
       Alert.alert(t.common.success, t.export.exportSuccess);
     } catch (error) {

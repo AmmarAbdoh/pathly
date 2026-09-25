@@ -79,6 +79,18 @@ describe('accessibility label', () => {
     );
   });
 
+  // Regression: every streak said "week", so a daily goal showed "3 week
+  // streak" (and "سلسلة أسبوعية" in Arabic) after three days.
+  it.each([
+    ['daily', 'en', `3 ${en.goalCard.periodStreak.daily}`],
+    ['monthly', 'en', `3 ${en.goalCard.periodStreak.monthly}`],
+    ['daily', 'ar', `٣ ${ar.goalCard.periodStreak.daily}`],
+  ] as const)('counts a %s streak in its own periods (%s)', async (period, language, text) => {
+    await renderCard({ isRecurring: true, currentStreak: 3, period }, language);
+
+    expect(screen.getByText(text, { includeHiddenElements: true })).toBeTruthy();
+  });
+
   // Regression: the badges are hidden from screen readers, and the label left
   // them out - nobody using one could tell a goal was blocked, paused,
   // expired or done.

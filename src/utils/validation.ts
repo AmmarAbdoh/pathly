@@ -5,9 +5,31 @@
 import { VALIDATION_RULES } from '../constants/validation';
 import { GoalFormData } from '../types';
 
+/**
+ * What is wrong with a field, as a key of `t.validation`: the screen shows it
+ * in the user's language. These were English sentences, which no screen could
+ * show - so the goal form never called this, and missed its length and range
+ * rules.
+ */
+export type ValidationKey =
+  | 'titleRequired'
+  | 'titleTooLong'
+  | 'targetRequired'
+  | 'targetMin'
+  | 'targetMax'
+  | 'currentRequired'
+  | 'currentMin'
+  | 'currentMax'
+  | 'currentBelowTarget'
+  | 'currentAboveTarget'
+  | 'unitRequired'
+  | 'unitTooLong'
+  | 'pointsMin'
+  | 'pointsMax';
+
 export interface ValidationResult {
   isValid: boolean;
-  errors: Record<string, string>;
+  errors: Partial<Record<keyof GoalFormData, ValidationKey>>;
 }
 
 /**
@@ -18,46 +40,57 @@ export interface ValidationResult {
 export const validateGoalForm = (
   data: Partial<GoalFormData>
 ): ValidationResult => {
-  const errors: Record<string, string> = {};
+  const errors: ValidationResult['errors'] = {};
 
   // Title validation
   if (!data.title || data.title.trim().length < VALIDATION_RULES.GOAL_TITLE.MIN_LENGTH) {
-    errors.title = 'Title is required';
+    errors.title = 'titleRequired';
   } else if (data.title.length > VALIDATION_RULES.GOAL_TITLE.MAX_LENGTH) {
-    errors.title = `Title must be less than ${VALIDATION_RULES.GOAL_TITLE.MAX_LENGTH} characters`;
+    errors.title = 'titleTooLong';
   }
 
   // Target validation
   if (data.target === undefined || data.target === null) {
-    errors.target = 'Target is required';
+    errors.target = 'targetRequired';
   } else if (data.target < VALIDATION_RULES.GOAL_TARGET.MIN) {
-    errors.target = `Target must be at least ${VALIDATION_RULES.GOAL_TARGET.MIN}`;
+    errors.target = 'targetMin';
   } else if (data.target > VALIDATION_RULES.GOAL_TARGET.MAX) {
-    errors.target = `Target must be less than ${VALIDATION_RULES.GOAL_TARGET.MAX}`;
+    errors.target = 'targetMax';
   }
 
   // Current validation
   if (data.current === undefined || data.current === null) {
-    errors.current = 'Current value is required';
+    errors.current = 'currentRequired';
   } else if (data.current < VALIDATION_RULES.GOAL_CURRENT.MIN) {
-    errors.current = `Current value must be at least ${VALIDATION_RULES.GOAL_CURRENT.MIN}`;
+    errors.current = 'currentMin';
   } else if (data.current > VALIDATION_RULES.GOAL_CURRENT.MAX) {
-    errors.current = `Current value must be less than ${VALIDATION_RULES.GOAL_CURRENT.MAX}`;
+    errors.current = 'currentMax';
+  }
+
+  // Where the goal starts must be short of its target, in its direction. One
+  // already there - a Decreasing goal from 0 to 70, as every template filled in
+  // - was accepted, and its progress meant nothing.
+  if (!errors.current && !errors.target && data.current !== undefined && data.target !== undefined) {
+    if (data.direction === 'increase' && data.current >= data.target) {
+      errors.current = 'currentBelowTarget';
+    } else if (data.direction === 'decrease' && data.current <= data.target) {
+      errors.current = 'currentAboveTarget';
+    }
   }
 
   // Unit validation
   if (!data.unit || data.unit.trim().length < VALIDATION_RULES.GOAL_UNIT.MIN_LENGTH) {
-    errors.unit = 'Unit is required';
+    errors.unit = 'unitRequired';
   } else if (data.unit.length > VALIDATION_RULES.GOAL_UNIT.MAX_LENGTH) {
-    errors.unit = `Unit must be less than ${VALIDATION_RULES.GOAL_UNIT.MAX_LENGTH} characters`;
+    errors.unit = 'unitTooLong';
   }
 
   // Points validation
   if (data.points !== undefined && data.points !== null) {
     if (data.points < VALIDATION_RULES.GOAL_POINTS.MIN) {
-      errors.points = `Points must be at least ${VALIDATION_RULES.GOAL_POINTS.MIN}`;
+      errors.points = 'pointsMin';
     } else if (data.points > VALIDATION_RULES.GOAL_POINTS.MAX) {
-      errors.points = `Points must be less than ${VALIDATION_RULES.GOAL_POINTS.MAX}`;
+      errors.points = 'pointsMax';
     }
   }
 

@@ -6,7 +6,6 @@
 import { ACHIEVEMENTS, checkAchievement } from '../constants/achievements';
 import { Goal, Reward, Statistics } from '../types';
 import { getSpentPoints } from './points';
-import { getTotalPointsEarned } from './recurring-goals';
 
 const getDayStart = (timestamp: number): number => {
   const date = new Date(timestamp);
@@ -22,20 +21,6 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifet
   const totalGoals = goals.filter(g => !g.parentId && !g.isPaused).length; // Only count parent goals that are not paused
   const completedGoals = goals.filter(g => g.isComplete && !g.parentId && !g.isPaused).length;
   
-  // Calculate total points from completed goals (including recurring completions)
-  // This is for display/tracking purposes - the actual available points uses lifetimePointsEarned
-  const totalPoints = goals.reduce((sum, goal) => {
-    if (goal.parentId) return sum; // Skip subgoals to avoid double counting
-    
-    if (goal.isRecurring) {
-      // For recurring goals, count all completions
-      return sum + getTotalPointsEarned(goal);
-    } else {
-      // For one-time goals, count if complete
-      return sum + (goal.isComplete ? goal.points : 0);
-    }
-  }, 0);
-
   // Calculate spent points from redeemed rewards
   const spentPoints = getSpentPoints(rewards);
   
@@ -91,7 +76,9 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifet
     .filter(achievement =>
       checkAchievement(achievement, {
         completedGoals,
-        totalPoints,
+        // Points achievements go by what was earned, like every points
+        // total: deleting a goal must not take one back.
+        totalPoints: lifetimePointsEarned,
         currentStreak,
         ultimateGoals,
         perfectWeek,
@@ -102,7 +89,6 @@ export const calculateStatistics = (goals: Goal[], rewards: Reward[] = [], lifet
   return {
     totalGoals,
     completedGoals,
-    totalPoints,
     lifetimePointsEarned, // Total points earned across all time (used for available points calculation)
     spentPoints,
     currentStreak,
@@ -173,7 +159,7 @@ export const getAchievementProgress = (
   const achievement = ACHIEVEMENTS.find(a => a.id === achievementId);
   if (!achievement) return 0;
   
-  const { completedGoals, totalPoints, currentStreak } = stats;
+  const { completedGoals, lifetimePointsEarned, currentStreak } = stats;
   const { type, value } = achievement.requirement;
   
   let current = 0;
@@ -182,7 +168,7 @@ export const getAchievementProgress = (
       current = completedGoals;
       break;
     case 'points_earned':
-      current = totalPoints;
+      current = lifetimePointsEarned;
       break;
     case 'streak_days':
       current = currentStreak;

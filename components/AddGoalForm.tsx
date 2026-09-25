@@ -10,6 +10,7 @@ import { useTheme } from '@/src/context/ThemeContext';
 import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
 import { formatNumber } from '@/src/utils/number-formatting';
 import { canRecur, isPeriodLength, MAX_PERIOD_DAYS } from '@/src/utils/recurring-goals';
+import { validateGoalForm } from '@/src/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -37,6 +38,11 @@ interface AddGoalFormProps {
     schedule?: GoalSchedule
   ) => void;
   parentId?: number; // If set, this is a subgoal form
+  /**
+   * A subgoal form's parent lets subgoals award points. When it doesn't, the
+   * form says so rather than asking for points that would never be paid.
+   */
+  parentAwardsPoints?: boolean;
   parentTitle?: string; // Parent goal title for display
   editMode?: boolean; // If true, this is editing an existing goal
   isCompleted?: boolean; // If true, lock progress/points fields (only allow editing title/description)
@@ -64,7 +70,7 @@ interface AddGoalFormProps {
 /**
  * Form component for adding new goals
  */
-export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode = false, isCompleted = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
+export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = false, parentTitle, editMode = false, isCompleted = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const { getAvailableRewards } = useRewards();
@@ -111,7 +117,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       setTitle(templateData.title);
       setDescription(templateData.description || '');
       setTarget(templateData.target.toString());
-      setCurrent('0');
+      // Only the user knows where a decreasing goal starts: 0 put a "Lose
+      // Weight" goal past its 70 kg target before it began.
+      setCurrent(templateData.direction === 'decrease' ? '' : '0');
       setUnit(templateData.unit);
       setPoints(templateData.points.toString());
       setDirection(templateData.direction);
@@ -154,6 +162,30 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       { label: t.goalForm.periodOngoing, value: 'ongoing' as const },
     ],
     [t]
+  );
+
+  // Stable between keystrokes. Built inline, a new list on every render set the
+  // picker's own state again after each one, and a fast burst of typing hit
+  // React's nested-update limit ("Maximum update depth exceeded").
+  const rewardItems = useMemo(
+    () => [
+      { label: t.goalForm.noReward, value: 0 },
+      ...getAvailableRewards().map((reward) => ({
+        label: `${reward.icon} ${reward.title} - ${formatNumber(reward.pointsCost, language)} ${t.goalCard.points}`,
+        value: reward.id,
+      })),
+    ],
+    [getAvailableRewards, t, language]
+  );
+
+  const setRewardValue = useCallback(
+    (callback: number | ((value: number) => number)) => {
+      setLinkedRewardId((previous) => {
+        const next = typeof callback === 'function' ? callback(previous ?? 0) : callback;
+        return next === 0 ? undefined : next;
+      });
+    },
+    []
   );
 
   /**
@@ -203,8 +235,10 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       
       if (!current.trim()) {
         newErrors.current = t.validation.currentRequired;
-      } else if (isNaN(parseFloat(current)) || parseFloat(current) < 0) {
+      } else if (isNaN(parseFloat(current))) {
         newErrors.current = t.validation.currentValid;
+      } else if (parseFloat(current) < 0) {
+        newErrors.current = t.validation.currentMin;
       }
       
       if (!unit.trim()) {
@@ -237,6 +271,27 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       );
     }
     
+    // The shared rules: lengths, ranges, and a start short of the target. Only
+    // the empty-field checks above ran here, so a 101-character title got
+    // through. An unreadable field keeps the message above.
+    const rules = validateGoalForm({
+      title: title.trim(),
+      target: parseFloat(target),
+      current: parseFloat(current),
+      unit: unit.trim(),
+      points: points.trim() ? parseFloat(points) : undefined,
+      // A completed goal's progress is where it finished, at its target, and
+      // only its title and such can change.
+      direction: isCompleted ? undefined : direction,
+    }).errors;
+    (Object.keys(rules) as (keyof typeof rules)[]).forEach((field) => {
+      const key = rules[field];
+      if (!key || newErrors[field]) return;
+      // An ultimate goal's target is its subgoals.
+      if (isUltimate && (field === 'target' || field === 'current' || field === 'unit')) return;
+      newErrors[field] = t.validation[key];
+    });
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -268,7 +323,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
     setErrors({});
     setPendingGoalData(formData);
     setShowConfirmModal(true);
-  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, recurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t, language]);
+  }, [title, description, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isCompleted, recurring, schedule, selectedIcon, linkedRewardId, subgoalsAwardPoints, t, language]);
 
   /**
    * Confirm and add goal
@@ -382,7 +437,12 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         </View>
       )}
 
-      <Text style={labelStyle}>{t.goalForm.title}</Text>
+      {/* A subgoal's screen names itself; this said "Add a new goal" when editing. */}
+      {editMode ? (
+        <Text style={labelStyle}>{t.goalDetail.editGoal}</Text>
+      ) : parentId ? null : (
+        <Text style={labelStyle}>{t.goalForm.title}</Text>
+      )}
 
       {/* Icon Picker */}
       <Text style={[labelStyle, styles.sectionLabel]}>{t.rewards.icon}</Text>
@@ -666,7 +726,11 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
       )}
 
       {/* Points Input - Show note for subgoals if parent doesn't allow points */}
-      {parentId ? (
+      {parentId && !parentAwardsPoints ? (
+        <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
+          {t.goalForm.subgoalNoPoints}
+        </Text>
+      ) : parentId ? (
         // Subgoals: Make points optional
         <>
           <Text style={[labelStyle, styles.sectionLabel]}>
@@ -764,18 +828,9 @@ export default function AddGoalForm({ onAddGoal, parentId, parentTitle, editMode
         <DropDownPicker
           open={rewardPickerOpen}
           value={linkedRewardId ?? 0}
-          items={[
-            { label: t.goalForm.noReward, value: 0 },
-            ...getAvailableRewards().map(reward => ({
-              label: `${reward.icon} ${reward.title} - ${formatNumber(reward.pointsCost, language)} ${t.goalCard.points}`,
-              value: reward.id,
-            }))
-          ]}
+          items={rewardItems}
           setOpen={setRewardPickerOpen}
-          setValue={(callback) => {
-            const newValue = typeof callback === 'function' ? callback(linkedRewardId ?? 0) : callback;
-            setLinkedRewardId(newValue === 0 ? undefined : newValue as number);
-          }}
+          setValue={setRewardValue}
           placeholder={t.goalForm.selectReward}
           style={{
             backgroundColor: theme.colors.background,

@@ -6,6 +6,7 @@ import { Platform, Share } from 'react-native';
 import type { Goal, Reward } from '@/src/types';
 import { isImportableGoal, isImportableReward } from '@/src/utils/import-data';
 import {
+  exportFileName,
   generateCSVExport,
   generateJSONExport,
   parseCSVImport,
@@ -267,3 +268,11 @@ describe('CSV export of incomplete records', () => {
   });
 });
 
+describe('exportFileName', () => {
+  // Regression: named by the UTC date, a file exported just after midnight east
+  // of UTC carried the day before (and late in the evening west of it, the next).
+  it('is dated in local time', () => {
+    expect(exportFileName('json', new Date(2026, 8, 25, 0, 30))).toBe('pathly-export-2026-09-25.json');
+    expect(exportFileName('csv', new Date(2026, 0, 5, 23, 59))).toBe('pathly-export-2026-01-05.csv');
+  });
+});

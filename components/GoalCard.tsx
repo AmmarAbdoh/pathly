@@ -10,7 +10,7 @@
 import { DURATION } from '@/src/constants/animation';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { usePressAnimation } from '@/src/hooks/use-app-animations';
-import { GoalSchedule } from '@/src/types';
+import { GoalSchedule, TimePeriod } from '@/src/types';
 import { useTheme } from '@/src/context/ThemeContext';
 import { getScheduleDescription, isEveryDaySchedule } from '@/src/utils/goal-scheduling';
 import { formatNumber } from '@/src/utils/number-formatting';
@@ -60,6 +60,8 @@ interface GoalCardProps {
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   currentStreak?: number;
+  /** Names the streak's unit: a daily goal's is counted in days, not weeks. */
+  period?: TimePeriod;
   isBlocked?: boolean;
   schedule?: GoalSchedule;
 }
@@ -86,6 +88,7 @@ const GoalCard = memo<GoalCardProps>(
     canMoveUp = false,
     canMoveDown = false,
     currentStreak = 0,
+    period = 'weekly',
     isBlocked = false,
     schedule,
   }) => {
@@ -177,7 +180,7 @@ const GoalCard = memo<GoalCardProps>(
               .replace('{total}', formatted.subgoals)
           : null,
         timeRemaining || null,
-        isRecurring && currentStreak > 0 ? `${formatted.streak} ${card.weekStreak}` : null,
+        isRecurring && currentStreak > 0 ? `${formatted.streak} ${card.periodStreak[period]}` : null,
         scheduleText,
       ]
         .filter((part): part is string => Boolean(part))
@@ -195,6 +198,7 @@ const GoalCard = memo<GoalCardProps>(
       subgoalCount,
       timeRemaining,
       currentStreak,
+      period,
       scheduleText,
       formatted,
     ]);
@@ -313,7 +317,7 @@ const GoalCard = memo<GoalCardProps>(
                   <View style={[styles.pill, { backgroundColor: `${STATUS_COLORS.blocked}20` }]}>
                     <Text style={styles.pillIcon}>🔥</Text>
                     <Text style={[styles.pillText, { color: STATUS_COLORS.paused }]}>
-                      {formatted.streak} {t.goalCard.weekStreak}
+                      {formatted.streak} {t.goalCard.periodStreak[period]}
                     </Text>
                   </View>
                 )}

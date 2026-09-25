@@ -39,7 +39,9 @@ export interface Achievement {
 export interface Statistics {
   totalGoals: number;
   completedGoals: number;
-  totalPoints: number;
+  // The only points total: a second one, worked out from the goals there are
+  // now, skipped subgoals and forgot deleted goals - and the Rewards screen
+  // showed it as "Total Earned".
   lifetimePointsEarned: number; // Total points earned across all time (never decreases, even on goal deletion)
   spentPoints: number;
   currentStreak: number;

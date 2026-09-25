@@ -222,12 +222,16 @@ export default function RewardsScreen() {
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: theme.colors.primary + '20' }]}
                 onPress={() => openEditModal(item)}
+                accessibilityRole="button"
+                accessibilityLabel={t.rewards.editReward}
               >
                 <Ionicons name="create-outline" size={20} color={theme.colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionButton, { backgroundColor: '#ef444420' }]}
                 onPress={() => setConfirmDeleteId(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={t.common.delete}
               >
                 <Ionicons name="trash-outline" size={20} color="#ef4444" />
               </TouchableOpacity>
@@ -297,7 +301,7 @@ export default function RewardsScreen() {
             <View style={[styles.infoCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
               <View style={styles.infoRow}>
                 <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.totalEarned}</Text>
-                <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{formatNumber(stats.totalPoints, language)}</Text>
+                <Text style={[styles.infoValue, { color: '#f59e0b' }]}>{formatNumber(stats.lifetimePointsEarned, language)}</Text>
               </View>
               <View style={styles.infoRow}>
                 <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>{t.rewards.spent}</Text>
@@ -331,6 +335,8 @@ export default function RewardsScreen() {
       <TouchableOpacity
         style={[styles.fab, { backgroundColor: theme.colors.primary }]}
         onPress={openAddModal}
+        accessibilityRole="button"
+        accessibilityLabel={t.rewards.createReward}
       >
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
@@ -343,7 +349,7 @@ export default function RewardsScreen() {
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
                 {editingReward ? t.rewards.editReward : t.rewards.createReward}
               </Text>
-              <TouchableOpacity onPress={closeModal}>
+              <TouchableOpacity onPress={closeModal} accessibilityRole="button" accessibilityLabel={t.common.close}>
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -416,7 +422,11 @@ export default function RewardsScreen() {
           <Pressable style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]} onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.rewards.icon}</Text>
-              <TouchableOpacity onPress={() => setShowIconPicker(false)}>
+              <TouchableOpacity
+                onPress={() => setShowIconPicker(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t.common.close}
+              >
                 <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
               </TouchableOpacity>
             </View>

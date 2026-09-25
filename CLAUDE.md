@@ -159,6 +159,16 @@ Available points = lifetime earned − spent. Lifetime points **never decrease**
 under their own AsyncStorage key, separate from goals. Subgoals only award points when the parent
 sets `subgoalsAwardPoints`.
 
+**There is one points total: `lifetimePointsEarned`.** Don't work one out from the goals there are
+now - that skipped subgoals and forgot deleted goals, and Rewards showed it as "Total Earned"
+(330 where 405 were earned). Points achievements use the lifetime total too. The Review screen
+reconstructs a period's points from completions (`completionHistory` plus `completedAt`), so it
+follows the same rules: every completion of a recurring goal, and a subgoal's only when its parent
+pays them. Where a subgoal's points aren't paid, the app doesn't show or ask for them.
+
+A goal waiting on others (`dependsOn`) can't be completed: `finishGoal` refuses it, and the
+detail screen hides Mark as Complete.
+
 ## Performance rules
 
 This app got slow by ignoring these. They are the house style now:
@@ -174,6 +184,9 @@ This app got slow by ignoring these. They are the house style now:
    the source array and look it up by id. `renderItem` runs on every scroll frame.
 4. **No O(n) lookups inside `renderItem`.** No `.find()`, no `.findIndex()`. Build a `Map` once.
 5. **Debounce text input that drives filtering.** See `useDebouncedValue` in `src/hooks/`.
+   And give `DropDownPicker` stable `items` and `setValue` (`useMemo` / `useCallback`): an
+   inline list made the picker set its own state again after every keystroke in the form, and
+   a fast burst of typing crashed it with "Maximum update depth exceeded".
 6. **FlatLists get windowing props** — `removeClippedSubviews`, `initialNumToRender`,
    `maxToRenderPerBatch`, `windowSize`.
 
@@ -210,7 +223,11 @@ This app got slow by ignoring these. They are the house style now:
   `scheduleGoalNotification(goal, t.notifications)`. It is fixed when scheduled, so after a
   language change or a rename `rescheduleReminders` schedules them again.
 - Numbers go through `formatNumber(value, language)` for Arabic-Indic digits - every count,
-  total and percentage on screen, not just the headline ones.
+  total and percentage on screen, not just the headline ones. Utils that build text with numbers
+  in it take the language (`formatTimeRemaining`, `formatProgressText`). Animated text runs on
+  the UI thread, where it can call the worklet `toArabicDigits`: the Stats counters counted up in
+  Western digits and stayed that way. Digits written into an Arabic translation are Arabic-Indic
+  too (`١٠٠`, `١٬٠٠٠`).
 - Right after `setLanguage`, `t` in that handler is still the old language. Text about the
   switch comes from `translations[newLanguage]`.
 - Put user text into a translation with a function: `.replace('{goal}', () => goal.title)`.
@@ -307,6 +324,11 @@ Gotchas:
 - `GoalCard`'s tap target is a sibling *beneath* the content. A touch on a plain View bubbles to
   its ancestors, never a sibling, so anything drawn over the card that isn't a button needs
   `pointerEvents: 'none'` (badges, a disabled arrow) or `'box-none'` (containers).
+- **Form rules live in `validateGoalForm`, which returns `t.validation` keys**, not sentences;
+  `AddGoalForm` runs it after its own empty-field checks. It returned English, so no screen used
+  it and the form missed its length and range rules. It also holds the direction rule: a goal
+  starts short of its target (below it for Increasing, above for Decreasing). Templates leave a
+  Decreasing goal's start empty - 0 put "Lose Weight" past its 70 kg target.
 - `editGoal` sets every field it takes, so leaving an argument out clears it: the detail screen
   once dropped `linkedRewardId` (unlinking the goal's reward on every edit) and never passed the
   schedule at all. It also doesn't touch completion state or the period - reset a recurring goal

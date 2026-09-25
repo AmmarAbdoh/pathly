@@ -307,6 +307,72 @@ describe('Review Statistics Utilities', () => {
 
       expect(stats.pointsEarned).toBe(0);
     });
+
+    // Regression: points were the sum over every goal completed in the period,
+    // so subgoals that paid nothing counted, a recurring goal completed twice
+    // counted once, and the total of goals included subgoals. The review said
+    // 395 where 405 had been earned, and 11 goals where Stats said 8.
+    describe('follows what was paid', () => {
+      const before = periodStart - 10000;
+      const done = (overrides: Partial<Goal>) =>
+        createMockGoal({ isComplete: true, completedAt: periodStart + 1000, createdAt: before, ...overrides });
+
+      it("counts a subgoal's points only when its parent lets it award them", () => {
+        const goals = [
+          createMockGoal({ id: 1, subGoals: [2], subgoalsAwardPoints: false, createdAt: before }),
+          done({ id: 2, parentId: 1, points: 20 }),
+          createMockGoal({ id: 3, subGoals: [4], subgoalsAwardPoints: true, createdAt: before }),
+          done({ id: 4, parentId: 3, points: 25 }),
+        ];
+
+        const stats = calculateReviewStatistics(goals, testPeriod);
+
+        expect(stats.pointsEarned).toBe(25);
+      });
+
+      it('counts every completion of a recurring goal, and the goal once', () => {
+        const goals = [
+          done({
+            id: 1,
+            points: 10,
+            isRecurring: true,
+            completionHistory: [periodStart + 500, periodStart - 500],
+          }),
+        ];
+
+        const stats = calculateReviewStatistics(goals, testPeriod);
+
+        expect(stats.pointsEarned).toBe(20); // this period's two, not last period's
+        expect(stats.goalsCompleted).toBe(1);
+      });
+
+      it('counts goals, not subgoals', () => {
+        const goals = [
+          createMockGoal({ id: 1, subGoals: [2, 3], createdAt: before }),
+          done({ id: 2, parentId: 1 }),
+          done({ id: 3, parentId: 1 }),
+        ];
+
+        const stats = calculateReviewStatistics(goals, testPeriod);
+
+        expect(stats.totalGoals).toBe(1);
+        expect(stats.goalsCompleted).toBe(0);
+        expect(stats.completedGoalsList).toEqual([]);
+      });
+
+      it('counts a goal archived during the period, not one archived before it', () => {
+        const goals = [
+          done({ id: 1, points: 50, isArchived: true, archivedAt: periodStart + 5000 }),
+          createMockGoal({ id: 2, isArchived: true, archivedAt: periodStart - 5000, createdAt: before }),
+        ];
+
+        const stats = calculateReviewStatistics(goals, testPeriod);
+
+        expect(stats.totalGoals).toBe(1);
+        expect(stats.goalsCompleted).toBe(1);
+        expect(stats.pointsEarned).toBe(50);
+      });
+    });
   });
 
   describe('getMotivationalMessage', () => {

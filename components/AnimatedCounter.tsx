@@ -9,7 +9,7 @@
 
 import { DURATION, EASING } from '@/src/constants/animation';
 import type { Language } from '@/src/i18n/translations';
-import { formatNumber } from '@/src/utils/number-formatting';
+import { formatNumber, toArabicDigits } from '@/src/utils/number-formatting';
 import React, { memo, useEffect, useMemo } from 'react';
 import {
   type StyleProp,
@@ -72,11 +72,14 @@ const AnimatedCounter = memo<AnimatedCounterProps>(
       });
     }, [value, duration, isReducedMotion, animated]);
 
+    // In the language's digits while it counts, too: this text replaces the
+    // formatted one, so Arabic counters ended in Western digits.
+    const isArabic = language === 'ar';
     const animatedProps = useAnimatedProps<CounterInputProps>(() => {
       const shown =
         decimals > 0 ? animated.value.toFixed(decimals) : String(Math.round(animated.value));
 
-      return { text: `${prefix}${shown}${suffix}` };
+      return { text: `${prefix}${isArabic ? toArabicDigits(shown) : shown}${suffix}` };
     });
 
     const finalText = useMemo(

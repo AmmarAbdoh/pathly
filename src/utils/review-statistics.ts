@@ -89,30 +89,52 @@ export function getLastMonth(): ReviewPeriod {
 }
 
 /**
- * Calculate review statistics for a given period
+ * Every time a goal was completed: a recurring goal's earlier periods, then
+ * the latest. Once each - a goal set back and completed again pays nothing
+ * again (see hasBeenCompleted), and its completedAt is still the first time.
+ */
+function completionTimes(goal: Goal): number[] {
+  const times = [...(goal.completionHistory ?? [])];
+  if (typeof goal.completedAt === 'number') times.push(goal.completedAt);
+  return times;
+}
+
+/**
+ * Calculate review statistics for a given period.
+ *
+ * Counts follow the Stats screen (goals, not subgoals), and points follow what
+ * was paid: every completion of a recurring goal, and a subgoal's only when its
+ * parent lets subgoals award points. Summing the points of every goal completed
+ * in the period counted subgoals that paid nothing and each recurring goal
+ * once, and its total of goals included subgoals.
  */
 export function calculateReviewStatistics(
   goals: Goal[],
   period: ReviewPeriod
 ): ReviewStatistics {
-  // Filter goals that were completed in this period
-  const completedInPeriod = goals.filter((goal) => {
-    if (!goal.completedAt) return false;
-    return goal.completedAt >= period.startDate && goal.completedAt <= period.endDate;
-  });
-  
-  // Filter goals that existed during this period (created before period end)
-  const activeInPeriod = goals.filter((goal) => {
-    return goal.createdAt <= period.endDate && !goal.isArchived;
-  });
-  
-  // Calculate points earned from goals completed in this period
-  const pointsEarned = completedInPeriod.reduce((sum, goal) => sum + (goal.points || 0), 0);
-  
-  // Calculate completion rate
-  const totalGoals = activeInPeriod.length;
+  const inPeriod = (time: number) => time >= period.startDate && time <= period.endDate;
+  const completionsInPeriod = (goal: Goal) => completionTimes(goal).filter(inPeriod).length;
+
+  const byId = new Map(goals.map((goal) => [goal.id, goal]));
+  const pays = (goal: Goal) =>
+    !goal.parentId || byId.get(goal.parentId)?.subgoalsAwardPoints === true;
+
+  // Created by the period's end, and not put away before it began.
+  const existedInPeriod = (goal: Goal) =>
+    goal.createdAt <= period.endDate &&
+    (!goal.isArchived || (typeof goal.archivedAt === 'number' && goal.archivedAt >= period.startDate));
+
+  const goalsInPeriod = goals.filter((goal) => !goal.parentId && existedInPeriod(goal));
+  const completedInPeriod = goalsInPeriod.filter((goal) => completionsInPeriod(goal) > 0);
+
+  const pointsEarned = goals.reduce(
+    (sum, goal) => (pays(goal) ? sum + (goal.points || 0) * completionsInPeriod(goal) : sum),
+    0
+  );
+
+  const totalGoals = goalsInPeriod.length;
   const completionRate = totalGoals > 0 ? (completedInPeriod.length / totalGoals) * 100 : 0;
-  
+
   return {
     goalsCompleted: completedInPeriod.length,
     totalGoals,

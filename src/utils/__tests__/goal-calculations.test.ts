@@ -589,3 +589,21 @@ describe("a recurring goal's deadline", () => {
     expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([12, 23, 59]);
   });
 });
+
+// Regression: in Arabic, countdowns and the progress line kept Western digits
+// ("11 يوم و 23 ساعة", "0 / 1 report") while the rest of the screen used Arabic ones.
+describe('Arabic digits', () => {
+  const ar = translations.ar.time;
+
+  it('counts down in Arabic-Indic digits', () => {
+    const text = formatTimeRemaining({ days: 11, hours: 23, minutes: 0, isExpired: false }, ar, false, 'ar');
+    expect(text).toContain('١١');
+    expect(text).toContain('٢٣');
+    expect(text).not.toMatch(/[0-9]/);
+  });
+
+  it('writes the progress line in them', () => {
+    expect(formatProgressText(0, 1, 'report', 'ar')).toBe('٠ / ١ report');
+    expect(formatProgressText(3, 10, 'km')).toBe('3 / 10 km');
+  });
+});

@@ -47,7 +47,6 @@ describe('Statistics and Achievements Integration Tests', () => {
 
       expect(stats.totalGoals).toBe(0);
       expect(stats.completedGoals).toBe(0);
-      expect(stats.totalPoints).toBe(0);
       expect(stats.lifetimePointsEarned).toBe(0);
       expect(stats.spentPoints).toBe(0);
       expect(stats.completionRate).toBe(0);
@@ -68,7 +67,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       expect(stats.totalGoals).toBe(4);
       expect(stats.completedGoals).toBe(2);
       expect(stats.completionRate).toBe(50);
-      expect(stats.totalPoints).toBe(250); // Only completed goals
     });
 
     it('should exclude paused goals from statistics', () => {
@@ -97,7 +95,6 @@ describe('Statistics and Achievements Integration Tests', () => {
 
       expect(stats.totalGoals).toBe(2); // Only parent goals
       expect(stats.completedGoals).toBe(1); // Only completed parent
-      expect(stats.totalPoints).toBe(200); // Only parent points
     });
   });
 
@@ -151,25 +148,6 @@ describe('Statistics and Achievements Integration Tests', () => {
   });
 
   describe('Recurring Goals in Statistics', () => {
-    it('should count recurring goal points from all completions', () => {
-      const goal = createTestGoal({
-        title: 'Daily Task',
-        points: 50,
-        isRecurring: true,
-        isComplete: true,
-        completionHistory: [
-          Date.now(),
-          Date.now() - 24 * 60 * 60 * 1000,
-          Date.now() - 2 * 24 * 60 * 60 * 1000,
-        ],
-      });
-
-      const stats = calculateStatistics([goal], [], 0);
-
-      // 3 history + 1 current = 4 completions × 50 = 200 points
-      expect(stats.totalPoints).toBe(200);
-    });
-
     it('should include recurring goals in streak calculation', () => {
       const now = Date.now();
       const oneDayMs = 24 * 60 * 60 * 1000;
@@ -195,7 +173,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const stats: Statistics = {
         totalGoals: 5,
         completedGoals: 3,
-        totalPoints: 300,
         lifetimePointsEarned: 300,
         spentPoints: 100,
         currentStreak: 0,
@@ -214,7 +191,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const stats: Statistics = {
         totalGoals: 0,
         completedGoals: 0,
-        totalPoints: 500,
         lifetimePointsEarned: 500,
         spentPoints: 0,
         currentStreak: 0,
@@ -234,7 +210,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const stats: Statistics = {
         totalGoals: 0,
         completedGoals: 0,
-        totalPoints: 0,
         lifetimePointsEarned: 0,
         spentPoints: 0,
         currentStreak: 5,
@@ -254,7 +229,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const stats: Statistics = {
         totalGoals: 100,
         completedGoals: 100,
-        totalPoints: 10000,
         lifetimePointsEarned: 10000,
         spentPoints: 0,
         currentStreak: 100,
@@ -327,7 +301,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const previousStats: Statistics = {
         totalGoals: 5,
         completedGoals: 5,
-        totalPoints: 500,
         lifetimePointsEarned: 500,
         spentPoints: 0,
         currentStreak: 0,
@@ -340,7 +313,6 @@ describe('Statistics and Achievements Integration Tests', () => {
       const currentStats: Statistics = {
         totalGoals: 6,
         completedGoals: 6,
-        totalPoints: 600,
         lifetimePointsEarned: 600,
         spentPoints: 0,
         currentStreak: 0,

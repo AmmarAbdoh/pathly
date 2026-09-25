@@ -3,7 +3,8 @@
  * Keeps business logic separate from UI components
  */
 
-import { Goal, GoalDirection } from '../types';
+import { Goal, GoalDirection, Language } from '../types';
+import { formatNumber } from './number-formatting';
 import { getPeriodEndDate } from './recurring-goals';
 
 /**
@@ -91,9 +92,10 @@ export const calculateProgress = (
 export const formatProgressText = (
   current: number,
   target: number,
-  unit: string
+  unit: string,
+  language: Language = 'en'
 ): string => {
-  return `${current} / ${target} ${unit}`;
+  return `${formatNumber(current, language)} / ${formatNumber(target, language)} ${unit}`;
 };
 
 /**
@@ -249,7 +251,8 @@ export const formatTimeRemaining = (
     and?: string;          // Separator between time units
     singularAfterTen?: boolean; // Arabic: 11+ takes the singular noun
   },
-  isRecurring?: boolean
+  isRecurring?: boolean,
+  language: Language = 'en'
 ): string => {
   if (timeRemaining.isExpired) {
     return translations?.expired || 'Expired';
@@ -275,22 +278,22 @@ export const formatTimeRemaining = (
 
   if (days > 0) {
     const dayLabel = getTimeLabel(days, translations?.day, translations?.dayDual, translations?.days);
-    parts.push(`${days} ${dayLabel}`);
+    parts.push(`${formatNumber(days, language)} ${dayLabel}`);
     if (hours > 0) {
       const hourLabel = getTimeLabel(hours, translations?.hour, translations?.hourDual, translations?.hours);
-      parts.push(`${hours} ${hourLabel}`);
+      parts.push(`${formatNumber(hours, language)} ${hourLabel}`);
     }
     // Skip minutes when we have days (too much detail)
   } else if (hours > 0) {
     const hourLabel = getTimeLabel(hours, translations?.hour, translations?.hourDual, translations?.hours);
-    parts.push(`${hours} ${hourLabel}`);
+    parts.push(`${formatNumber(hours, language)} ${hourLabel}`);
     if (minutes > 0) {
       const minuteLabel = getTimeLabel(minutes, translations?.minute, translations?.minuteDual, translations?.minutes);
-      parts.push(`${minutes} ${minuteLabel}`);
+      parts.push(`${formatNumber(minutes, language)} ${minuteLabel}`);
     }
   } else {
     const minuteLabel = getTimeLabel(minutes, translations?.minute, translations?.minuteDual, translations?.minutes);
-    parts.push(`${minutes} ${minuteLabel}`);
+    parts.push(`${formatNumber(minutes, language)} ${minuteLabel}`);
   }
 
   const separator = translations?.and || 'and';

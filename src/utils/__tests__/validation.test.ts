@@ -45,7 +45,7 @@ describe('Validation Utilities', () => {
         
         expect(result.isValid).toBe(false);
         expect(result.errors.title).toBeDefined();
-        expect(result.errors.title).toContain('less than');
+        expect(result.errors.title).toBe('titleTooLong');
       });
 
       it('should accept title at max length', () => {
@@ -83,7 +83,7 @@ describe('Validation Utilities', () => {
         const result = validateGoalForm({ ...validGoalData, target: 0 });
         
         // Should have target error for zero (minimum is 0.01)
-        expect(result.errors.target).toBe('Target must be at least 0.01');
+        expect(result.errors.target).toBe('targetMin');
         expect(result.isValid).toBe(false);
       });
     });
@@ -188,6 +188,36 @@ describe('Validation Utilities', () => {
         expect(result.errors.current).toBeDefined();
         expect(result.errors.unit).toBeDefined();
         expect(result.errors.points).toBeDefined();
+      });
+    });
+
+    // Regression: the "Lose Weight" template filled in Decreasing, 0 → 70 kg,
+    // and the form took it - a goal already past its target.
+    describe('where the goal starts', () => {
+      it.each([
+        ['increase', 100, 'currentBelowTarget'],
+        ['increase', 150, 'currentBelowTarget'],
+        ['decrease', 100, 'currentAboveTarget'],
+        ['decrease', 0, 'currentAboveTarget'],
+      ] as const)('rejects a %s goal starting at %s for a target of 100', (direction, current, key) => {
+        const result = validateGoalForm({ ...validGoalData, direction, current, target: 100 });
+
+        expect(result.errors.current).toBe(key);
+      });
+
+      it.each([
+        ['increase', 0],
+        ['decrease', 150],
+      ] as const)('accepts a %s goal starting at %s', (direction, current) => {
+        const result = validateGoalForm({ ...validGoalData, direction, current, target: 100 });
+
+        expect(result.isValid).toBe(true);
+      });
+
+      it('leaves it alone when told no direction', () => {
+        const result = validateGoalForm({ ...validGoalData, direction: undefined, current: 100, target: 100 });
+
+        expect(result.errors.current).toBeUndefined();
       });
     });
   });

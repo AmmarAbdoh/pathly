@@ -272,7 +272,7 @@ export default function StatisticsScreen() {
               {t.statistics.lockedAchievements}
             </Text>
             <View style={styles.achievementsGrid}>
-              {lockedAchievements.slice(0, 6).map(achievement => {
+              {lockedAchievements.map(achievement => {
                 const progress = getAchievementProgress(achievement.id, stats);
                 return (
                   <View key={achievement.id} style={[styles.achievementItem, styles.lockedAchievement]}>

@@ -242,7 +242,13 @@ export default function HomeScreen() {
         const time = timeById.get(goal.id);
         const isExpired = time?.isExpired === true;
 
-        const timeText = time ? formatTimeRemaining(time, t.time, goal.isRecurring) : '';
+        // A finished one-off goal has nothing left to count down to: it showed
+        // the time left, or "Expired" once its period had passed. A finished
+        // recurring goal still resets, and says when.
+        const timeText =
+          time && !(goal.isComplete && !goal.isRecurring)
+            ? formatTimeRemaining(time, t.time, goal.isRecurring, language)
+            : '';
         const endDateTime = formatEndDateTime(
           goal.periodStartDate,
           goal.period,
@@ -384,6 +390,7 @@ export default function HomeScreen() {
           canMoveUp={item.canMoveUp}
           canMoveDown={item.canMoveDown}
           currentStreak={goal.currentStreak}
+          period={goal.period}
           isBlocked={item.isBlocked}
           schedule={goal.schedule}
         />

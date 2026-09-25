@@ -12,7 +12,6 @@ describe('Statistics Utilities', () => {
       
       expect(stats.totalGoals).toBe(0);
       expect(stats.completedGoals).toBe(0);
-      expect(stats.totalPoints).toBe(0);
       expect(stats.spentPoints).toBe(0);
       expect(stats.currentStreak).toBe(0);
       expect(stats.completionRate).toBe(0);
@@ -70,48 +69,24 @@ describe('Statistics Utilities', () => {
 
     it('should use lifetimePointsEarned parameter', () => {
       const stats = calculateStatistics([], [], 5000);
-      
+
       expect(stats.lifetimePointsEarned).toBe(5000);
     });
 
-    it('should handle goals with parentId (skip subgoals in points calculation)', () => {
-      const parentGoal: Goal = {
-        id: 1,
-        title: 'Parent Goal',
-        target: 100,
-        current: 100,
-        unit: 'units',
-        progress: 100,
-        points: 100,
-        direction: 'increase',
-        period: 'daily',
-        createdAt: Date.now(),
-        initialValue: 0,
-        isComplete: true,
-        completedAt: Date.now(),
-      };
+    // Regression: a second total, worked out from the goals there are now,
+    // skipped subgoals and forgot deleted goals. Rewards showed it as "Total
+    // Earned" (330 where 405 were earned), and points achievements used it.
+    it('has one points total: the lifetime one', () => {
+      const stats = calculateStatistics([], [], 405);
 
-      const childGoal: Goal = {
-        id: 2,
-        parentId: 1, // This is a subgoal
-        title: 'Child Goal',
-        target: 50,
-        current: 50,
-        unit: 'units',
-        progress: 100,
-        points: 50,
-        direction: 'increase',
-        period: 'daily',
-        createdAt: Date.now(),
-        initialValue: 0,
-        isComplete: true,
-        completedAt: Date.now(),
-      };
+      expect(stats.lifetimePointsEarned).toBe(405);
+      expect(stats).not.toHaveProperty('totalPoints');
+    });
 
-      const stats = calculateStatistics([parentGoal, childGoal], [], 0);
-      
-      // Only parent points should be counted
-      expect(stats.totalPoints).toBe(100);
+    it('keeps points achievements once the goals that earned them are gone', () => {
+      const stats = calculateStatistics([], [], 1000);
+
+      expect(stats.achievementsUnlocked).toContain('point_collector');
     });
 
     it('should detect perfect week when goal completed every day for 7 days', () => {
@@ -145,50 +120,6 @@ describe('Statistics Utilities', () => {
       expect(stats.completedGoals).toBe(7);
     });
 
-    it('should count points from one-time completed goals', () => {
-      const oneTimeGoal: Goal = {
-        id: 1,
-        title: 'One-time Goal',
-        target: 100,
-        current: 100,
-        unit: 'units',
-        progress: 100,
-        points: 200,
-        direction: 'increase',
-        period: 'daily',
-        createdAt: Date.now(),
-        initialValue: 0,
-        isComplete: true,
-        completedAt: Date.now(),
-        isRecurring: false,
-      };
-
-      const stats = calculateStatistics([oneTimeGoal], [], 0);
-      
-      expect(stats.totalPoints).toBe(200);
-    });
-
-    it('should not count points from incomplete one-time goals', () => {
-      const incompleteGoal: Goal = {
-        id: 1,
-        title: 'Incomplete Goal',
-        target: 100,
-        current: 50,
-        unit: 'units',
-        progress: 50,
-        points: 200,
-        direction: 'increase',
-        period: 'daily',
-        createdAt: Date.now(),
-        initialValue: 0,
-        isComplete: false,
-        isRecurring: false,
-      };
-
-      const stats = calculateStatistics([incompleteGoal], [], 0);
-      
-      expect(stats.totalPoints).toBe(0);
-    });
   });
 
   describe('formatStreak', () => {
@@ -211,7 +142,6 @@ describe('Statistics Utilities', () => {
       const oldStats: Statistics = {
         totalGoals: 10,
         completedGoals: 5,
-        totalPoints: 500,
         lifetimePointsEarned: 500,
         spentPoints: 100,
         currentStreak: 10,
@@ -234,7 +164,6 @@ describe('Statistics Utilities', () => {
       const oldStats: Statistics = {
         totalGoals: 10,
         completedGoals: 5,
-        totalPoints: 500,
         lifetimePointsEarned: 500,
         spentPoints: 100,
         currentStreak: 10,
@@ -258,7 +187,6 @@ describe('Statistics Utilities', () => {
     const baseStats: Statistics = {
       totalGoals: 10,
       completedGoals: 5,
-      totalPoints: 250,
       lifetimePointsEarned: 250,
       spentPoints: 50,
       currentStreak: 7,
@@ -276,7 +204,7 @@ describe('Statistics Utilities', () => {
 
     it('should calculate progress for points_earned achievement', () => {
       // point_collector requires 1000 points
-      // baseStats has totalPoints = 250 (lifetimePointsEarned=500 - spentPoints=250)
+      // baseStats has earned 250 points in all
       const progress = getAchievementProgress('point_collector', baseStats);
       expect(progress).toBe(25); // 250/1000 = 25%
     });
@@ -345,31 +273,6 @@ describe('Statistics Utilities', () => {
       expect(result).toBe(true);
     });
 
-    it('should count points from recurring goals with completions', () => {
-      const recurringGoal: Goal = {
-        id: 1,
-        title: 'Recurring Goal',
-        target: 10,
-        current: 10,
-        unit: 'times',
-        progress: 100,
-        points: 50,
-        direction: 'increase',
-        period: 'daily',
-        periodStartDate: Date.now(),
-        createdAt: Date.now(),
-        initialValue: 0,
-        isRecurring: true,
-        isComplete: true,
-        completionHistory: [Date.now(), Date.now() - 24 * 60 * 60 * 1000],
-        completedAt: Date.now(),
-      };
-
-      const stats = calculateStatistics([recurringGoal], [], 0);
-      
-      // Should count all completion points for recurring goals
-      expect(stats.totalPoints).toBeGreaterThan(0);
-    });
   });
 
   describe('calculateStatistics - default parameter handling', () => {
@@ -625,7 +528,6 @@ describe('Statistics Utilities', () => {
     const baseStats: Statistics = {
       totalGoals: 10,
       completedGoals: 5,
-      totalPoints: 500,
       lifetimePointsEarned: 500,
       spentPoints: 0,
       currentStreak: 3,

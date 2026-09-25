@@ -272,29 +272,6 @@ describe('Rewards Flow Integration Tests', () => {
   });
 
   describe('Recurring Goals Points Accumulation', () => {
-    it('should accumulate points from recurring goal completions', () => {
-      const goal = createTestGoal({
-        title: 'Daily Exercise',
-        target: 30,
-        current: 30,
-        unit: 'minutes',
-        points: 50,
-        period: 'daily',
-        isRecurring: true,
-        isComplete: true,
-        completionHistory: [
-          Date.now(),
-          Date.now() - 24 * 60 * 60 * 1000,
-          Date.now() - 2 * 24 * 60 * 60 * 1000,
-          Date.now() - 3 * 24 * 60 * 60 * 1000,
-        ],
-      });
-
-      // 4 completions in history + 1 current = 5 total × 50 points = 250 points
-      const stats = calculateStatistics([goal], [], 0);
-      expect(stats.totalPoints).toBe(250);
-    });
-
     it('should allow redeeming rewards with recurring goal points', () => {
       let lifetimePoints = 0;
 

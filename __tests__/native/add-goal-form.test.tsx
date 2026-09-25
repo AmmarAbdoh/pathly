@@ -133,6 +133,14 @@ describe('editing', () => {
 
     expect(screen.getByText(t.goalForm.confirmEditTitle)).toBeTruthy();
   });
+
+  // Regression: its heading said "Add a new goal".
+  it('is headed as an edit', async () => {
+    await renderForm({ editMode: true, initialValues: goal });
+
+    expect(screen.getByText(translations.en.goalDetail.editGoal)).toBeTruthy();
+    expect(screen.queryByText(t.goalForm.title)).toBeNull();
+  });
 });
 
 describe('adding one goal after another', () => {
@@ -167,6 +175,92 @@ describe('adding one goal after another', () => {
 
     expect(onAddGoal).toHaveBeenCalledTimes(2);
     expect(onAddGoal.mock.calls[1][SUBGOALS_AWARD_POINTS]).toBe(false);
+  });
+});
+
+describe('validation', () => {
+  // Regression: the form never ran the shared rules, so only the input's
+  // maxLength stopped a long title - and a title set any other way got through.
+  it('rejects a title over 100 characters', async () => {
+    const onAddGoal = await renderForm({ initialValues: goal });
+
+    type(t.goalForm.titlePlaceholder, 'x'.repeat(101));
+    fireEvent.press(screen.getByLabelText(t.goalForm.addButton));
+
+    expect(screen.getByText(t.validation.titleTooLong)).toBeTruthy();
+    expect(onAddGoal).not.toHaveBeenCalled();
+  });
+
+  // Regression: a decreasing goal from 0 to 70 kg - what the "Lose Weight"
+  // template filled in - was accepted.
+  it('rejects a decreasing goal that starts past its target', async () => {
+    const onAddGoal = await renderForm({
+      initialValues: { ...goal, direction: 'decrease', current: 60, target: 70 },
+    });
+
+    fireEvent.press(screen.getByLabelText(t.goalForm.addButton));
+
+    expect(screen.getByText(t.validation.currentAboveTarget)).toBeTruthy();
+    expect(onAddGoal).not.toHaveBeenCalled();
+  });
+
+  it('says a negative start must be at least 0', async () => {
+    await renderForm({ initialValues: goal });
+
+    type(t.goalForm.currentPlaceholder, '-1');
+    fireEvent.press(screen.getByLabelText(t.goalForm.addButton));
+
+    expect(screen.getByText(t.validation.currentMin)).toBeTruthy();
+  });
+
+  // A completed goal sits at its target; only its title and such can change.
+  it('still saves a completed goal', async () => {
+    const onAddGoal = await renderForm({
+      editMode: true,
+      isCompleted: true,
+      initialValues: { ...goal, current: 10 },
+    });
+
+    submit(true);
+
+    expect(onAddGoal).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the start of a decreasing template for the user to fill in', async () => {
+    await renderForm({
+      templateData: {
+        id: 'lose-weight',
+        title: 'Lose Weight',
+        category: 'health',
+        description: '',
+        target: 70,
+        unit: 'kg',
+        direction: 'decrease',
+        points: 100,
+        period: 'monthly',
+        icon: '⚖️',
+      },
+      onClearTemplate: jest.fn(),
+    });
+
+    expect(screen.getByPlaceholderText(t.goalForm.currentPlaceholder).props.value).toBe('');
+  });
+});
+
+describe('subgoal points', () => {
+  // Regression: the form asked for points under a parent that doesn't let
+  // subgoals award them, and they were never paid.
+  it("says a parent's subgoals don't award points, rather than asking for them", async () => {
+    await renderForm({ parentId: 1 });
+
+    expect(screen.getByText(t.goalForm.subgoalNoPoints)).toBeTruthy();
+    expect(screen.queryByLabelText(t.goalForm.pointsLabel)).toBeNull();
+  });
+
+  it('asks for points when the parent lets subgoals award them', async () => {
+    await renderForm({ parentId: 1, parentAwardsPoints: true });
+
+    expect(screen.getByLabelText(t.goalForm.pointsLabel)).toBeTruthy();
   });
 });
 

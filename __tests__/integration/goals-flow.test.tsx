@@ -225,7 +225,6 @@ describe('Goals Flow Integration Tests', () => {
 
       // Only parent goal points should be counted (not subgoal points)
       expect(stats.totalGoals).toBe(1); // Only counts parent
-      expect(stats.totalPoints).toBe(0); // Parent not complete yet
     });
   });
 
@@ -265,7 +264,6 @@ describe('Goals Flow Integration Tests', () => {
       expect(stats.totalGoals).toBe(3);
       expect(stats.completedGoals).toBe(2); // Completed + Recurring
       expect(stats.completionRate).toBeCloseTo(66.67, 1);
-      expect(stats.totalPoints).toBeGreaterThan(0);
     });
 
     it('should track lifetime points earned across sessions', async () => {
