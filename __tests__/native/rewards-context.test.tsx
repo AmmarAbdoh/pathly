@@ -368,6 +368,24 @@ describe('linked rewards', () => {
     expect(result.current.rewards.getRedeemedRewards().map((r) => r.id)).toEqual([7]);
   });
 
+  // 60 without the bonus, 70 with it: redemption follows the payout, bonuses
+  // and all.
+  it('counts the bonuses the goal just earned', async () => {
+    await seedLinkedGoal(65, 0, 50);
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.POINTS_LEDGER,
+      JSON.stringify([{ id: 1, at: Date.now() - 4 * 86_400_000, points: 10, reason: 'completion' }])
+    );
+    const { result } = await renderBoth();
+
+    await act(async () => {
+      await result.current.goals.finishGoal(1);
+    });
+
+    expect(result.current.goals.lifetimePointsEarned).toBe(70);
+    expect(result.current.rewards.getRedeemedRewards().map((r) => r.id)).toEqual([7]);
+  });
+
   // Regression: the listener fired even when the completion itself could not
   // be saved, redeeming for good a reward whose completion the reload then
   // threw away.

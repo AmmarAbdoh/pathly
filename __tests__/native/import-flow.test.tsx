@@ -7,7 +7,8 @@ import { REWARDS_KEY, STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsBusyError, GoalsProvider, useGoals } from '@/src/context/GoalsContext';
 import { RewardsProvider, useRewards } from '@/src/context/RewardsContext';
 import { PartialImportError, useImportBackup } from '@/src/hooks/use-import-backup';
-import type { Goal, Reward } from '@/src/types';
+import type { Goal, PointsEntry, Reward } from '@/src/types';
+import { ledgerTotal } from '@/src/utils/points-ledger';
 import { generateJSONExport, parseJSONImport } from '@/src/utils/export-data';
 import { type ImportMode } from '@/src/utils/import-data';
 import * as notifications from '@/src/utils/notifications';
@@ -20,6 +21,16 @@ jest.mock('@/src/utils/notifications', () => ({
   cancelGoalNotifications: jest.fn(async () => {}),
   NotificationPermissionError: class NotificationPermissionError extends Error {},
 }));
+
+/** A points ledger worth `points` in all: what a total was before the ledger. */
+const ledgerOf = (points: number): PointsEntry[] =>
+  points > 0 ? [{ id: 1, at: 0, points, reason: 'carried' }] : [];
+
+/** Lifetime points as saved: the stored ledger's total, or null if none. */
+async function storedLifetime(): Promise<number | null> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.POINTS_LEDGER);
+  return raw === null ? null : ledgerTotal(JSON.parse(raw));
+}
 
 const SAVE_DEBOUNCE_MS = 400;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -118,13 +129,13 @@ describe('replaceAllGoals', () => {
     const { result } = await renderApp();
 
     await act(async () => {
-      await result.current.goals.replaceAllGoals([goal({ id: 5, title: 'New' })], 120);
+      await result.current.goals.replaceAllGoals([goal({ id: 5, title: 'New' })], ledgerOf(120));
     });
 
     expect(result.current.goals.goals.map((g) => g.title)).toEqual(['New']);
     expect(result.current.goals.lifetimePointsEarned).toBe(120);
     expect(JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.GOALS))!)[0].title).toBe('New');
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('120');
+    expect(await storedLifetime()).toBe(120);
   });
 
   it('rolls imported periods over, as a load would', async () => {
@@ -144,7 +155,7 @@ describe('replaceAllGoals', () => {
             completedAt: twoDaysAgo,
           }),
         ],
-        0
+        ledgerOf(0)
       );
     });
 
@@ -163,7 +174,7 @@ describe('replaceAllGoals', () => {
     const { result } = await renderApp();
 
     await act(async () => {
-      await result.current.goals.replaceAllGoals([goal({ id: 1, notificationIds: ['keep-me'] })], 0);
+      await result.current.goals.replaceAllGoals([goal({ id: 1, notificationIds: ['keep-me'] })], ledgerOf(0));
     });
 
     expect(cancelled.mock.calls).toEqual([[['gone-1', 'gone-2', 'gone-3']]]);
@@ -176,7 +187,7 @@ describe('replaceAllGoals', () => {
 
     await act(async () => {
       await expect(
-        result.current.goals.replaceAllGoals([goal({ title: 'New' })], 999)
+        result.current.goals.replaceAllGoals([goal({ title: 'New' })], ledgerOf(999))
       ).rejects.toThrow();
     });
 
@@ -192,7 +203,7 @@ describe('replaceAllGoals', () => {
       .mockRejectedValueOnce(disk); // lifetime points write fails
 
     await act(async () => {
-      await result.current.goals.replaceAllGoals([goal({ title: 'New' })], 80);
+      await result.current.goals.replaceAllGoals([goal({ title: 'New' })], ledgerOf(80));
     });
 
     expect(result.current.goals.storageError).toBe('save');
@@ -205,7 +216,7 @@ describe('replaceAllGoals', () => {
 
     await act(async () => {
       await result.current.goals.updateGoal(1, 5); // queued, not yet written
-      await result.current.goals.replaceAllGoals([goal({ id: 7, title: 'Imported' })], 0);
+      await result.current.goals.replaceAllGoals([goal({ id: 7, title: 'Imported' })], ledgerOf(0));
     });
     await act(async () => {
       await sleep(SAVE_DEBOUNCE_MS + 100);
@@ -304,7 +315,7 @@ describe('export, then import', () => {
     const backup = generateJSONExport(
       source.result.current.goals.goals,
       source.result.current.rewards.rewards,
-      source.result.current.goals.lifetimePointsEarned
+      source.result.current.goals.pointsLedger
     );
     source.unmount();
 
@@ -336,6 +347,11 @@ describe('export, then import', () => {
     expect(find('Journal').linkedRewardId).toBe(treat.id);
 
     expect(target.result.current.goals.lifetimePointsEarned).toBe(215);
+    // The ledger comes across whole: dated, and pointing at the goals' new ids.
+    expect(target.result.current.goals.pointsLedger).toEqual([
+      expect.objectContaining({ reason: 'carried', points: 200 }),
+      expect.objectContaining({ at: 5, points: 15, goalId: find('Child').id, goalTitle: 'Child' }),
+    ]);
   });
 
   // Regression: goals (with points) were applied, then rewards; if the
@@ -347,7 +363,7 @@ describe('export, then import', () => {
     const backup = generateJSONExport(
       [goal({ id: 5, title: 'Backed up', isComplete: true })],
       [reward({ id: 6, title: 'Backed-up treat' })],
-      100
+      ledgerOf(100)
     );
     setItem.mockImplementation(async (key: string, value: string) => {
       if (key === STORAGE_KEYS.GOALS) throw disk;
@@ -369,7 +385,7 @@ describe('export, then import', () => {
   it('says so when only part of a backup could be applied', async () => {
     await seed([goal({ id: 1, title: 'Mine' })], [reward({ id: 2, title: 'My treat' })], 40);
     const target = await renderApp();
-    const backup = generateJSONExport([goal({ id: 5 })], [reward({ id: 6, title: 'Backed-up treat' })], 100);
+    const backup = generateJSONExport([goal({ id: 5 })], [reward({ id: 6, title: 'Backed-up treat' })], ledgerOf(100));
     let rewardWrites = 0;
     setItem.mockImplementation(async (key: string, value: string) => {
       if (key === STORAGE_KEYS.GOALS) throw disk;
@@ -395,7 +411,7 @@ describe('export, then import', () => {
     setItem.mockClear();
 
     await expect(
-      importFile(target.result, generateJSONExport([goal({ id: 5 })], [reward({ id: 6 })], 0), 'merge')
+      importFile(target.result, generateJSONExport([goal({ id: 5 })], [reward({ id: 6 })], ledgerOf(0)), 'merge')
     ).rejects.toThrow();
 
     expect(setItem).not.toHaveBeenCalled();
@@ -412,7 +428,7 @@ describe('export, then import', () => {
       await target.result.current.goals.addGoal('Added meanwhile', 10, 0, 'x', 'increase', 1, 'daily');
     });
 
-    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], ledgerOf(0)));
     await act(async () => {
       await importBackup(parsed.data!, 'merge');
     });
@@ -436,10 +452,10 @@ describe('export, then import', () => {
       if (key === REWARDS_KEY) await gate;
       return realSetItem(key, value);
     });
-    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], ledgerOf(0)));
 
     let adding!: Promise<void>;
-    let finishing!: Promise<void>;
+    let finishing!: Promise<unknown>;
     let importing!: Promise<void>;
     await act(async () => {
       adding = target.result.current.rewards.addReward('Other', '', 5, '🎁'); // being written, held
@@ -478,7 +494,7 @@ describe('export, then import', () => {
     await seed([goal({ id: 1, points: 50, linkedRewardId: 2 })], [reward({ id: 2, title: 'Treat', pointsCost: 20 })]);
     const target = await renderApp();
     const release = holdGoalsWrite();
-    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], ledgerOf(0)));
 
     let importing!: Promise<void>;
     await act(async () => {
@@ -509,7 +525,7 @@ describe('export, then import', () => {
     await seed([goal({ id: 1 })]);
     const target = await renderApp();
     const release = holdGoalsWrite();
-    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], 0));
+    const parsed = parseJSONImport(generateJSONExport([goal({ id: 5, title: 'Backed up' })], [], ledgerOf(0)));
     const text = { reminderTitle: 'Reminder', reminderBody: '{goal}' };
 
     let importing!: Promise<void>;
@@ -540,7 +556,7 @@ describe('export, then import', () => {
     const backup = generateJSONExport(
       source.result.current.goals.goals,
       source.result.current.rewards.rewards,
-      source.result.current.goals.lifetimePointsEarned
+      source.result.current.goals.pointsLedger
     );
     source.unmount();
 

@@ -37,7 +37,7 @@ interface LanguageOption {
 export default function SettingsScreen() {
   const { theme, themeMode, setThemeMode } = useTheme();
   const { t, language, setLanguage } = useLanguage();
-  const { goals, lifetimePointsEarned, unarchiveGoal, permanentlyDeleteGoal, rescheduleReminders } = useGoals();
+  const { goals, lifetimePointsEarned, pointsLedger, unarchiveGoal, permanentlyDeleteGoal, rescheduleReminders } = useGoals();
   const { rewards } = useRewards();
   const importBackup = useImportBackup();
   const [showArchivedGoals, setShowArchivedGoals] = useState(false);
@@ -333,7 +333,7 @@ export default function SettingsScreen() {
 
     setIsExporting(true);
     try {
-      const jsonData = generateJSONExport(goals, rewards, lifetimePointsEarned);
+      const jsonData = generateJSONExport(goals, rewards, pointsLedger);
       const filename = exportFileName('json');
       await shareData(jsonData, filename);
       Alert.alert(t.common.success, t.export.exportSuccess);
@@ -343,7 +343,7 @@ export default function SettingsScreen() {
     } finally {
       setIsExporting(false);
     }
-  }, [goals, rewards, lifetimePointsEarned, t]);
+  }, [goals, rewards, pointsLedger, t]);
 
   /**
    * Handle export as CSV

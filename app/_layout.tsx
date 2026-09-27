@@ -49,6 +49,10 @@ export default function RootLayout() {
                     name="review"
                     options={{ animation: 'slide_from_bottom' }}
                   />
+                  <Stack.Screen
+                    name="points-history"
+                    options={{ animation: 'slide_from_bottom' }}
+                  />
                 </Stack>
                 {/* Rendered after the Stack so it overlays every screen. */}
                 <StorageErrorBanner />

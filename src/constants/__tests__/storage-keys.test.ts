@@ -19,6 +19,7 @@ describe('Storage Keys Constants', () => {
       expect(STORAGE_KEYS.THEME_MODE).toBe('@pathly:theme_mode');
       expect(STORAGE_KEYS.LANGUAGE).toBe('@pathly:language');
       expect(STORAGE_KEYS.LIFETIME_POINTS).toBe('@pathly:lifetime_points');
+      expect(STORAGE_KEYS.POINTS_LEDGER).toBe('@pathly:points_ledger');
       expect(STORAGE_KEYS.CUSTOM_TEMPLATES).toBe('@pathly:custom_templates');
     });
 

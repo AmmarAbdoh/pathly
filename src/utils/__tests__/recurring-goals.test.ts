@@ -7,6 +7,7 @@ import { Goal, TimePeriod } from '../../types';
 import {
   calculateStreak,
   canRecur,
+  currentPeriodStart,
   getCompletionCount,
   getPeriodEndDate,
   getTimeRemaining,
@@ -150,6 +151,12 @@ describe('Recurring Goals Utilities', () => {
       expect(reset.isComplete).toBe(false);
       expect(reset.completedAt).toBeUndefined();
       expect(reset.periodStartDate).toBeGreaterThan(completedGoal.periodStartDate!);
+    });
+
+    // The flag is for the period whose timing was changed by hand: the next
+    // one earns its early-bird bonus as usual.
+    it('starts the new period with its timing unchanged', () => {
+      expect(resetGoal({ ...baseGoal, timingChanged: true }).timingChanged).toBeUndefined();
     });
 
     it('should preserve completion history', () => {
@@ -856,5 +863,95 @@ describe('updateGoalStreaks', () => {
 
     expect(updateGoalStreaks(goal)).toBe(goal);
     expect(updateGoalStreaks({ ...goal, currentStreak: 3 })).toMatchObject({ currentStreak: 0, longestStreak: 0 });
+  });
+});
+
+// Regression: a streak counted completions 0.9 to 2.1 periods apart as
+// consecutive, and a period that ended started the next whenever the app was
+// next opened - so periods drifted, and "back to back" meant nothing.
+describe('periods and streaks', () => {
+  const DAY = 86_400_000;
+  const NOW = new Date(2026, 5, 17, 15, 0).getTime(); // a Wednesday afternoon
+  const weekly = (overrides: Partial<Goal>): Goal =>
+    ({
+      id: 1,
+      title: 'Run',
+      target: 1,
+      current: 1,
+      initialValue: 0,
+      unit: 'x',
+      progress: 100,
+      points: 10,
+      direction: 'increase',
+      period: 'weekly',
+      createdAt: NOW - 100 * DAY,
+      isRecurring: true,
+      isComplete: true,
+      completedAt: NOW,
+      completionHistory: [],
+      periodStartDate: NOW - DAY,
+      ...overrides,
+    }) as Goal;
+
+  describe('calculateStreak', () => {
+    it('counts back-to-back periods, however close the completions', () => {
+      const goal = weekly({ completionHistory: [NOW - 1.1 * DAY] });
+      expect(calculateStreak(goal, NOW).currentStreak).toBe(2);
+    });
+
+    it('breaks on a skipped period, however far apart the completions', () => {
+      const goal = weekly({ completionHistory: [NOW - 14.5 * DAY] });
+      expect(calculateStreak(goal, NOW)).toEqual({ currentStreak: 1, longestStreak: 1 });
+    });
+
+    it('keeps a streak going until this period is over', () => {
+      const goal = weekly({ isComplete: false, completedAt: undefined, completionHistory: [NOW - 9 * DAY, NOW - 2 * DAY] });
+      expect(calculateStreak(goal, NOW).currentStreak).toBe(2);
+    });
+
+    it('counts a period once, however often it was completed', () => {
+      const goal = weekly({ completionHistory: [NOW - 3 * DAY, NOW - 2 * DAY] });
+      expect(calculateStreak(goal, NOW).currentStreak).toBe(2);
+    });
+
+    it('finds the longest run, gaps and all', () => {
+      const weeksAgo = (w: number) => NOW - DAY - w * 7 * DAY + DAY / 2;
+      const goal = weekly({ completionHistory: [weeksAgo(9), weeksAgo(8), weeksAgo(7), weeksAgo(3)] });
+      expect(calculateStreak(goal, NOW)).toEqual({ currentStreak: 1, longestStreak: 3 });
+    });
+
+    it('goes by calendar days for a daily goal', () => {
+      const today = new Date(NOW).setHours(0, 0, 0, 0);
+      const goal = weekly({
+        period: 'daily',
+        periodStartDate: today,
+        // Two minutes apart, either side of midnight: two days in a row.
+        completionHistory: [today - DAY - 60_000, today - DAY + 60_000],
+      });
+      expect(calculateStreak(goal, NOW).currentStreak).toBe(3);
+    });
+  });
+
+  describe('currentPeriodStart', () => {
+    it('steps on a whole period at a time', () => {
+      const start = NOW - 30 * DAY;
+      expect(currentPeriodStart(start, 'weekly', undefined, NOW)).toBe(start + 28 * DAY);
+    });
+
+    it("starts a daily goal's period at midnight", () => {
+      const twoDaysAgo = NOW - 2 * DAY;
+      expect(currentPeriodStart(twoDaysAgo, 'daily', undefined, NOW)).toBe(new Date(NOW).setHours(0, 0, 0, 0));
+    });
+
+    it('leaves a period that has not ended as it is', () => {
+      expect(currentPeriodStart(NOW - DAY, 'weekly', undefined, NOW)).toBe(NOW - DAY);
+    });
+  });
+
+  it('starts the next period on its boundary, not when the app is opened', () => {
+    const start = Date.now() - 10 * DAY;
+    const [rolled] = processRecurringGoals([weekly({ periodStartDate: start, isComplete: false, completedAt: undefined })]);
+
+    expect(rolled.periodStartDate).toBe(start + 7 * DAY);
   });
 });

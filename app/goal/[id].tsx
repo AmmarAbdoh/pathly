@@ -10,8 +10,9 @@ import { useBackOrHome } from '@/src/hooks/use-back-or-home';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { Goal, GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
+import { Goal, GoalDirection, GoalSchedule, PointsEntry, TimePeriod } from '@/src/types';
 import { calculateTimeRemaining, formatEndDateTime, formatProgressText, formatTimeRemaining } from '@/src/utils/goal-calculations';
+import { describePayout } from '@/src/utils/bonuses';
 import { formatNumber } from '@/src/utils/number-formatting';
 import {
   checkNotificationPermissions,
@@ -156,6 +157,16 @@ export default function GoalDetail() {
     return Math.round(newProgress) >= 100;
   }, [goal]);
 
+  /** The completion message, with what it paid: points, then any bonuses. */
+  const finishMessage = useCallback(
+    (payout: PointsEntry[]) =>
+      [
+        t.goalDetail.finishSuccess,
+        ...describePayout(payout, { points: t.goalCard.points, bonus: t.pointsHistory.bonus }, language),
+      ].join('\n'),
+    [t, language]
+  );
+
   /**
    * Handle saving the value from 100% modal
    */
@@ -193,10 +204,11 @@ export default function GoalDetail() {
               setShow100PercentModal(false);
               setNotYetValue('');
               try {
-                await updateGoal(goal.id, targetValue);
-                await finishGoal(goal.id);
+                // Reaching the target pays; finishing then finds it paid.
+                const paid = await updateGoal(goal.id, targetValue);
+                const alsoPaid = await finishGoal(goal.id);
                 setPending100PercentValue(null);
-                Alert.alert(t.common.success, t.goalDetail.finishSuccess);
+                Alert.alert(t.common.success, finishMessage([...paid, ...alsoPaid]));
               } catch (error) {
                 console.error('Failed to complete goal:', error);
                 Alert.alert(t.common.error, t.goalDetail.finishError);
@@ -220,7 +232,7 @@ export default function GoalDetail() {
         Alert.alert(t.common.error, t.goalDetail.updateError);
       }
     }
-  }, [goal, pending100PercentValue, notYetValue, updateGoal, finishGoal, wouldReach100Percent, t]);
+  }, [goal, pending100PercentValue, notYetValue, updateGoal, finishGoal, finishMessage, wouldReach100Percent, t]);
 
   /**
    * Handle canceling the 100% modal
@@ -410,13 +422,13 @@ export default function GoalDetail() {
     setShowFinishModal(false);
     
     try {
-      await finishGoal(goal.id);
-      Alert.alert(t.common.success, t.goalDetail.finishSuccess);
+      const paid = await finishGoal(goal.id);
+      Alert.alert(t.common.success, finishMessage(paid));
     } catch (error) {
       console.error('Failed to finish goal:', error);
       Alert.alert(t.common.error, t.goalDetail.finishError);
     }
-  }, [goal, finishGoal, t]);
+  }, [goal, finishGoal, finishMessage, t]);
 
   /**
    * Cancel finish goal

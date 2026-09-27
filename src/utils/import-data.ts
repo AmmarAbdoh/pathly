@@ -20,10 +20,11 @@
  * Pure: no React, no storage. The contexts apply the result.
  */
 
-import type { Goal, GoalCategory, GoalNote, GoalSchedule, Reward, TimePeriod } from '../types';
+import type { Goal, GoalCategory, GoalNote, GoalSchedule, PointsEntry, Reward, TimePeriod } from '../types';
 import { calculateGoalProgress } from './goal-calculations';
 import { nextId } from './ids';
-import { canRecur, getTotalPointsEarned, isPeriodLength } from './recurring-goals';
+import { appendEntries, ledgerFromHistory, readLedgerEntries } from './points-ledger';
+import { canRecur, isPeriodLength } from './recurring-goals';
 
 /**
  * - `merge`:   add the backup's goals and rewards alongside the current ones.
@@ -34,7 +35,7 @@ export type ImportMode = 'merge' | 'replace';
 export interface AppData {
   goals: Goal[];
   rewards: Reward[];
-  lifetimePoints: number;
+  pointsLedger: PointsEntry[];
 }
 
 /** What parseJSONImport produces: records that passed its basic validation. */
@@ -43,6 +44,8 @@ export interface ImportedData {
   rewards: Reward[];
   /** Null when the file does not record them (e.g. older exports). */
   lifetimePoints: number | null;
+  /** The file's points ledger, unchecked; null in backups made before it. */
+  pointsLedger: unknown[] | null;
 }
 
 const PERIODS: readonly TimePeriod[] = ['daily', 'weekly', 'monthly', 'yearly', 'custom', 'ongoing'];
@@ -157,24 +160,6 @@ function assignIds(
   return { ids, map };
 }
 
-/**
- * Lifetime points a backup implies when it does not record them: the same
- * derivation GoalsContext uses when migrating from versions that predate them.
- */
-export function deriveLifetimePoints(goals: readonly Goal[]): number {
-  const awardingParents = new Set(
-    goals.filter((goal) => goal.subgoalsAwardPoints).map((goal) => goal.id)
-  );
-  return goals.reduce((sum, goal) => {
-    // A subgoal pays out only when its parent says so, as awardPointsForGoal
-    // does when it is completed.
-    if (goal.parentId && !awardingParents.has(goal.parentId)) return sum;
-    if (!isNumber(goal.points) || goal.points <= 0) return sum;
-    if (goal.isRecurring) return sum + getTotalPointsEarned(goal);
-    return sum + (goal.isComplete ? goal.points : 0);
-  }, 0);
-}
-
 function normaliseNotes(notes: unknown, now: number): GoalNote[] | undefined {
   if (!Array.isArray(notes)) return undefined;
   const result: GoalNote[] = [];
@@ -231,7 +216,7 @@ export function buildImport(
   now: number = Date.now()
 ): AppData {
   const base: AppData =
-    mode === 'replace' ? { goals: [], rewards: [], lifetimePoints: 0 } : current;
+    mode === 'replace' ? { goals: [], rewards: [], pointsLedger: [] } : current;
 
   const incomingGoals = incoming.goals.filter(isImportableGoal);
   const incomingRewards = incoming.rewards.filter(isImportableReward);
@@ -292,6 +277,7 @@ export function buildImport(
       currentStreak: nonNegative(raw.currentStreak),
       longestStreak: nonNegative(raw.longestStreak),
       isPaused: flag(raw.isPaused),
+      timingChanged: flag(raw.timingChanged),
       pausedAt: number(raw.pausedAt),
       isArchived: flag(raw.isArchived),
       archivedAt: number(raw.archivedAt),
@@ -366,17 +352,22 @@ export function buildImport(
 
   // Merged redeemed rewards count as spending, so the backup's earned points
   // must come with them - otherwise the available balance drops, possibly
-  // below zero. Lifetime points never decrease, so a negative total in the
-  // file is not trusted; nor are the raw goals, whose points may not be
-  // numbers (the total would be NaN, saved, and read back on every launch).
-  const importedPoints =
-    isNumber(incoming.lifetimePoints) && incoming.lifetimePoints >= 0
-      ? incoming.lifetimePoints
-      : deriveLifetimePoints(goals);
+  // below zero. Its own ledger when it has one, checked entry by entry, with
+  // its goals' new ids; one made before the ledger is started as the app
+  // starts its own: from the goals' history and the file's total. A negative
+  // total is not trusted - lifetime points never decrease - nor are the raw
+  // goals, whose points may not be numbers.
+  const importedLedger = Array.isArray(incoming.pointsLedger)
+    ? readLedgerEntries(incoming.pointsLedger, goalIds.map, now)
+    : ledgerFromHistory(
+        goals,
+        isNumber(incoming.lifetimePoints) && incoming.lifetimePoints >= 0 ? incoming.lifetimePoints : null,
+        now
+      );
 
   return {
     goals: [...base.goals, ...goals],
     rewards: [...base.rewards, ...rewards],
-    lifetimePoints: base.lifetimePoints + importedPoints,
+    pointsLedger: appendEntries(base.pointsLedger, importedLedger, now),
   };
 }

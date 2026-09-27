@@ -10,12 +10,23 @@ import { LanguageProvider } from '@/src/context/LanguageContext';
 import { RewardsProvider } from '@/src/context/RewardsContext';
 import { ThemeProvider } from '@/src/context/ThemeContext';
 import { translations } from '@/src/i18n/translations';
-import type { Goal } from '@/src/types';
+import type { Goal, PointsEntry } from '@/src/types';
+import { ledgerTotal } from '@/src/utils/points-ledger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+/** A points ledger worth `points` in all: what a total was before the ledger. */
+const ledgerOf = (points: number): PointsEntry[] =>
+  points > 0 ? [{ id: 1, at: 0, points, reason: 'carried' }] : [];
+
+/** Lifetime points as saved: the stored ledger's total, or null if none. */
+async function storedLifetime(): Promise<number | null> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.POINTS_LEDGER);
+  return raw === null ? null : ledgerTotal(JSON.parse(raw));
+}
 
 const SAVE_DEBOUNCE_MS = 400;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -46,7 +57,7 @@ const makeGoal = (overrides: Partial<Goal> = {}): Goal =>
 
 async function seed(goals: Goal[], lifetime = 0) {
   await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
-  await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, String(lifetime));
+  await AsyncStorage.setItem(STORAGE_KEYS.POINTS_LEDGER, JSON.stringify(ledgerOf(lifetime)));
 }
 
 const storedGoals = async (): Promise<Goal[]> =>
@@ -247,13 +258,13 @@ describe('failed saves', () => {
     });
 
     expect(result.current.storageError).toBe('save');
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('0');
+    expect(await storedLifetime()).toBe(0);
 
     await act(async () => {
       await result.current.retryStorage();
     });
 
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+    expect(await storedLifetime()).toBe(50);
     expect(result.current.storageError).toBeNull();
   });
 
@@ -304,7 +315,7 @@ describe('failed saves', () => {
     });
     await act(async () => {
       await expect(
-        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0)
+        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], ledgerOf(0))
       ).rejects.toThrow();
     });
 
@@ -331,7 +342,7 @@ describe('failed saves', () => {
 
     storage.recover();
     await act(async () => {
-      await result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+      await result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], ledgerOf(0));
     });
 
     expect(result.current.storageError).toBeNull();
@@ -351,7 +362,7 @@ describe('failed saves', () => {
 
     let importing!: Promise<void>;
     await act(async () => {
-      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], ledgerOf(0));
       background('background');
       // An edit while it is written is based on the goals being replaced.
       await result.current.updateGoal(1, 7);
@@ -373,11 +384,11 @@ describe('failed saves', () => {
     const background = captureAppState();
     await seed([makeGoal({ id: 1, title: 'Old' })]);
     const { result } = await renderGoals();
-    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.LIFETIME_POINTS);
+    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.POINTS_LEDGER);
 
     let importing!: Promise<void>;
     await act(async () => {
-      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], 0);
+      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], ledgerOf(0));
       await sleep(50); // the goals are written; the total is held
       await result.current.updateGoal(1, 7);
       background('background');
@@ -397,11 +408,11 @@ describe('failed saves', () => {
   it('keeps a change made while an import finishes', async () => {
     await seed([makeGoal({ id: 1, title: 'Old' })]);
     const { result } = await renderGoals();
-    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.LIFETIME_POINTS);
+    const lifetimeWrite = holdNext(setItem, realSetItem, STORAGE_KEYS.POINTS_LEDGER);
 
     let importing!: Promise<void>;
     await act(async () => {
-      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], 0);
+      importing = result.current.replaceAllGoals([makeGoal({ id: 1, title: 'Imported' })], ledgerOf(0));
       await sleep(50); // the goals are written; the total is held
       await result.current.updateGoal(1, 7);
     });
@@ -437,7 +448,7 @@ describe('failed saves', () => {
     });
     let importing!: Promise<void>;
     await act(async () => {
-      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 0);
+      importing = result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], ledgerOf(0));
     });
     write.release(); // the save fails, then the import
     await act(async () => {
@@ -463,7 +474,7 @@ describe('failed saves', () => {
     // happens to come first (here, the goals write during refresh's flush).
     let lifetimeWritesFail = true;
     setItem.mockImplementation(async (key: string, value: string) => {
-      if (lifetimeWritesFail && key === STORAGE_KEYS.LIFETIME_POINTS) {
+      if (lifetimeWritesFail && key === STORAGE_KEYS.POINTS_LEDGER) {
         throw disk;
       }
       return realSetItem(key, value);
@@ -481,7 +492,7 @@ describe('failed saves', () => {
     await act(async () => {
       await result.current.retryStorage();
     });
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('55');
+    expect(await storedLifetime()).toBe(55);
   });
 
   it('can be dismissed', async () => {
@@ -513,7 +524,7 @@ describe('failed loads', () => {
 
   it('treats a failed lifetime-points read as a failed load too', async () => {
     await seed([makeGoal()]);
-    failNextLoad(STORAGE_KEYS.LIFETIME_POINTS);
+    failNextLoad(STORAGE_KEYS.POINTS_LEDGER);
 
     const { result } = await renderGoals();
 
@@ -549,7 +560,7 @@ describe('failed loads', () => {
   // read. When that read failed, Retry found no goals, and nothing said why.
   it('says unreadable goals were kept aside, even when a later read failed first', async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, '{corrupt');
-    failNextLoad(STORAGE_KEYS.LIFETIME_POINTS);
+    failNextLoad(STORAGE_KEYS.POINTS_LEDGER);
     const { result } = await renderGoals();
     expect(result.current.storageError).toBe('load');
 
@@ -609,7 +620,7 @@ describe('failed loads', () => {
 
     expect(() => result.current.getCurrentGoals()).toThrow();
     await act(async () => {
-      await expect(result.current.replaceAllGoals([makeGoal({ title: 'Imported' })], 0)).rejects.toThrow();
+      await expect(result.current.replaceAllGoals([makeGoal({ title: 'Imported' })], ledgerOf(0))).rejects.toThrow();
     });
 
     read.release();
@@ -633,7 +644,7 @@ describe('failed loads', () => {
       await result.current.finishGoal(added.id);
     });
 
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('5000');
+    expect(await storedLifetime()).toBe(5000);
     expect(result.current.storageError).toBe('load');
 
     await act(async () => {
@@ -651,12 +662,12 @@ describe('failed loads', () => {
 
     await act(async () => {
       await expect(
-        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], 99)
+        result.current.replaceAllGoals([makeGoal({ id: 9, title: 'Imported' })], ledgerOf(99))
       ).rejects.toThrow();
     });
 
     expect((await storedGoals()).map((g) => g.title)).toEqual(['Keep me']);
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('30');
+    expect(await storedLifetime()).toBe(30);
   });
 
   // Regression: closing the banner cleared the error, and nothing raised it
@@ -750,7 +761,7 @@ describe('failed loads', () => {
       STORAGE_KEYS.GOALS,
       JSON.stringify([makeGoal({ isComplete: true, current: 10, progress: 100 })])
     );
-    const storage = failWrites(STORAGE_KEYS.LIFETIME_POINTS);
+    const storage = failWrites(STORAGE_KEYS.POINTS_LEDGER);
 
     const { result } = await renderGoals();
 
@@ -761,17 +772,94 @@ describe('failed loads', () => {
     await act(async () => {
       await result.current.retryStorage();
     });
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+    expect(await storedLifetime()).toBe(50);
   });
 
   it('derives the total again when the stored one is unreadable', async () => {
-    await seed([makeGoal({ isComplete: true, current: 10, progress: 100 })]);
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.GOALS,
+      JSON.stringify([makeGoal({ isComplete: true, current: 10, progress: 100 })])
+    );
     await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, 'NaN');
 
     const { result } = await renderGoals();
 
     expect(result.current.lifetimePointsEarned).toBe(50);
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+    expect(await storedLifetime()).toBe(50);
+  });
+
+  describe('starting the points ledger from data saved before it', () => {
+    const completedAt = Date.now() - 86_400_000;
+    const done = (overrides: Partial<Goal>) =>
+      makeGoal({ isComplete: true, current: 10, progress: 100, completedAt, ...overrides });
+
+    async function saved(goals: Goal[], total: string | null) {
+      await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
+      if (total !== null) await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, total);
+    }
+
+    const stored = async (): Promise<PointsEntry[]> =>
+      JSON.parse((await AsyncStorage.getItem(STORAGE_KEYS.POINTS_LEDGER))!);
+
+    // The history keeps its dates; what it does not account for (deleted
+    // goals) is carried in, so lifetime points stay what they were.
+    it('keeps the history, dated, and carries in the rest of the total', async () => {
+      await saved([done({ id: 1, title: 'Read' })], '405');
+
+      const { result } = await renderGoals();
+
+      expect(result.current.lifetimePointsEarned).toBe(405);
+      expect(await stored()).toEqual([
+        expect.objectContaining({ at: 0, points: 355, reason: 'carried' }),
+        expect.objectContaining({ at: completedAt, points: 50, goalId: 1, goalTitle: 'Read' }),
+      ]);
+    });
+
+    it('starts from the total alone when no goal says when its points came', async () => {
+      await saved([], '120');
+
+      const { result } = await renderGoals();
+
+      expect(result.current.pointsLedger).toEqual([expect.objectContaining({ points: 120, reason: 'carried' })]);
+      expect(await storedLifetime()).toBe(120);
+    });
+
+    it('starts from the history alone when there is no total', async () => {
+      await saved([done({ id: 1 }), done({ id: 2, points: 25 })], null);
+
+      const { result } = await renderGoals();
+
+      expect(result.current.lifetimePointsEarned).toBe(75);
+      expect(result.current.pointsLedger.map((e) => e.reason)).toEqual(['completion', 'completion']);
+    });
+
+    it('reads the ledger, not the old total, once there is one', async () => {
+      await seed([], 30);
+      await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, '9999');
+
+      const { result } = await renderGoals();
+
+      expect(result.current.lifetimePointsEarned).toBe(30);
+    });
+  });
+
+  // A ledger that is not a list will never read: kept aside, as goals are,
+  // and started again from what is left.
+  it('keeps an unreadable points ledger aside and starts one from the goals', async () => {
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.GOALS,
+      JSON.stringify([makeGoal({ isComplete: true, current: 10, progress: 100, completedAt: 1_000 })])
+    );
+    await AsyncStorage.setItem(STORAGE_KEYS.POINTS_LEDGER, '{"broken":true}');
+
+    const { result } = await renderGoals();
+
+    expect(result.current.lifetimePointsEarned).toBe(50);
+    expect(result.current.dataSetAside).toBe(true);
+    const keys = await AsyncStorage.getAllKeys();
+    const aside = keys.find((key) => key.startsWith(`${STORAGE_KEYS.POINTS_LEDGER}.unreadable.`));
+    expect(aside && (await AsyncStorage.getItem(aside))).toBe('{"broken":true}');
+    expect(await storedLifetime()).toBe(50);
   });
 
   it('recovers on retry, restoring the stored goals', async () => {
@@ -844,7 +932,7 @@ describe('StorageErrorBanner', () => {
     });
 
     await waitFor(() => expect(screen.queryByText(en.saveFailed)).toBeNull());
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('50');
+    expect(await storedLifetime()).toBe(50);
   });
 
   it('explains a failed load differently', async () => {

@@ -411,6 +411,16 @@ export interface Translations {
     goodProgress: string;
     startWorking: string;
   };
+  pointsHistory: {
+    title: string;
+    open: string; // the Rewards screen's button
+    openHint: string;
+    empty: string;
+    carried: string; // points from before the ledger, whose goals are not known
+    completedGoal: string; // an earning whose goal title is not known
+    bonusHint: string; // how bonuses are earned, under the title
+    bonus: { early: string; streak: string; welcomeBack: string };
+  };
   export: {
     title: string;
     description: string;
@@ -1085,6 +1095,20 @@ export const translations: Record<Language, Translations> = {
       goodProgress: 'Good progress! Keep up the momentum! 💪',
       startWorking: 'Time to start working on your goals! 🚀',
     },
+    pointsHistory: {
+      title: 'Points History',
+      open: 'History',
+      openHint: 'Shows every point you have earned and spent',
+      empty: 'No points yet. Complete a goal to earn some!',
+      carried: 'Points from before history was kept',
+      completedGoal: 'Completed a goal',
+      bonusHint: 'Earn bonus points by finishing early, keeping a streak going, or coming back after a break.',
+      bonus: {
+        early: 'Early-bird bonus',
+        streak: 'Streak bonus',
+        welcomeBack: 'Welcome-back bonus',
+      },
+    },
     export: {
       title: 'Export Data',
       description: 'Export your goals and rewards data for backup or analysis',
@@ -1341,7 +1365,9 @@ export const translations: Record<Language, Translations> = {
       loadFailed: "Your goals couldn't be loaded. Nothing will be saved until they load - tap Retry.",
       rewardsLoadFailed: "Your rewards couldn't be loaded. They can't be changed until they load - tap Retry.",
       rewardsSaveFailed: "A reward linked to a completed goal couldn't be redeemed. Tap Retry.",
-      unreadable: "Some saved data was damaged and couldn't be read. It has been kept aside, and Pathly has started fresh.",
+      // True of each store it can happen to: goals start empty, a points history
+      // is rebuilt from the goals, rewards start empty. "Started fresh" was not.
+      unreadable: "Some saved data was damaged and couldn't be read. It has been kept aside, and Pathly carried on without it.",
       retry: 'Retry',
     },
     schedule: {
@@ -1781,6 +1807,20 @@ export const translations: Record<Language, Translations> = {
       goodProgress: 'تقدم جيد! حافظ على الزخم! 💪',
       startWorking: 'حان الوقت للعمل على أهدافك! 🚀',
     },
+    pointsHistory: {
+      title: 'سجل النقاط',
+      open: 'السجل',
+      openHint: 'يعرض كل نقطة كسبتها وأنفقتها',
+      empty: 'لا توجد نقاط بعد. أكمل هدفاً لتكسب بعضها!',
+      carried: 'نقاط من قبل بدء السجل',
+      completedGoal: 'إكمال هدف',
+      bonusHint: 'اكسب نقاطاً إضافية بالإنجاز مبكراً، أو بالحفاظ على سلسلتك، أو بالعودة بعد انقطاع.',
+      bonus: {
+        early: 'مكافأة الإنجاز المبكر',
+        streak: 'مكافأة السلسلة',
+        welcomeBack: 'مكافأة العودة',
+      },
+    },
     export: {
       title: 'تصدير البيانات',
       description: 'قم بتصدير أهدافك ومكافآتك للنسخ الاحتياطي أو التحليل',
@@ -2037,7 +2077,7 @@ export const translations: Record<Language, Translations> = {
       loadFailed: 'تعذّر تحميل أهدافك. لن يُحفظ أي شيء حتى يتم تحميلها - اضغط إعادة المحاولة.',
       rewardsLoadFailed: 'تعذّر تحميل مكافآتك. لا يمكن تعديلها حتى يتم تحميلها - اضغط إعادة المحاولة.',
       rewardsSaveFailed: 'تعذّر استرداد مكافأة مرتبطة بهدف مكتمل. اضغط إعادة المحاولة.',
-      unreadable: 'بعض البيانات المحفوظة تالفة ولم تمكن قراءتها. تم الاحتفاظ بها جانبًا، وبدأ Pathly من جديد.',
+      unreadable: 'بعض البيانات المحفوظة تالفة ولم تمكن قراءتها. تم الاحتفاظ بها جانبًا، وتابع Pathly العمل بدونها.',
       retry: 'إعادة المحاولة',
     },
     schedule: {

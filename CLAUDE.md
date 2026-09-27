@@ -85,7 +85,7 @@ used by both): a reward the user can't afford stays available.
 - The storage helpers **throw** on a failed read. Never return `[]` for unreadable data: the
   caller can't tell it from "nothing saved", and the next save writes over everything.
 - Two kinds of read failure. A failed *read* (`'load'`) may work next time: **every write is
-  held** - goals, lifetime points, imports - until a reload succeeds; the banner offers Retry.
+  held** - goals, the points ledger, imports - until a reload succeeds; the banner offers Retry.
   Dismissing it only hides it; the next change raises it again. Data that was read but is *not
   a list* (`UnreadableDataError`) never will be: it is kept aside under
   `<key>.unreadable.<timestamp>` and the app starts empty. Blocking on it left no way out but
@@ -96,7 +96,7 @@ used by both): a reward the user can't afford stays available.
 - Writes are also held until the *first* load finishes (`loadState: 'pending'`), not just after
   a failed one.
 - A failed goals write stays queued (`'save'`) and is retried. A write the load itself implies
-  (period rollover, first lifetime total) failing is a failed save, not a failed load. Queue it
+  (period rollover, starting the points ledger) failing is a failed save, not a failed load. Queue it
   before awaiting anything else: once loaded, changes are allowed, and queueing the loaded goals
   after one would put them over it.
 - **Once loaded, memory is the source of truth: refresh never re-reads storage.** Nothing else
@@ -111,7 +111,7 @@ used by both): a reward the user can't afford stays available.
   leaves alone *as it was*, and the save is decided by identity. Keep it that way in anything
   added there: a hand-kept list of changed fields missed each field added later, and a copy
   made when nothing changed writes the goals on every launch.
-- An unsaved lifetime total in memory is newer than disk, so a reload must not read it back.
+- An unsaved points ledger in memory is newer than disk, so a reload must not read it back.
 - Rewards changes run **one at a time** (a queue - `useSerialQueue`, which reminder changes use
   too), so a failed one can be undone exactly; the screen reports it. A linked reward that can't
   be redeemed yet (not loaded, write failed) is queued and redeemed on the next load or Retry
@@ -151,20 +151,49 @@ Pure functions in `src/utils/`, each unit-tested. Keep them pure — no React, n
 | `ids.ts` | collision-free record ids (`Date.now()` alone collides) |
 | `import-data.ts` | backup import: merge/replace, id remapping, repairing untrusted fields |
 | `points.ts` | spent and available points: the one affordability rule |
+| `points-ledger.ts` | the points ledger: payouts, rebuilding one from history, the history screen's rows |
+| `bonuses.ts` | bonus points: early-bird, streak, welcome back (`BONUS_RULES`) |
 
 If you add logic to one of these, add a test in the sibling `__tests__/` directory.
 
 ### Points model
-Available points = lifetime earned − spent. Lifetime points **never decrease** — they're stored
-under their own AsyncStorage key, separate from goals. Subgoals only award points when the parent
-sets `subgoalsAwardPoints`.
+Available points = lifetime earned − spent. Lifetime points **never decrease**. Subgoals only award
+points when the parent sets `subgoalsAwardPoints`.
 
-**There is one points total: `lifetimePointsEarned`.** Don't work one out from the goals there are
-now - that skipped subgoals and forgot deleted goals, and Rewards showed it as "Total Earned"
-(330 where 405 were earned). Points achievements use the lifetime total too. The Review screen
-reconstructs a period's points from completions (`completionHistory` plus `completedAt`), so it
-follows the same rules: every completion of a recurring goal, and a subgoal's only when its parent
-pays them. Where a subgoal's points aren't paid, the app doesn't show or ask for them.
+**Every payout is an entry in the points ledger** (`PointsEntry[]`, `src/utils/points-ledger.ts`),
+stored under its own key (`POINTS_LEDGER`), separate from goals and owned by GoalsContext. It is
+append-only: `recordPayout` adds `{ at, points, goalId, goalTitle }` when `awardPointsForGoal`
+pays. **Lifetime points are the ledger's total** (`ledgerTotal`) - never stored apart from it, so
+the two cannot disagree. A single stored number said how many points there were, not when or why:
+the review could only guess a period's points from the goals left. Spending is not in the ledger:
+a redeemed reward keeps its own `pointsCost` and `redeemedAt`, and belongs to RewardsContext -
+the Points history screen (`buildPointsHistory`) puts the two together.
+
+- **There is one points total: `lifetimePointsEarned`.** Don't work one out from the goals there
+  are now - that skipped subgoals and forgot deleted goals, and Rewards showed it as "Total
+  Earned" (330 where 405 were earned). Points achievements use it too, and Review sums the
+  ledger's entries in its period (`pointsEarnedBetween`).
+- **Data from before the ledger** (the legacy `LIFETIME_POINTS` number, read once and never
+  written) is started from the goals' own history - `ledgerFromHistory`, which holds the one
+  rule for what paid: every completion of a recurring goal, and a subgoal's only when its parent
+  pays them. What the history doesn't account for is carried in as one undated (`at: 0`)
+  `carried` entry, so lifetime points stay what they were. A backup made before the ledger is
+  imported the same way; one with a ledger brings its entries, checked field by field
+  (`readLedgerEntries`) and pointing at the goals' new ids.
+- Where a subgoal's points aren't paid, the app doesn't show or ask for them.
+- **Bonuses are ledger entries too** (`reason: 'bonus'`, `bonus: kind`), recorded with the payout
+  by `recordPayout` from `computeBonuses` (`src/utils/bonuses.ts`, numbers in `BONUS_RULES`):
+  early-bird (up to +25%, scaled by the share of the period left, none in its last quarter),
+  streak (+10% per recurring period in a row after the first, up to +50%) and welcome back
+  (+20% on the first completion after 3+ days of none). They are paid on the goal *as
+  completed* - its completion and streak count - so `finishGoal` passes the goal from `next`.
+  `updateGoal` and `finishGoal` resolve to what they paid, for the completion message.
+- **No bonus rewards waiting,** and none can be had by moving a deadline. Welcome back is flat,
+  not grown by the break. A period whose timing was changed by hand has `timingChanged` set -
+  by `extendDeadline` (a late goal given a new window), `resetRecurringGoal` (restarting just
+  before finishing) and an `editGoal` that changes the period (to Yearly, say) - and earns no
+  early-bird bonus. `resetGoal` clears it when the next period starts on its own; import keeps
+  it. Anything new that moves a period's start or end sets it too.
 
 A goal waiting on others (`dependsOn`) can't be completed: `finishGoal` refuses it, and the
 detail screen hides Mark as Complete.
@@ -310,6 +339,16 @@ Gotchas:
   saved goal that breaks it) all call it. Don't write a local copy: two copies that disagreed let recurring
   subgoals in through import. Only a recurring goal keeps a `schedule` - on any other it hid the
   goal on unscheduled days, and the form (which offers it only for recurring) couldn't show why.
+- **Periods keep their boundaries.** A period that ends while the app is closed is followed by
+  the next one on the goal's own cadence (`currentPeriodStart`: the next midnight for a daily
+  goal, a week on for a weekly one), not by one starting whenever the app is opened. Starting it
+  on opening made the periods drift, so a streak couldn't tell back-to-back periods apart and
+  the early-bird bonus was measured from app-open time. Only Reset Now starts a period at an
+  arbitrary moment.
+- **A streak is a run of back-to-back periods** with a completion in each (`calculateStreak`
+  places each completion in its period, counting back from the current one). It counted
+  completions 0.9 to 2.1 periods apart as consecutive: a week finished on its last day and the
+  next on its first broke the streak, and a week skipped between a late and an early one kept it.
 - **A recurring goal's deadline is its reset** (`getPeriodEndDate`); a one-off goal's is the end
   of its last day. Pass `isRecurring` to `calculateTimeRemaining` and `formatEndDateTime`:
   without it, a daily goal counted down to the end of tomorrow while it reset at midnight tonight.

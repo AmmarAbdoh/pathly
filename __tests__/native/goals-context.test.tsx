@@ -8,12 +8,19 @@
 
 import { STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { GoalsProvider, useGoals } from '@/src/context/GoalsContext';
-import { Goal } from '@/src/types';
+import { Goal, PointsEntry } from '@/src/types';
+import { ledgerTotal } from '@/src/utils/points-ledger';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 /** Mirrors SAVE_DEBOUNCE_MS in GoalsContext. */
+/** Lifetime points as saved: the stored ledger's total, or null if none. */
+async function storedLifetime(): Promise<number | null> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEYS.POINTS_LEDGER);
+  return raw === null ? null : ledgerTotal(JSON.parse(raw));
+}
+
 const SAVE_DEBOUNCE_MS = 400;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -83,7 +90,7 @@ describe('loading', () => {
     const { result } = await renderGoals();
 
     expect(result.current.lifetimePointsEarned).toBe(30);
-    expect(await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)).toBe('30');
+    expect(await storedLifetime()).toBe(30);
   });
 });
 
@@ -186,7 +193,8 @@ describe('points', () => {
   });
 
   it('pays out again for each new period of a recurring goal', async () => {
-    await seed([makeGoal({ period: 'weekly', isRecurring: true })]);
+    // Late in its week, so no early-bird bonus: this is about the payout itself.
+    await seed([makeGoal({ period: 'weekly', isRecurring: true, periodStartDate: Date.now() - 6 * 86_400_000 })]);
     const { result } = await renderGoals();
 
     await act(async () => {
@@ -199,7 +207,39 @@ describe('points', () => {
       await result.current.updateGoal(1, 10);
     });
 
-    expect(result.current.lifetimePointsEarned).toBe(100);
+    // The completions themselves; the periods back to back may add a streak bonus.
+    const completions = result.current.pointsLedger.filter((e) => e.reason === 'completion');
+    expect(completions.map((e) => e.points)).toEqual([50, 50]);
+  });
+
+  it('records each payout in the ledger: the goal, its title and when', async () => {
+    // Late in its week, so no early-bird bonus: this is about the payout itself.
+    await seed([makeGoal({ period: 'weekly', isRecurring: true, periodStartDate: Date.now() - 6 * 86_400_000 })]);
+    const { result } = await renderGoals();
+    const before = Date.now();
+
+    for (const value of [10, 9, 10]) {
+      await act(async () => {
+        await result.current.updateGoal(1, value);
+      });
+    }
+    await act(async () => {
+      await result.current.resetRecurringGoal(1);
+    });
+    await act(async () => {
+      await result.current.finishGoal(1);
+    });
+
+    // Set back and completed again paid nothing; the new period paid again
+    // (back to back, it may add a streak bonus - see the bonus tests).
+    const completions = result.current.pointsLedger.filter((e) => e.reason === 'completion');
+    expect(completions).toEqual([
+      expect.objectContaining({ points: 50, reason: 'completion', goalId: 1, goalTitle: 'Read books' }),
+      expect.objectContaining({ points: 50, reason: 'completion', goalId: 1, goalTitle: 'Read books' }),
+    ]);
+    expect(completions[0].at).toBeGreaterThanOrEqual(before);
+    expect(completions[0].id).not.toBe(completions[1].id);
+    expect(await storedLifetime()).toBe(result.current.lifetimePointsEarned);
   });
 
   it('only lets a subgoal award points when its parent opts in', async () => {
@@ -219,6 +259,115 @@ describe('points', () => {
       await result.current.updateGoal(4, 10);
     });
     expect(result.current.lifetimePointsEarned).toBe(25);
+  });
+});
+
+describe('bonuses', () => {
+  const DAY = 86_400_000;
+  const kinds = (entries: PointsEntry[]) => entries.map((e) => (e.reason === 'bonus' ? e.bonus : e.reason));
+
+  /** Complete goal `id` and resolve to what it paid. */
+  async function finish(result: { current: ReturnType<typeof useGoals> }, id = 1) {
+    let paid: PointsEntry[] = [];
+    await act(async () => {
+      paid = await result.current.finishGoal(id);
+    });
+    return paid;
+  }
+
+  it('records an early finish as a bonus, and says what was paid', async () => {
+    await seed([makeGoal({ period: 'weekly' })]);
+    const { result } = await renderGoals();
+
+    const paid = await finish(result);
+
+    expect(kinds(paid)).toEqual(['completion', 'early']);
+    expect(paid[1]).toMatchObject({ goalId: 1, goalTitle: 'Read books' });
+    expect(paid[1].points).toBeGreaterThan(0);
+    expect(result.current.pointsLedger).toEqual(paid);
+    expect(result.current.lifetimePointsEarned).toBe(50 + paid[1].points);
+    expect(await storedLifetime()).toBe(50 + paid[1].points);
+  });
+
+  it('pays a streak bonus for a recurring goal kept up period after period', async () => {
+    await seed([
+      makeGoal({ period: 'weekly', isRecurring: true, completionHistory: [Date.now() - 14 * DAY, Date.now() - 7 * DAY] }),
+    ]);
+    const { result } = await renderGoals();
+
+    const paid = await finish(result);
+
+    expect(paid.find((e) => e.bonus === 'streak')?.points).toBe(10); // 3 in a row: +20% of 50
+  });
+
+  it('welcomes you back after a break', async () => {
+    await seed([makeGoal()]);
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.POINTS_LEDGER,
+      JSON.stringify([{ id: 1, at: Date.now() - 4 * DAY, points: 10, reason: 'completion' }])
+    );
+    const { result } = await renderGoals();
+
+    const paid = await finish(result);
+
+    expect(kinds(paid)).toEqual(['completion', 'welcomeBack']);
+    expect(paid[1].points).toBe(10);
+  });
+
+  // Each changes the period by hand: a late finish would count as early.
+  describe('no early-bird bonus once the timing was changed by hand', () => {
+    it('by extending the deadline', async () => {
+      await seed([makeGoal({ period: 'weekly', periodStartDate: Date.now() - 10 * DAY })]);
+      const { result } = await renderGoals();
+      await act(async () => {
+        await result.current.extendDeadline(1, 14);
+      });
+
+      expect(kinds(await finish(result))).toEqual(['completion']);
+    });
+
+    it('by restarting the period with Reset Now', async () => {
+      await seed([makeGoal({ period: 'weekly', isRecurring: true, periodStartDate: Date.now() - 6 * DAY })]);
+      const { result } = await renderGoals();
+      await act(async () => {
+        await result.current.resetRecurringGoal(1);
+      });
+
+      expect(kinds(await finish(result))).toEqual(['completion']);
+    });
+
+    it('by changing the period, and only then', async () => {
+      await seed([
+        makeGoal({ id: 1, period: 'weekly', periodStartDate: Date.now() - 6 * DAY }),
+        makeGoal({ id: 2, period: 'weekly' }),
+      ]);
+      const { result } = await renderGoals();
+      const edit = (id: number, title: string, period: Goal['period']) =>
+        act(async () => {
+          await result.current.editGoal(id, title, 10, 0, 'books', 'increase', 50, period);
+        });
+      await edit(1, 'Read books', 'yearly');
+      await edit(2, 'Renamed', 'weekly');
+
+      expect(kinds(await finish(result, 1))).toEqual(['completion']);
+      expect(kinds(await finish(result, 2))).toEqual(['completion', 'early']);
+    });
+  });
+
+  it("pays no bonus on a subgoal whose parent doesn't pay subgoals' points", async () => {
+    await seed([
+      makeGoal({ id: 1, isUltimate: true, subgoalsAwardPoints: false, subGoals: [2], points: 0 }),
+      makeGoal({ id: 2, parentId: 1, period: 'weekly' }),
+    ]);
+    const { result } = await renderGoals();
+
+    let paid: PointsEntry[] = [];
+    await act(async () => {
+      paid = await result.current.updateGoal(2, 10);
+    });
+
+    expect(paid).toEqual([]);
+    expect(result.current.pointsLedger).toEqual([]);
   });
 });
 

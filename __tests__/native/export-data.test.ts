@@ -3,7 +3,7 @@
  */
 
 import { Platform, Share } from 'react-native';
-import type { Goal, Reward } from '@/src/types';
+import type { Goal, PointsEntry, Reward } from '@/src/types';
 import { isImportableGoal, isImportableReward } from '@/src/utils/import-data';
 import {
   exportFileName,
@@ -46,13 +46,23 @@ describe('JSON export and import', () => {
   // Regression: export writes `lifetimePointsEarned` but import only read
   // `lifetimePoints`, so the app's own backups always restored null points.
   it('round-trips goals, rewards and lifetime points', () => {
-    const json = generateJSONExport([goal()], [reward()], 340);
+    const ledger: PointsEntry[] = [
+      { id: 1, at: 0, points: 300, reason: 'carried' },
+      { id: 2, at: 1000, points: 40, reason: 'completion', goalId: 1, goalTitle: 'Read' },
+    ];
+    const json = generateJSONExport([goal()], [reward()], ledger);
     const parsed = parseJSONImport(json);
 
     expect(parsed.success).toBe(true);
     expect(parsed.data?.goals).toHaveLength(1);
     expect(parsed.data?.rewards).toHaveLength(1);
     expect(parsed.data?.lifetimePoints).toBe(340);
+    expect(parsed.data?.pointsLedger).toEqual(ledger);
+  });
+
+  it('reports no ledger for files made before it', () => {
+    const parsed = parseJSONImport(JSON.stringify({ goals: [], rewards: [], lifetimePointsEarned: 12 }));
+    expect(parsed.data?.pointsLedger).toBeNull();
   });
 
   it('still reads lifetime points from files that used the old key', () => {
@@ -67,7 +77,7 @@ describe('JSON export and import', () => {
 
   it('stamps the export with when it was made', () => {
     const before = Date.now();
-    const data = JSON.parse(generateJSONExport([], [], 0));
+    const data = JSON.parse(generateJSONExport([], [], []));
     expect(data.exportTimestamp).toBeGreaterThanOrEqual(before);
     expect(new Date(data.exportDate).getTime()).toBe(data.exportTimestamp);
   });

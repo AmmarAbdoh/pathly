@@ -4,11 +4,12 @@
  * These tests focus on business logic integration without React components
  */
 
-import { STORAGE_KEYS } from '@/src/constants/storage-keys';
 import { Goal, GoalDirection, TimePeriod } from '@/src/types';
 import { calculateProgress } from '@/src/utils/goal-calculations';
 import { getTotalPointsEarned, processRecurringGoals, updateGoalStreaks } from '@/src/utils/recurring-goals';
+import { completionEntry, ledgerTotal } from '@/src/utils/points-ledger';
 import { calculateStatistics } from '@/src/utils/statistics';
+import { pointsLedgerStorage } from '@/src/utils/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Helper to create a test goal
@@ -267,20 +268,16 @@ describe('Goals Flow Integration Tests', () => {
     });
 
     it('should track lifetime points earned across sessions', async () => {
-      // Simulate first session
-      const initialPoints = 500;
-      await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, initialPoints.toString());
+      // First session: points earned, saved as the ledger.
+      const first = [completionEntry([], { id: 1, title: 'Read' }, 500, 1_000)];
+      await pointsLedgerStorage.save(first);
 
-      // Verify points persisted
-      const stored = await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS);
-      expect(stored).toBe('500');
+      // Next session: read back, more earned.
+      const loaded = (await pointsLedgerStorage.load())!;
+      expect(ledgerTotal(loaded)).toBe(500);
+      await pointsLedgerStorage.save([...loaded, completionEntry(loaded, { id: 2, title: 'Run' }, 300, 2_000)]);
 
-      // Simulate adding more points
-      const newPoints = initialPoints + 300;
-      await AsyncStorage.setItem(STORAGE_KEYS.LIFETIME_POINTS, newPoints.toString());
-
-      const updatedStored = await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS);
-      expect(updatedStored).toBe('800');
+      expect(ledgerTotal((await pointsLedgerStorage.load())!)).toBe(800);
     });
   });
 

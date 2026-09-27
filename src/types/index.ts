@@ -64,6 +64,32 @@ export interface GoalTemplate {
   icon: string;
 }
 
+/** The bonuses a completion can earn (see bonuses.ts). */
+export type BonusKind = 'early' | 'streak' | 'welcomeBack';
+
+/**
+ * One payout of points: the ledger (see points-ledger.ts) is a list of these,
+ * and lifetime points are its total.
+ */
+export interface PointsEntry {
+  /** Unique within the ledger (nextId). */
+  id: number;
+  /** When the points were earned; 0 when that is not known (see `carried`). */
+  at: number;
+  /** Always more than 0: the ledger only grows. */
+  points: number;
+  /**
+   * - `completion`: a goal's completion paid out.
+   * - `bonus`: extra points that completion earned (which one: `bonus`).
+   * - `carried`: points from before the ledger was kept, whose history is gone.
+   */
+  reason: 'completion' | 'bonus' | 'carried';
+  bonus?: BonusKind;
+  goalId?: number;
+  /** As it was when earned, so the history survives a rename or deletion. */
+  goalTitle?: string;
+}
+
 export interface Reward {
   id: number;
   title: string;
@@ -117,6 +143,12 @@ export interface Goal {
   notificationDays?: number[]; // Days of week for notifications (0 = Sunday, 6 = Saturday)
   notificationIds?: string[]; // Array of scheduled notification IDs for cleanup
   schedule?: GoalSchedule; // Schedule configuration for when goal should be active
+  /**
+   * This period's timing was changed by hand - its deadline extended, its
+   * period edited, or restarted with Reset Now - so finishing it earns no
+   * early-bird bonus (see bonuses.ts). The next period starts without it.
+   */
+  timingChanged?: boolean;
 }
 
 export interface GoalFormData {

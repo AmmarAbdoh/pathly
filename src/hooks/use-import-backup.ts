@@ -49,14 +49,14 @@ export function useImportBackup() {
         const current = getCurrentGoals();
 
         const next = buildImport(
-          { goals: current.goals, rewards: currentRewards, lifetimePoints: current.lifetimePoints },
+          { goals: current.goals, rewards: currentRewards, pointsLedger: current.pointsLedger },
           incoming,
           mode
         );
 
         await writeRewards(next.rewards);
         try {
-          await replaceAllGoals(next.goals, next.lifetimePoints);
+          await replaceAllGoals(next.goals, next.pointsLedger);
         } catch (goalsError) {
           try {
             await writeRewards(currentRewards);

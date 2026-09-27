@@ -4,8 +4,9 @@
  */
 
 import { Platform, Share } from 'react-native';
-import { Goal, Reward } from '../types';
+import { Goal, PointsEntry, Reward } from '../types';
 import { goalImportProblem, rewardImportProblem } from './import-data';
+import { ledgerTotal } from './points-ledger';
 
 const GOAL_PROBLEMS = {
   title: 'Missing or invalid title',
@@ -23,7 +24,9 @@ export interface ExportData {
   exportTimestamp: number;
   goals: Goal[];
   rewards: Reward[];
+  /** The ledger's total: what an app from before the ledger reads. */
   lifetimePointsEarned: number;
+  pointsLedger: PointsEntry[];
 }
 
 /**
@@ -32,14 +35,15 @@ export interface ExportData {
 export function generateJSONExport(
   goals: Goal[],
   rewards: Reward[],
-  lifetimePointsEarned: number
+  pointsLedger: PointsEntry[]
 ): string {
   const exportData: ExportData = {
     exportDate: new Date().toISOString(),
     exportTimestamp: Date.now(),
     goals,
     rewards,
-    lifetimePointsEarned,
+    lifetimePointsEarned: ledgerTotal(pointsLedger),
+    pointsLedger,
   };
   
   return JSON.stringify(exportData, null, 2);
@@ -199,6 +203,8 @@ export interface ImportResult {
     goals: Goal[];
     rewards: Reward[];
     lifetimePoints: number | null;
+    /** Unchecked: buildImport checks each entry. Null in older backups. */
+    pointsLedger: unknown[] | null;
   } | null;
   errors: string[];
 }
@@ -270,6 +276,7 @@ export function parseJSONImport(jsonString: string): ImportResult {
         goals: validGoals as Goal[],
         rewards: validRewards as Reward[],
         lifetimePoints: readLifetimePoints(data),
+        pointsLedger: Array.isArray(data.pointsLedger) ? data.pointsLedger : null,
       },
       errors,
     };

@@ -16,6 +16,7 @@ import { formatNumber } from '@/src/utils/number-formatting';
 import { getAvailablePoints } from '@/src/utils/points';
 import { calculateStatistics } from '@/src/utils/statistics';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
     Alert,
@@ -35,7 +36,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function RewardsScreen() {
   const { theme } = useTheme();
   const { t, language } = useLanguage();
+  const router = useRouter();
   const { goals, lifetimePointsEarned } = useGoals();
+  const openHistory = useCallback(() => router.push('/points-history'), [router]);
   const {
     rewards,
     addReward,
@@ -311,6 +314,20 @@ export default function RewardsScreen() {
                 <Text style={[styles.infoLabel, { color: theme.colors.text, fontWeight: '700' }]}>{t.rewards.available}</Text>
                 <Text style={[styles.infoValue, { color: '#10b981', fontWeight: '700' }]}>{formatNumber(availablePoints, language)}</Text>
               </View>
+              <TouchableOpacity
+                style={[styles.historyButton, { borderTopColor: theme.colors.border }]}
+                onPress={openHistory}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={t.pointsHistory.open}
+                accessibilityHint={t.pointsHistory.openHint}
+              >
+                <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+                <Text style={[styles.historyButtonText, { color: theme.colors.primary }]}>
+                  {t.pointsHistory.open}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.primary} />
+              </TouchableOpacity>
             </View>
           </>
         }
@@ -534,6 +551,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     marginTop: 8,
     paddingTop: 16,
+  },
+  historyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderTopWidth: 1,
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  historyButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   infoLabel: {
     fontSize: 16,

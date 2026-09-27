@@ -5,7 +5,8 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../constants/storage-keys';
-import { Goal, GoalTemplate } from '../types';
+import { Goal, GoalTemplate, PointsEntry } from '../types';
+import { readLedgerEntries } from './points-ledger';
 
 /**
  * Stored data that was read but cannot be used: not JSON, or not a list.
@@ -149,6 +150,41 @@ export const goalsStorage = {
       console.error('Error clearing goals:', error);
       throw new Error('Failed to clear goals');
     }
+  },
+};
+
+/**
+ * Storage for the points ledger: every payout of points (see points-ledger.ts).
+ */
+export const pointsLedgerStorage = {
+  /** @throws Error if storage cannot be written */
+  async save(ledger: readonly PointsEntry[]): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.POINTS_LEDGER, JSON.stringify(ledger));
+    } catch (error) {
+      console.error('Error saving the points ledger:', error);
+      throw new Error('Failed to save the points ledger');
+    }
+  },
+
+  /**
+   * The saved ledger, or null when there is none yet - data from before the
+   * ledger, which the caller starts one from.
+   *
+   * @throws UnreadableDataError if what is stored is not a list, or an Error
+   *   if storage cannot be read at all - as goals do, and for the same reason:
+   *   an empty ledger for unreadable data would be saved over it.
+   */
+  async load(): Promise<PointsEntry[] | null> {
+    let raw: string | null;
+    try {
+      raw = await AsyncStorage.getItem(STORAGE_KEYS.POINTS_LEDGER);
+    } catch (error) {
+      console.error('Error loading the points ledger:', error);
+      throw new Error('Failed to load the points ledger');
+    }
+    if (raw === null) return null;
+    return readLedgerEntries(parseStoredList(raw, 'points'));
   },
 };
 

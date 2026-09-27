@@ -2,8 +2,9 @@
  * Tests for building app state from a backup.
  */
 
-import type { Goal, Reward } from '../../types';
-import { buildImport, deriveLifetimePoints, type AppData, type ImportedData } from '../import-data';
+import type { Goal, PointsEntry, Reward } from '../../types';
+import { buildImport, type AppData, type ImportedData } from '../import-data';
+import { ledgerFromHistory, ledgerTotal } from '../points-ledger';
 
 const NOW = 2_000_000_000_000;
 
@@ -38,13 +39,20 @@ const reward = (overrides: Partial<Reward> = {}): Reward => ({
   ...overrides,
 });
 
-const empty: AppData = { goals: [], rewards: [], lifetimePoints: 0 };
+/** A points ledger worth `points` in all. */
+const ledgerOf = (points: number): PointsEntry[] =>
+  points > 0 ? [{ id: 1, at: 0, points, reason: 'carried' }] : [];
+
+const empty: AppData = { goals: [], rewards: [], pointsLedger: [] };
 const file = (data: Partial<ImportedData>): ImportedData => ({
   goals: [],
   rewards: [],
   lifetimePoints: null,
+  pointsLedger: null,
   ...data,
 });
+
+const total = (data: AppData) => ledgerTotal(data.pointsLedger);
 
 const byTitle = (goals: Goal[], title: string) => goals.find((g) => g.title === title)!;
 
@@ -72,6 +80,7 @@ describe('what a record keeps', () => {
       description: 'desc',
       customPeriodDays: 3,
       notificationTime: 540,
+      timingChanged: true,
     });
 
     const [imported] = buildImport(empty, file({ goals: [rich] }), 'replace', NOW).goals;
@@ -96,6 +105,8 @@ describe('what a record keeps', () => {
       description: 'desc',
       customPeriodDays: 3,
       notificationTime: 540,
+      // Dropped, a period extended by hand would earn the early-bird bonus.
+      timingChanged: true,
     });
   });
 
@@ -128,7 +139,7 @@ describe('merge and replace', () => {
   const current: AppData = {
     goals: [goal({ id: 100, title: 'Mine' })],
     rewards: [reward({ id: 200, title: 'My reward' })],
-    lifetimePoints: 40,
+    pointsLedger: ledgerOf(40),
   };
 
   it('replace makes the backup the whole of the data', () => {
@@ -608,16 +619,16 @@ describe('repairing untrustworthy fields', () => {
 });
 
 describe('lifetime points', () => {
-  const current: AppData = { ...empty, lifetimePoints: 40 };
+  const current: AppData = { ...empty, pointsLedger: ledgerOf(40) };
 
   it('replace restores the backup total', () => {
-    expect(buildImport(current, file({ lifetimePoints: 300 }), 'replace', NOW).lifetimePoints).toBe(300);
+    expect(total(buildImport(current, file({ lifetimePoints: 300 }), 'replace', NOW))).toBe(300);
   });
 
   // Merged redeemed rewards count as spending, so the backup's earned points
   // must come with them or the available balance drops, possibly below zero.
   it('merge adds the backup total to the current one', () => {
-    expect(buildImport(current, file({ lifetimePoints: 300 }), 'merge', NOW).lifetimePoints).toBe(340);
+    expect(total(buildImport(current, file({ lifetimePoints: 300 }), 'merge', NOW))).toBe(340);
   });
 
   it('derives the total when the file does not record it', () => {
@@ -630,7 +641,7 @@ describe('lifetime points', () => {
       'merge',
       NOW
     );
-    expect(next.lifetimePoints).toBe(65);
+    expect(total(next)).toBe(65);
   });
 
   // Regression: a negative total was accepted - lowering a total that never
@@ -642,7 +653,7 @@ describe('lifetime points', () => {
       'merge',
       NOW
     );
-    expect(next.lifetimePoints).toBe(65);
+    expect(total(next)).toBe(65);
   });
 
   // Regression: the total was derived from the raw goals, where a recurring
@@ -651,11 +662,69 @@ describe('lifetime points', () => {
     const noPoints = { ...goal({ isRecurring: true, completionHistory: [1, 2] }), points: undefined } as unknown as Goal;
     const next = buildImport(current, file({ goals: [noPoints] }), 'merge', NOW);
 
-    expect(next.lifetimePoints).toBe(40);
+    expect(total(next)).toBe(40);
   });
 });
 
-describe('deriveLifetimePoints', () => {
+describe("the points ledger of a backup", () => {
+  const entry = (overrides: Partial<PointsEntry>): PointsEntry => ({
+    id: 1,
+    at: 5_000,
+    points: 10,
+    reason: 'completion',
+    ...overrides,
+  });
+
+  it("brings the backup's own entries, pointing at its goals' new ids", () => {
+    const next = buildImport(
+      empty,
+      file({
+        goals: [goal({ id: 5, title: 'Read' })],
+        pointsLedger: [entry({ goalId: 5, goalTitle: 'Read', points: 50 })],
+      }),
+      'replace',
+      NOW
+    );
+
+    expect(next.pointsLedger).toEqual([
+      expect.objectContaining({ at: 5_000, points: 50, goalId: byTitle(next.goals, 'Read').id, goalTitle: 'Read' }),
+    ]);
+  });
+
+  it('merge adds them after the current entries, each with its own id', () => {
+    const current: AppData = { ...empty, pointsLedger: [entry({ id: NOW + 3, points: 40 })] };
+
+    const next = buildImport(current, file({ pointsLedger: [entry({ id: NOW + 3, points: 7 })] }), 'merge', NOW);
+
+    expect(next.pointsLedger.map((e) => e.points)).toEqual([40, 7]);
+    expect(new Set(next.pointsLedger.map((e) => e.id)).size).toBe(2);
+  });
+
+  // A backup is untrusted: an entry whose points are not a positive number
+  // would lower a total that never decreases, or make it NaN.
+  it('drops entries whose points are not a positive number', () => {
+    const next = buildImport(
+      empty,
+      file({ pointsLedger: [entry({ points: -500 }), { points: 'lots' }, entry({ points: 25 })] }),
+      'replace',
+      NOW
+    );
+
+    expect(total(next)).toBe(25);
+  });
+
+  // A ledger in the file is used over its total: the entries are the record.
+  it("prefers the file's ledger to its total", () => {
+    const next = buildImport(empty, file({ lifetimePoints: 999, pointsLedger: [entry({ points: 30 })] }), 'replace', NOW);
+
+    expect(total(next)).toBe(30);
+  });
+});
+
+// What a backup made before the ledger was earned: its goals' history.
+describe('points worked out from goals', () => {
+  const deriveLifetimePoints = (goals: Goal[]) => ledgerTotal(ledgerFromHistory(goals, null, NOW));
+
   it('counts completed top-level goals and every recurring completion, not subgoals', () => {
     expect(
       deriveLifetimePoints([

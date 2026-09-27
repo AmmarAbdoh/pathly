@@ -28,7 +28,7 @@ type PeriodType = 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth';
  * Review screen component
  */
 export default function ReviewScreen() {
-  const { goals } = useGoals();
+  const { goals, pointsLedger } = useGoals();
   const { theme } = useTheme();
   const { t, language } = useLanguage();
 
@@ -55,8 +55,8 @@ export default function ReviewScreen() {
   
   // Calculate statistics for the selected period
   const statistics = useMemo(() => {
-    return calculateReviewStatistics(goals, period);
-  }, [goals, period]);
+    return calculateReviewStatistics(goals, period, pointsLedger);
+  }, [goals, period, pointsLedger]);
   
   // Get motivational message
   const motivationalMessageKey = useMemo(() => {

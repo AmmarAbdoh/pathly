@@ -105,17 +105,79 @@ export function getPeriodEndDate(
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Reset a recurring goal to its initial state
+ * Where the period after the one starting at `start` starts: where that one
+ * ends - for a daily goal, at the next midnight.
  */
-export function resetGoal(goal: Goal): Goal {
+export function nextPeriodStart(start: number, period: TimePeriod, customPeriodDays?: number): number {
+  const end = getPeriodEndDate(start, period, customPeriodDays);
+  return period === 'daily' ? end + 1 : end;
+}
+
+/** Where the period before the one starting at `start` started. */
+function previousPeriodStart(start: number, period: TimePeriod, customPeriodDays?: number): number {
+  const date = new Date(start);
+  switch (period) {
+    case 'daily':
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - 1);
+      return date.getTime();
+    case 'weekly':
+      return start - 7 * DAY_MS;
+    case 'monthly':
+      date.setMonth(date.getMonth() - 1);
+      return date.getTime();
+    case 'yearly':
+      date.setFullYear(date.getFullYear() - 1);
+      return date.getTime();
+    default:
+      // A custom period, or one that cannot recur: as a day when it has no length.
+      return start - (customPeriodDays && customPeriodDays > 0 ? customPeriodDays : 1) * DAY_MS;
+  }
+}
+
+/**
+ * The start of the period `now` falls in, stepping on from the one starting at
+ * `start` a whole period at a time.
+ *
+ * Periods keep their boundaries: a week that ends while the app is closed is
+ * followed by the next week, not by one starting whenever the app is opened.
+ * Starting it on opening made the periods drift, so a streak could not tell
+ * back-to-back periods apart, and the early-bird bonus was measured from
+ * whenever the app happened to be opened.
+ */
+export function currentPeriodStart(
+  start: number,
+  period: TimePeriod,
+  customPeriodDays: number | undefined,
+  now: number
+): number {
+  let current = start;
+  // Bounded: a daily goal left for 270 years is still found.
+  for (let i = 0; i < 100_000 && now >= getPeriodEndDate(current, period, customPeriodDays); i++) {
+    const next = nextPeriodStart(current, period, customPeriodDays);
+    if (!(next > current)) return now;
+    current = next;
+  }
+  return current;
+}
+
+/**
+ * Reset a recurring goal to its initial state, starting its new period at
+ * `periodStartDate` - by default now, as Reset Now does.
+ */
+export function resetGoal(goal: Goal, periodStartDate: number = Date.now()): Goal {
   return {
     ...goal,
     current: goal.initialValue,
     progress: 0,
     isComplete: false,
-    periodStartDate: Date.now(), // Start new period
+    periodStartDate,
     completedAt: undefined,
+    // A new period's timing has not been changed by hand (see bonuses.ts).
+    timingChanged: undefined,
     // Keep completion history
     completionHistory: goal.completionHistory || [],
   };
@@ -164,9 +226,13 @@ export function processRecurringGoals(goals: Goal[]): Goal[] {
     
     // Check if period has ended and goal needs reset
     if (shouldResetGoal(goal)) {
-      // Record this completion before resetting (only if it was completed)
+      // Record this completion before resetting (only if it was completed).
+      // The new period is the one now falls in, on the goal's own boundaries.
       const goalWithHistory = recordCompletion(goal);
-      return resetGoal(goalWithHistory);
+      return resetGoal(
+        goalWithHistory,
+        currentPeriodStart(goal.periodStartDate, goal.period, goal.customPeriodDays, Date.now())
+      );
     }
     
     return goal;
@@ -221,97 +287,57 @@ export function getTimeRemaining(goal: Goal): string {
 }
 
 /**
- * Calculate streak for a recurring goal
- * A streak is consecutive periods where the goal was completed
+ * A recurring goal's streaks: its runs of back-to-back periods with a
+ * completion in each.
+ *
+ * Each completion is placed in its period, counting back from the one now
+ * falls in (0), and runs are counted over those periods. The current streak
+ * is the run ending in this period, or - until this one is completed - in
+ * the one before. It used to count completions a set time apart (0.9 to 2.1
+ * periods) as consecutive: a week completed on its last day and the next on
+ * its first broke the streak, and one completed late and another early two
+ * weeks on kept it with a week skipped.
  */
-export function calculateStreak(goal: Goal): { currentStreak: number; longestStreak: number } {
-  if (!goal.isRecurring || !goal.completionHistory || goal.completionHistory.length === 0) {
-    // If currently complete but no history, streak is 1
+export function calculateStreak(
+  goal: Goal,
+  now: number = Date.now()
+): { currentStreak: number; longestStreak: number } {
+  const times = [...(goal.completionHistory ?? [])];
+  if (goal.isComplete && typeof goal.completedAt === 'number') times.push(goal.completedAt);
+
+  if (!goal.isRecurring || times.length === 0) {
+    // A one-off goal has one period: complete or not.
     const current = goal.isComplete ? 1 : 0;
     return { currentStreak: current, longestStreak: current };
   }
 
-  const completions = [...goal.completionHistory];
-  
-  // Add current completion if goal is complete
-  if (goal.isComplete && goal.completedAt) {
-    completions.push(goal.completedAt);
+  // Newest first, walked back a period at a time alongside them.
+  times.sort((a, b) => b - a);
+  const anchor = typeof goal.periodStartDate === 'number' ? goal.periodStartDate : now;
+  let start = currentPeriodStart(anchor, goal.period, goal.customPeriodDays, now);
+  let index = 0;
+  const completed = new Set<number>();
+  for (const time of times) {
+    for (let i = 0; i < 100_000 && time < start; i++) {
+      start = previousPeriodStart(start, goal.period, goal.customPeriodDays);
+      index++;
+    }
+    completed.add(index);
   }
 
-  // Sort completions chronologically. Never empty here: the guard above has
-  // already returned for a goal with no completion history.
-  completions.sort((a, b) => a - b);
+  const runFrom = (first: number) => {
+    let length = 0;
+    while (completed.has(first + length)) length++;
+    return length;
+  };
+  const currentStreak = completed.has(0) ? runFrom(0) : runFrom(1);
 
-  // Calculate period length in milliseconds
-  const periodLength = getPeriodLength(goal.period, goal.customPeriodDays);
-  
-  let currentStreak = 1;
-  let longestStreak = 1;
-  let tempStreak = 1;
-
-  // Work backwards from most recent completion to calculate current streak
-  for (let i = completions.length - 1; i > 0; i--) {
-    const timeDiff = completions[i] - completions[i - 1];
-    
-    // Check if completions are in consecutive periods (allow some tolerance)
-    const tolerance = periodLength * 0.1; // 10% tolerance for timing
-    if (timeDiff >= periodLength - tolerance && timeDiff <= periodLength * 2 + tolerance) {
-      tempStreak++;
-    } else {
-      break; // Streak broken
-    }
-  }
-
-  currentStreak = tempStreak;
-  longestStreak = tempStreak;
-
-  // Calculate longest streak by checking all consecutive pairs
-  tempStreak = 1;
-  for (let i = 1; i < completions.length; i++) {
-    const timeDiff = completions[i] - completions[i - 1];
-    const tolerance = periodLength * 0.1;
-    
-    if (timeDiff >= periodLength - tolerance && timeDiff <= periodLength * 2 + tolerance) {
-      tempStreak++;
-      longestStreak = Math.max(longestStreak, tempStreak);
-    } else {
-      tempStreak = 1; // Reset temp streak
-    }
-  }
-
-  // Check if streak should be broken (missed the current period)
-  if (completions.length > 0) {
-    const lastCompletion = completions[completions.length - 1];
-    const now = Date.now();
-    const timeSinceLastCompletion = now - lastCompletion;
-    
-    // If more than one period has passed without completion, streak is broken
-    if (timeSinceLastCompletion > periodLength * 1.5 && !goal.isComplete) {
-      currentStreak = 0;
-    }
+  let longestStreak = 0;
+  for (const period of completed) {
+    if (!completed.has(period - 1)) longestStreak = Math.max(longestStreak, runFrom(period));
   }
 
   return { currentStreak, longestStreak };
-}
-
-/**
- * Get period length in milliseconds
- */
-function getPeriodLength(period: TimePeriod, customPeriodDays?: number): number {
-  switch (period) {
-    case 'daily':
-      return 24 * 60 * 60 * 1000;
-    case 'weekly':
-      return 7 * 24 * 60 * 60 * 1000;
-    case 'monthly':
-      return 30 * 24 * 60 * 60 * 1000; // Approximate
-    case 'yearly':
-      return 365 * 24 * 60 * 60 * 1000; // Approximate
-    case 'custom':
-      return (customPeriodDays || 1) * 24 * 60 * 60 * 1000;
-    default:
-      return 24 * 60 * 60 * 1000;
-  }
 }
 
 /**

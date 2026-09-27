@@ -3,7 +3,7 @@
  * Verify period calculations and statistics
  */
 
-import { Goal } from '../../types';
+import { Goal, PointsEntry } from '../../types';
 import {
     calculateReviewStatistics,
     getLastMonth,
@@ -182,7 +182,12 @@ describe('Review Statistics Utilities', () => {
         }),
       ];
 
-      const stats = calculateReviewStatistics(goals, testPeriod);
+      const ledger: PointsEntry[] = [
+        { id: 1, at: periodStart + 1000, points: 50, reason: 'completion', goalId: 1 },
+        { id: 2, at: periodStart + 2000, points: 30, reason: 'completion', goalId: 2 },
+        { id: 3, at: periodEnd + 1000, points: 20, reason: 'completion', goalId: 3 },
+      ];
+      const stats = calculateReviewStatistics(goals, testPeriod, ledger);
 
       expect(stats.goalsCompleted).toBe(2);
       expect(stats.pointsEarned).toBe(80); // 50 + 30
@@ -312,41 +317,36 @@ describe('Review Statistics Utilities', () => {
     // so subgoals that paid nothing counted, a recurring goal completed twice
     // counted once, and the total of goals included subgoals. The review said
     // 395 where 405 had been earned, and 11 goals where Stats said 8.
-    describe('follows what was paid', () => {
+    describe('counts', () => {
       const before = periodStart - 10000;
       const done = (overrides: Partial<Goal>) =>
         createMockGoal({ isComplete: true, completedAt: periodStart + 1000, createdAt: before, ...overrides });
 
-      it("counts a subgoal's points only when its parent lets it award them", () => {
-        const goals = [
-          createMockGoal({ id: 1, subGoals: [2], subgoalsAwardPoints: false, createdAt: before }),
-          done({ id: 2, parentId: 1, points: 20 }),
-          createMockGoal({ id: 3, subGoals: [4], subgoalsAwardPoints: true, createdAt: before }),
-          done({ id: 4, parentId: 3, points: 25 }),
+      // Regression: points were worked out from the goals there are now, so a
+      // deleted goal's points were missing from the period it earned them in.
+      it("the period's points from the ledger, a deleted goal's too", () => {
+        const ledger: PointsEntry[] = [
+          { id: 1, at: periodStart + 500, points: 50, reason: 'completion', goalId: 99, goalTitle: 'Deleted' },
+          { id: 2, at: periodStart - 500, points: 10, reason: 'completion' },
+          { id: 3, at: 0, points: 300, reason: 'carried' },
         ];
 
-        const stats = calculateReviewStatistics(goals, testPeriod);
+        const stats = calculateReviewStatistics([], testPeriod, ledger);
 
-        expect(stats.pointsEarned).toBe(25);
+        expect(stats.pointsEarned).toBe(50);
       });
 
-      it('counts every completion of a recurring goal, and the goal once', () => {
+      it('a recurring goal completed twice in the period once', () => {
         const goals = [
-          done({
-            id: 1,
-            points: 10,
-            isRecurring: true,
-            completionHistory: [periodStart + 500, periodStart - 500],
-          }),
+          done({ id: 1, isRecurring: true, completionHistory: [periodStart + 500, periodStart - 500] }),
         ];
 
         const stats = calculateReviewStatistics(goals, testPeriod);
 
-        expect(stats.pointsEarned).toBe(20); // this period's two, not last period's
         expect(stats.goalsCompleted).toBe(1);
       });
 
-      it('counts goals, not subgoals', () => {
+      it('goals, not subgoals', () => {
         const goals = [
           createMockGoal({ id: 1, subGoals: [2, 3], createdAt: before }),
           done({ id: 2, parentId: 1 }),
@@ -360,7 +360,7 @@ describe('Review Statistics Utilities', () => {
         expect(stats.completedGoalsList).toEqual([]);
       });
 
-      it('counts a goal archived during the period, not one archived before it', () => {
+      it('a goal archived during the period, not one archived before it', () => {
         const goals = [
           done({ id: 1, points: 50, isArchived: true, archivedAt: periodStart + 5000 }),
           createMockGoal({ id: 2, isArchived: true, archivedAt: periodStart - 5000, createdAt: before }),
@@ -370,7 +370,6 @@ describe('Review Statistics Utilities', () => {
 
         expect(stats.totalGoals).toBe(1);
         expect(stats.goalsCompleted).toBe(1);
-        expect(stats.pointsEarned).toBe(50);
       });
     });
   });

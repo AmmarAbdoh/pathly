@@ -11,10 +11,9 @@
  */
 
 import { STORAGE_KEYS } from '@/src/constants/storage-keys';
-import { Goal, GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
+import { Goal, GoalDirection, GoalSchedule, PointsEntry, TimePeriod } from '@/src/types';
 import { calculateGoalProgress, calculateProgress } from '@/src/utils/goal-calculations';
 import { nextId } from '@/src/utils/ids';
-import { deriveLifetimePoints } from '@/src/utils/import-data';
 // Static on purpose. notifications.ts registers the foreground-display handler
 // as a module side effect; loading it lazily meant a reminder arriving while
 // the app was open went unshown until something else happened to import it
@@ -27,7 +26,14 @@ import {
   scheduleGoalNotification,
   type ReminderText,
 } from '@/src/utils/notifications';
-import { goalsStorage, setAsideUnreadable, UnreadableDataError } from '@/src/utils/storage';
+import { computeBonuses } from '@/src/utils/bonuses';
+import { bonusEntry, completionEntry, ledgerFromHistory, ledgerTotal } from '@/src/utils/points-ledger';
+import {
+  goalsStorage,
+  pointsLedgerStorage,
+  setAsideUnreadable,
+  UnreadableDataError,
+} from '@/src/utils/storage';
 import { useSerialQueue } from '@/src/hooks/use-serial-queue';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, {
@@ -123,7 +129,10 @@ function rollOver(goals: Goal[]): Goal[] {
 
 interface GoalsContextType {
   goals: Goal[];
+  /** The total of `pointsLedger`: every point ever earned. Never decreases. */
   lifetimePointsEarned: number;
+  /** Every payout of points, oldest first (see points-ledger.ts). */
+  pointsLedger: PointsEntry[];
   isLoading: boolean;
   error: string | null;
   /** Set when data could not be saved or loaded; shown by StorageErrorBanner. */
@@ -140,16 +149,16 @@ interface GoalsContextType {
   retryStorage: () => Promise<void>;
   dismissStorageError: () => void;
   /**
-   * The goals and lifetime total as they are right now, for building an
+   * The goals and points ledger as they are right now, for building an
    * import. Throws unless the goals have loaded.
    */
-  getCurrentGoals: () => { goals: Goal[]; lifetimePoints: number };
+  getCurrentGoals: () => { goals: Goal[]; pointsLedger: PointsEntry[] };
   /**
-   * Replace every goal and the lifetime total at once (backup import).
+   * Replace every goal and the points ledger at once (backup import).
    * Rejects if the goals have not loaded or cannot be written, leaving the
    * current data untouched.
    */
-  replaceAllGoals: (goals: Goal[], lifetimePoints: number) => Promise<void>;
+  replaceAllGoals: (goals: Goal[], pointsLedger: PointsEntry[]) => Promise<void>;
   /**
    * Run a backup import's `task` with the goals to itself: goal changes are
    * refused (GoalsBusyError) until it is done, and reminder changes wait their
@@ -200,7 +209,8 @@ interface GoalsContextType {
     icon?: string,
     linkedRewardId?: number
   ) => Promise<void>;
-  updateGoal: (id: number, current: number) => Promise<void>;
+  /** Resolves to the points it paid, bonuses included: none unless it completed the goal. */
+  updateGoal: (id: number, current: number) => Promise<PointsEntry[]>;
   editGoal: (
     id: number,
     title: string,
@@ -219,7 +229,8 @@ interface GoalsContextType {
     subgoalsAwardPoints?: boolean,
     schedule?: GoalSchedule
   ) => Promise<void>;
-  finishGoal: (id: number) => Promise<void>;
+  /** Resolves to the points it paid, bonuses included: none if already paid. */
+  finishGoal: (id: number) => Promise<PointsEntry[]>;
   removeGoal: (id: number) => Promise<void>;
   archiveGoal: (id: number) => Promise<void>;
   unarchiveGoal: (id: number) => Promise<void>;
@@ -333,7 +344,8 @@ interface GoalsProviderProps {
  */
 export function GoalsProvider({ children }: GoalsProviderProps) {
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [lifetimePointsEarned, setLifetimePointsEarned] = useState<number>(0);
+  const [pointsLedger, setPointsLedger] = useState<PointsEntry[]>([]);
+  const lifetimePointsEarned = useMemo(() => ledgerTotal(pointsLedger), [pointsLedger]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [storageError, setStorageError] = useState<StorageError | null>(null);
@@ -345,8 +357,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * land on top of it.
    */
   const importingRef = useRef(false);
-  /** True when the last lifetime-points write failed and needs retrying. */
-  const lifetimeDirtyRef = useRef(false);
+  /** True when the last points-ledger write failed and needs retrying. */
+  const ledgerDirtyRef = useRef(false);
 
   /**
    * Synchronous mirror of `goals`.
@@ -357,7 +369,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * having to depend on `goals`.
    */
   const goalsRef = useRef<Goal[]>([]);
-  const lifetimePointsRef = useRef(0);
+  /** Synchronous mirror of `pointsLedger`, as goalsRef is of `goals`. */
+  const ledgerRef = useRef<PointsEntry[]>([]);
 
   /** True while an import runs (withGoalsHeld): goal changes are refused. */
   const heldRef = useRef(false);
@@ -373,32 +386,29 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   const pendingSave = useRef<Goal[] | null>(null);
 
   /**
-   * Write the current lifetime points. Returns whether it succeeded, and marks
-   * them for a retry on the next flush if not.
+   * Write the points ledger. Returns whether it succeeded, and marks it for a
+   * retry on the next flush if not.
    */
-  const persistLifetime = useCallback(async (): Promise<boolean> => {
-    // Before a successful load the in-memory total counts up from 0, not from
-    // the user's real total. Writing it would replace that for good, so it is
-    // held, and dropped by the reload along with the goals. Not marked dirty:
-    // a dirty total is trusted over disk on reload.
+  const persistLedger = useCallback(async (): Promise<boolean> => {
+    // Before a successful load the in-memory ledger starts from nothing, not
+    // from the user's real one. Writing it would replace that for good, so it
+    // is held, and dropped by the reload along with the goals. Not marked
+    // dirty: a dirty ledger is trusted over disk on reload.
     if (loadStateRef.current !== 'loaded') return false;
 
     try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.LIFETIME_POINTS,
-        lifetimePointsRef.current.toString()
-      );
-      lifetimeDirtyRef.current = false;
+      await pointsLedgerStorage.save(ledgerRef.current);
+      ledgerDirtyRef.current = false;
       return true;
     } catch (err) {
-      console.error('Error saving lifetime points:', err);
-      lifetimeDirtyRef.current = true;
+      console.error('Error saving the points ledger:', err);
+      ledgerDirtyRef.current = true;
       return false;
     }
   }, []);
 
   /**
-   * Write any pending goals (and unsaved lifetime points) to storage now.
+   * Write any pending goals (and an unsaved points ledger) to storage now.
    *
    * A failed write used to be logged and dropped: the data stayed in memory but
    * never reached disk, and nothing told the user. Now it stays queued for the
@@ -443,13 +453,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       }
     }
 
-    if (lifetimeDirtyRef.current && !(await persistLifetime())) {
+    if (ledgerDirtyRef.current && !(await persistLedger())) {
       ok = false;
     }
 
     setStorageError((prev) => (ok ? (prev === 'save' ? null : prev) : 'save'));
     return ok;
-  }, [persistLifetime]);
+  }, [persistLedger]);
 
   /**
    * Queue a debounced write.
@@ -510,11 +520,11 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     let savedGoals: Goal[];
     let goalsWithStreaks: Goal[];
     let setAside = false;
-    let lifetimeNeedsWrite = false;
+    let ledgerNeedsWrite = false;
     let staleReminders: string[] = [];
     try {
       // Only the reads count as a failed load. A write the load itself implies
-      // (a period rollover, the first lifetime total) used to fail the whole
+      // (a period rollover, starting the points ledger) used to fail the whole
       // load too, hiding goals that had been read perfectly well.
       let unreadable: UnreadableDataError | null = null;
       try {
@@ -528,12 +538,24 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         savedGoals = [];
       }
 
-      // An unsaved total in memory is newer than disk: its write failed and is
+      // An unsaved ledger in memory is newer than disk: its write failed and is
       // queued for retry. Reading disk here would roll it back, and the retry
-      // would then persist the stale value - losing points for good.
-      const savedLifetimePoints = lifetimeDirtyRef.current
-        ? null
-        : await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS);
+      // would then persist the stale one - losing points for good.
+      let savedLedger: PointsEntry[] | null = null;
+      let unreadableLedger: UnreadableDataError | null = null;
+      if (!ledgerDirtyRef.current) {
+        try {
+          savedLedger = await pointsLedgerStorage.load();
+        } catch (err) {
+          if (!(err instanceof UnreadableDataError)) throw err;
+          unreadableLedger = err;
+        }
+      }
+      // No ledger yet: data from before it, whose total it starts from.
+      const legacyTotal =
+        !ledgerDirtyRef.current && savedLedger === null
+          ? await AsyncStorage.getItem(STORAGE_KEYS.LIFETIME_POINTS)
+          : null;
 
       // Only once every read has worked. Keeping the goals aside removes them,
       // so a read failing after it made a failed load whose Retry found no
@@ -543,21 +565,30 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         await setAsideUnreadable(STORAGE_KEYS.GOALS, unreadable.raw);
         setAside = true;
       }
+      if (unreadableLedger) {
+        console.error('Stored points ledger is unreadable:', unreadableLedger);
+        await setAsideUnreadable(STORAGE_KEYS.POINTS_LEDGER, unreadableLedger.raw);
+        setAside = true;
+      }
 
       const loaded = archivedRemindersOff(rollOver(savedGoals));
       goalsWithStreaks = loaded.goals;
       staleReminders = loaded.cancel;
 
-      let lifetime = lifetimePointsRef.current;
-      if (!lifetimeDirtyRef.current) {
-        const parsed = savedLifetimePoints === null ? NaN : parseInt(savedLifetimePoints, 10);
-        if (Number.isFinite(parsed)) {
-          lifetime = parsed;
+      let ledger = ledgerRef.current;
+      if (!ledgerDirtyRef.current) {
+        if (savedLedger) {
+          ledger = savedLedger;
         } else {
-          // Migration (or an unreadable stored value): derive lifetime points
-          // from history.
-          lifetime = deriveLifetimePoints(goalsWithStreaks);
-          lifetimeNeedsWrite = true;
+          // Started from the goals' own history, so points already earned keep
+          // their dates, carrying in what the old total says that history does
+          // not account for - so lifetime points stay as they were.
+          const total = legacyTotal === null ? NaN : Number(legacyTotal);
+          ledger = ledgerFromHistory(
+            goalsWithStreaks,
+            Number.isFinite(total) && total >= 0 ? total : null
+          );
+          ledgerNeedsWrite = true;
         }
       }
 
@@ -571,13 +602,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       }
       pendingSave.current = null;
 
-      lifetimePointsRef.current = lifetime;
-      setLifetimePointsEarned(lifetime);
+      ledgerRef.current = ledger;
+      setPointsLedger(ledger);
       goalsRef.current = goalsWithStreaks;
       setGoals(goalsWithStreaks);
       // With the queue gone, a failed-save report is out of date - unless the
-      // lifetime total is still waiting to be written.
-      setStorageError((prev) => (prev === 'save' && lifetimeDirtyRef.current ? 'save' : null));
+      // points ledger is still waiting to be written.
+      setStorageError((prev) => (prev === 'save' && ledgerDirtyRef.current ? 'save' : null));
       if (setAside) setDataSetAside(true);
     } catch (err) {
       // Never leave the screen loading, or writes unblocked, whatever failed.
@@ -597,10 +628,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     if (rolledOver) {
       pendingSave.current = goalsWithStreaks;
     }
-    if (lifetimeNeedsWrite) {
-      lifetimeDirtyRef.current = true;
+    if (ledgerNeedsWrite) {
+      ledgerDirtyRef.current = true;
     }
-    if (rolledOver || lifetimeNeedsWrite) {
+    if (rolledOver || ledgerNeedsWrite) {
       await flushSave();
     }
 
@@ -614,25 +645,37 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   }, [loadGoals]);
 
   /**
-   * Increment lifetime points earned (never decreases)
+   * Record `goal`'s completion paying its points, and the bonuses it earned,
+   * in the ledger (which only grows). `goal` is as just completed: its
+   * completion and streak count toward the bonuses. Returns what it added.
    */
-  const incrementLifetimePoints = useCallback(
-    async (points: number) => {
-      if (points <= 0) return;
+  const recordPayout = useCallback(
+    async (goal: Goal): Promise<PointsEntry[]> => {
+      if (!Number.isFinite(goal.points) || goal.points <= 0) return [];
 
-      lifetimePointsRef.current += points;
-      setLifetimePointsEarned(lifetimePointsRef.current);
+      // The bonuses read the ledger as it was before this payout.
+      const now = Date.now();
+      const before = ledgerRef.current;
+      const added = [completionEntry(before, goal, goal.points, now)];
+      for (const bonus of computeBonuses(goal, before, now)) {
+        added.push(bonusEntry([...before, ...added], goal, bonus.kind, bonus.points, now));
+      }
+
+      const next = [...before, ...added];
+      ledgerRef.current = next;
+      setPointsLedger(next);
 
       // Lifetime points never decrease, so losing this write loses points for
       // good. Report it; the next flush retries. (Before a successful load it
-      // is held rather than written - see persistLifetime.)
-      if (!(await persistLifetime())) {
+      // is held rather than written - see persistLedger.)
+      if (!(await persistLedger())) {
         if (loadStateRef.current !== 'pending') {
           setStorageError(loadStateRef.current === 'failed' ? 'load' : 'save');
         }
       }
+      return added;
     },
-    [persistLifetime]
+    [persistLedger]
   );
 
   /**
@@ -641,18 +684,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
    * Top-level goals always award; subgoals only when the parent opts in.
    */
   const awardPointsForGoal = useCallback(
-    async (goal: Goal, list: Goal[]) => {
-      if (!goal.parentId) {
-        await incrementLifetimePoints(goal.points);
-        return;
-      }
+    async (goal: Goal, list: Goal[]): Promise<PointsEntry[]> => {
+      if (!goal.parentId) return recordPayout(goal);
 
       const parentGoal = list.find((g) => g.id === goal.parentId);
-      if (parentGoal?.subgoalsAwardPoints) {
-        await incrementLifetimePoints(goal.points);
-      }
+      return parentGoal?.subgoalsAwardPoints ? recordPayout(goal) : [];
     },
-    [incrementLifetimePoints]
+    [recordPayout]
   );
 
   /**
@@ -744,7 +782,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
 
     for (const listener of completionListeners.current) {
       try {
-        await listener(goal, lifetimePointsRef.current);
+        await listener(goal, ledgerTotal(ledgerRef.current));
       } catch (listenerErr) {
         // A failed redemption must not fail the goal completion.
         console.error('Error in goal-completed listener:', listenerErr);
@@ -756,7 +794,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     if (loadStateRef.current !== 'loaded') {
       throw new Error('Goals have not loaded');
     }
-    return { goals: goalsRef.current, lifetimePoints: lifetimePointsRef.current };
+    return { goals: goalsRef.current, pointsLedger: ledgerRef.current };
   }, []);
 
   const withGoalsHeld = useCallback(
@@ -773,7 +811,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
   );
 
   const replaceAllGoals = useCallback(
-    async (next: Goal[], lifetimePoints: number) => {
+    async (next: Goal[], nextLedger: PointsEntry[]) => {
       // Until the goals have loaded the current goals are unknown: an import
       // built on them would write over the user's real data.
       if (loadStateRef.current !== 'loaded') {
@@ -820,8 +858,8 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
       const replaced = goalsRef.current;
       goalsRef.current = next;
       setGoals(next);
-      lifetimePointsRef.current = lifetimePoints;
-      setLifetimePointsEarned(lifetimePoints);
+      ledgerRef.current = nextLedger;
+      setPointsLedger(nextLedger);
       importingRef.current = false;
       setStorageError((prev) => (prev === 'save' ? null : prev));
 
@@ -834,16 +872,16 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         void cancelGoalNotifications(gone);
       }
 
-      if (!(await persistLifetime())) {
-        setStorageError('save'); // goals are in; the total is retried
+      if (!(await persistLedger())) {
+        setStorageError('save'); // goals are in; the ledger is retried
       }
 
       // Rolled over in memory, not by reading the import back: that threw away
-      // any change made while the reminders were cancelled and the total
+      // any change made while the reminders were cancelled and the ledger
       // written.
       rollOverInMemory();
     },
-    [scheduleSave, persistLifetime, rollOverInMemory]
+    [scheduleSave, persistLedger, rollOverInMemory]
   );
 
   /**
@@ -1019,13 +1057,15 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         });
 
         const updatedGoal = next.find((g) => g.id === id);
+        let payout: PointsEntry[] = [];
         if (updatedGoal?.isComplete && !completedBefore) {
-          await awardPointsForGoal(updatedGoal, next);
+          payout = await awardPointsForGoal(updatedGoal, next);
           // Completing by progress counts too: the detail screen's "Mark
           // complete" sets the target through here before calling finishGoal,
           // which then sees the goal already complete.
           await notifyGoalCompleted(updatedGoal);
         }
+        return payout;
       } catch (err) {
         console.error('Error updating goal:', err);
         setError('Failed to update goal');
@@ -1083,6 +1123,13 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
                   linkedRewardId,
                   subgoalsAwardPoints,
                   schedule: recurring ? schedule : undefined,
+                  // A period changed just before finishing - to Yearly, say -
+                  // would otherwise earn the early-bird bonus.
+                  timingChanged:
+                    period !== g.period ||
+                    (period === 'custom' && customPeriodDays !== g.customPeriodDays)
+                      ? true
+                      : g.timingChanged,
                 }
               : g
           );
@@ -1108,7 +1155,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     async (id: number) => {
       try {
         const goal = goalsRef.current.find((g) => g.id === id);
-        if (!goal) return;
+        if (!goal) return [];
 
         // Not while it waits on goals that must come first. The detail
         // screen hid only the progress slider, and Mark as Complete finished a
@@ -1116,7 +1163,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         const completeIds = new Set(
           goalsRef.current.filter((g) => g.isComplete).map((g) => g.id)
         );
-        if (goal.dependsOn?.some((depId) => !completeIds.has(depId))) return;
+        if (goal.dependsOn?.some((depId) => !completeIds.has(depId))) return [];
 
         const isFirstCompletion = !hasBeenCompleted(goal);
 
@@ -1138,10 +1185,14 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           return goal.parentId ? applyProgressRecalc(updated, goal.parentId) : updated;
         });
 
+        // Paid as completed, not as it was: its completion and streak count
+        // toward the bonuses.
+        let payout: PointsEntry[] = [];
         if (isFirstCompletion) {
-          await awardPointsForGoal(goal, next);
+          payout = await awardPointsForGoal(next.find((g) => g.id === id) ?? goal, next);
           await notifyGoalCompleted(goal);
         }
+        return payout;
       } catch (err) {
         console.error('Error finishing goal:', err);
         setError('Failed to finish goal');
@@ -1283,7 +1334,10 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           const millisecondsPerDay = 24 * 60 * 60 * 1000;
           const newStartDate = goal.periodStartDate + additionalDays * millisecondsPerDay;
 
-          return prev.map((g) => (g.id === id ? { ...g, periodStartDate: newStartDate } : g));
+          // A late goal given a new window would otherwise finish "early".
+          return prev.map((g) =>
+            g.id === id ? { ...g, periodStartDate: newStartDate, timingChanged: true } : g
+          );
         });
       } catch (err) {
         console.error('Error extending deadline:', err);
@@ -1460,7 +1514,9 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
         if (!goal?.isRecurring) return prev;
 
         // No parent's progress to update: only top-level goals recur (canRecur).
-        const reset = updateGoalStreaks(resetGoal(recordCompletion(goal)));
+        // Restarted by hand: restarting just before finishing would otherwise
+        // earn the whole early-bird bonus.
+        const reset = { ...updateGoalStreaks(resetGoal(recordCompletion(goal))), timingChanged: true };
         return prev.map((g) => (g.id === id ? reset : g));
       });
     },
@@ -1598,6 +1654,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     () => ({
       goals,
       lifetimePointsEarned,
+      pointsLedger,
       isLoading,
       error,
       storageError,
@@ -1635,6 +1692,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     [
       goals,
       lifetimePointsEarned,
+      pointsLedger,
       isLoading,
       error,
       storageError,

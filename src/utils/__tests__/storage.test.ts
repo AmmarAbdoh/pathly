@@ -14,6 +14,7 @@ import { rewardsStorage } from '../rewards-storage';
 import {
   customTemplatesStorage,
   goalsStorage,
+  pointsLedgerStorage,
   setAsideUnreadable,
   storage,
   themeStorage,
@@ -307,5 +308,36 @@ describe('rewardsStorage', () => {
 
     removeItem.mockRejectedValueOnce(disk);
     await expect(rewardsStorage.clearRewards()).rejects.toBe(disk);
+  });
+});
+
+describe('pointsLedgerStorage', () => {
+  const entry = { id: 1, at: 1000, points: 50, reason: 'completion' as const, goalId: 3, goalTitle: 'Read' };
+
+  it('round-trips the ledger', async () => {
+    await pointsLedgerStorage.save([entry]);
+    expect(await pointsLedgerStorage.load()).toEqual([entry]);
+  });
+
+  // None saved is data from before the ledger: the context starts one from it.
+  it('says when there is no ledger yet', async () => {
+    expect(await pointsLedgerStorage.load()).toBeNull();
+  });
+
+  it('keeps the good entries of one written some other way', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.POINTS_LEDGER, JSON.stringify([entry, { points: -1 }, 7]));
+    expect(await pointsLedgerStorage.load()).toEqual([entry]);
+  });
+
+  it('throws UnreadableDataError for data that is not a list', async () => {
+    await AsyncStorage.setItem(STORAGE_KEYS.POINTS_LEDGER, '{"points":5}');
+    await expect(pointsLedgerStorage.load()).rejects.toEqual(expect.any(UnreadableDataError));
+  });
+
+  it('throws when storage cannot be read or written', async () => {
+    getItem.mockRejectedValueOnce(disk);
+    await expect(pointsLedgerStorage.load()).rejects.toThrow('Failed to load the points ledger');
+    setItem.mockRejectedValueOnce(disk);
+    await expect(pointsLedgerStorage.save([entry])).rejects.toThrow('Failed to save the points ledger');
   });
 });
