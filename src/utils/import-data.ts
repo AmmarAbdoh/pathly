@@ -90,7 +90,9 @@ export const isImportableGoal = (raw: unknown): raw is Goal => goalImportProblem
 export function goalImportProblem(raw: unknown): 'title' | 'target' | 'current' | null {
   const goal = (typeof raw === 'object' ? raw : null) as Partial<Goal> | null;
   if (typeof goal?.title !== 'string' || goal.title.trim() === '') return 'title';
-  if (!isNumber(goal.target) || goal.target <= 0) return 'target';
+  // Going down, 0 is a target (see validateGoalForm); the direction is read
+  // as buildImport reads it.
+  if (!isNumber(goal.target) || goal.target < 0 || (goal.target === 0 && goal.direction !== 'decrease')) return 'target';
   if (!isNumber(goal.current)) return 'current';
   return null;
 }

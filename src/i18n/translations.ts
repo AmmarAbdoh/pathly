@@ -54,6 +54,14 @@ export interface Translations {
     subtitle: string;
     useTemplate: string;
     quickStart: string;
+    myTemplates: string;
+    pickToStart: string;
+    pickHint: string;
+    /** By count: one, two, 3-10 ("few") and 11+ ("many") - Arabic needs all four. {count} */
+    addGoals: { one: string; two: string; few: string; many: string };
+    customize: string;
+    currentValue: string; // {unit}
+    needsSetup: string;
     all: string;
     categories: {
       health: string;
@@ -421,6 +429,33 @@ export interface Translations {
     bonusHint: string; // how bonuses are earned, under the title
     bonus: { early: string; streak: string; welcomeBack: string };
   };
+  goalWizard: {
+    stepOf: string; // {step}, {total}
+    next: string;
+    back: string;
+    create: string;
+    whatTitle: string;
+    whatHint: string;
+    changeIcon: string;
+    trackTitle: string;
+    trackNumber: string;
+    trackNumberHint: string;
+    trackDone: string;
+    trackDoneHint: string;
+    trackSubgoals: string;
+    trackSubgoalsHint: string;
+    startAt: string;
+    goingUp: string;
+    goingDown: string;
+    whenTitle: string;
+    noDeadline: string;
+    repeatEvery: { daily: string; weekly: string; monthly: string; yearly: string; custom: string };
+    repeatHint: string;
+    worthTitle: string;
+    suggestedFor: { daily: string; weekly: string; monthly: string; yearly: string; custom: string; ongoing: string };
+    moreOptions: string;
+    doneUnit: string; // a done-or-not goal's unit: "0 / 1 time"
+  };
   export: {
     title: string;
     description: string;
@@ -542,6 +577,7 @@ export interface Translations {
     targetRequired: string;
     targetPositive: string;
     targetMin: string;
+    targetNotNegative: string;
     targetMax: string;
     currentRequired: string;
     currentValid: string;
@@ -652,6 +688,7 @@ export interface Translations {
   };
   labels: {
     target: string;
+    points: string;
     category: string;
     description: string;
   };
@@ -711,7 +748,7 @@ export const translations: Record<Language, Translations> = {
     home: {
       title: 'Pathly',
       subtitle: 'Track your progress, step by step',
-      noGoals: 'No goals yet. Create one below to get started!',
+      noGoals: 'No goals yet. Pick a few ready-made ones to get going, or make your own on the Add tab.',
       addGoal: 'Add a new goal',
       ultimateGoals: '⭐ Ultimate Goals',
       dailyGoals: '📅 Daily Goals',
@@ -735,6 +772,13 @@ export const translations: Record<Language, Translations> = {
       subtitle: 'Choose a template to get started quickly',
       useTemplate: 'Use a Template',
       quickStart: 'Quick start with pre-made goals',
+      myTemplates: 'My Templates',
+      pickToStart: 'Pick goals to start',
+      pickHint: 'Tap the ones you want, then add them all at once.',
+      addGoals: { one: 'Add 1 goal', two: 'Add 2 goals', few: 'Add {count} goals', many: 'Add {count} goals' },
+      customize: 'Customize',
+      currentValue: 'Your current value ({unit})',
+      needsSetup: 'Set up on the Add tab',
       all: 'All',
       categories: {
         health: 'Health',
@@ -1109,6 +1153,46 @@ export const translations: Record<Language, Translations> = {
         welcomeBack: 'Welcome-back bonus',
       },
     },
+    goalWizard: {
+      stepOf: 'Step {step} of {total}',
+      next: 'Next',
+      back: 'Back',
+      create: 'Create goal',
+      whatTitle: "What's the goal?",
+      whatHint: "Give it a short name you'll recognize.",
+      changeIcon: 'Change icon',
+      trackTitle: 'How will you track it?',
+      trackNumber: 'A number',
+      trackNumberHint: 'Pages, km, glasses, kg…',
+      trackDone: 'Just done or not',
+      trackDoneHint: "Tick it off when it's done",
+      trackSubgoals: 'By smaller steps',
+      trackSubgoalsHint: 'A big goal made of subgoals',
+      startAt: "I'm starting at",
+      goingUp: 'Going up',
+      goingDown: 'Going down',
+      whenTitle: 'How often?',
+      noDeadline: 'No deadline',
+      repeatEvery: {
+        daily: 'Repeat every day',
+        weekly: 'Repeat every week',
+        monthly: 'Repeat every month',
+        yearly: 'Repeat every year',
+        custom: 'Repeat every period',
+      },
+      repeatHint: 'It starts over, and you can earn its points again',
+      worthTitle: "What's it worth?",
+      suggestedFor: {
+        daily: 'Suggested for a daily goal',
+        weekly: 'Suggested for a weekly goal',
+        monthly: 'Suggested for a monthly goal',
+        yearly: 'Suggested for a yearly goal',
+        custom: 'Suggested for the length of the period',
+        ongoing: 'Suggested for a goal with no deadline',
+      },
+      moreOptions: 'More options',
+      doneUnit: 'time',
+    },
     export: {
       title: 'Export Data',
       description: 'Export your goals and rewards data for backup or analysis',
@@ -1228,23 +1312,24 @@ export const translations: Record<Language, Translations> = {
       customPeriodRange: 'Enter a number of days from 1 to {max}',
       requiredField: 'This field is required',
       titleRequired: 'Title is required',
-      titleTooLong: 'Title must be less than 100 characters',
+      titleTooLong: 'Title must be 100 characters or fewer',
       targetRequired: 'Target is required',
       targetPositive: 'Target must be a positive number',
       targetMin: 'Target must be at least 0.01',
-      targetMax: 'Target must be less than 1,000,000',
+      targetNotNegative: 'Target must be 0 or more',
+      targetMax: 'Target must be 1,000,000 or less',
       currentRequired: 'Current value is required',
       currentValid: 'Current must be a valid number',
       currentMin: 'Current value must be at least 0',
-      currentMax: 'Current value must be less than 1,000,000',
+      currentMax: 'Current value must be 1,000,000 or less',
       currentBelowTarget: 'Current progress must be below the target',
       currentAboveTarget: 'For a decreasing goal, current progress must be above the target',
       unitRequired: 'Unit is required',
-      unitTooLong: 'Unit must be less than 20 characters',
+      unitTooLong: 'Unit must be 20 characters or fewer',
       pointsRequired: 'Points are required',
       pointsValid: 'Points must be a valid number',
       pointsMin: 'Points must be at least 0',
-      pointsMax: 'Points must be less than 100,000',
+      pointsMax: 'Points must be 100,000 or less',
     },
     achievements: {
       first_goal: { title: 'Getting Started', description: 'Complete your first goal' },
@@ -1357,6 +1442,7 @@ export const translations: Record<Language, Translations> = {
     },
     labels: {
       target: 'Target',
+      points: 'Points',
       category: 'Category',
       description: 'Description',
     },
@@ -1423,7 +1509,7 @@ export const translations: Record<Language, Translations> = {
     home: {
       title: 'باثلي',
       subtitle: 'تتبع تقدمك، خطوة بخطوة',
-      noGoals: 'لا توجد أهداف حتى الآن. قم بإنشاء واحد أدناه للبدء!',
+      noGoals: 'لا توجد أهداف بعد. اختر بعض الأهداف الجاهزة للبدء، أو أنشئ هدفك من تبويب الإضافة.',
       addGoal: 'إضافة هدف جديد',
       ultimateGoals: '⭐ أهداف أسمى',
       dailyGoals: '📅 أهداف يومية',
@@ -1447,6 +1533,13 @@ export const translations: Record<Language, Translations> = {
       subtitle: 'اختر قالبًا للبدء بسرعة',
       useTemplate: 'استخدم قالب',
       quickStart: 'ابدأ بسرعة مع أهداف جاهزة',
+      myTemplates: 'قوالبي',
+      pickToStart: 'اختر أهدافاً للبدء',
+      pickHint: 'اضغط على ما تريده، ثم أضفها كلها مرة واحدة.',
+      addGoals: { one: 'أضف هدفاً واحداً', two: 'أضف هدفين', few: 'أضف {count} أهداف', many: 'أضف {count} هدفاً' },
+      customize: 'تخصيص',
+      currentValue: 'قيمتك الحالية ({unit})',
+      needsSetup: 'أعدّه من تبويب الإضافة',
       all: 'الكل',
       categories: {
         health: 'الصحة',
@@ -1821,6 +1914,46 @@ export const translations: Record<Language, Translations> = {
         welcomeBack: 'مكافأة العودة',
       },
     },
+    goalWizard: {
+      stepOf: 'الخطوة {step} من {total}',
+      next: 'التالي',
+      back: 'رجوع',
+      create: 'إنشاء الهدف',
+      whatTitle: 'ما هو هدفك؟',
+      whatHint: 'أعطه اسماً قصيراً تعرفه.',
+      changeIcon: 'تغيير الأيقونة',
+      trackTitle: 'كيف ستتابعه؟',
+      trackNumber: 'برقم',
+      trackNumberHint: 'صفحات، كيلومترات، أكواب، كيلوغرامات…',
+      trackDone: 'تم أو لم يتم',
+      trackDoneHint: 'علّمه عند إنجازه',
+      trackSubgoals: 'بخطوات أصغر',
+      trackSubgoalsHint: 'هدف كبير مكوّن من أهداف فرعية',
+      startAt: 'أبدأ من',
+      goingUp: 'تصاعدي',
+      goingDown: 'تنازلي',
+      whenTitle: 'كم مرة؟',
+      noDeadline: 'بلا موعد نهائي',
+      repeatEvery: {
+        daily: 'يتكرر كل يوم',
+        weekly: 'يتكرر كل أسبوع',
+        monthly: 'يتكرر كل شهر',
+        yearly: 'يتكرر كل سنة',
+        custom: 'يتكرر كل فترة',
+      },
+      repeatHint: 'يبدأ من جديد، ويمكنك كسب نقاطه مرة أخرى',
+      worthTitle: 'كم يستحق؟',
+      suggestedFor: {
+        daily: 'مقترح لهدف يومي',
+        weekly: 'مقترح لهدف أسبوعي',
+        monthly: 'مقترح لهدف شهري',
+        yearly: 'مقترح لهدف سنوي',
+        custom: 'مقترح حسب طول الفترة',
+        ongoing: 'مقترح لهدف بلا موعد نهائي',
+      },
+      moreOptions: 'خيارات أخرى',
+      doneUnit: 'مرة',
+    },
     export: {
       title: 'تصدير البيانات',
       description: 'قم بتصدير أهدافك ومكافآتك للنسخ الاحتياطي أو التحليل',
@@ -1940,23 +2073,24 @@ export const translations: Record<Language, Translations> = {
       invalidNumber: 'الرجاء إدخال رقم صحيح',
       requiredField: 'هذا الحقل مطلوب',
       titleRequired: 'العنوان مطلوب',
-      titleTooLong: 'يجب أن يكون العنوان أقل من ١٠٠ حرف',
+      titleTooLong: 'يجب ألا يزيد العنوان عن ١٠٠ حرف',
       targetRequired: 'الهدف مطلوب',
       targetPositive: 'يجب أن يكون الهدف رقمًا موجبًا',
       targetMin: 'يجب أن يكون الهدف على الأقل ٠٫٠١',
-      targetMax: 'يجب أن يكون الهدف أقل من ١٬٠٠٠٬٠٠٠',
+      targetNotNegative: 'يجب أن يكون الهدف ٠ أو أكثر',
+      targetMax: 'يجب ألا يزيد الهدف عن ١٬٠٠٠٬٠٠٠',
       currentRequired: 'القيمة الحالية مطلوبة',
       currentValid: 'يجب أن تكون القيمة الحالية رقمًا صحيحًا',
       currentMin: 'يجب أن تكون القيمة الحالية على الأقل ٠',
-      currentMax: 'يجب أن تكون القيمة الحالية أقل من ١٬٠٠٠٬٠٠٠',
+      currentMax: 'يجب ألا تزيد القيمة الحالية عن ١٬٠٠٠٬٠٠٠',
       currentBelowTarget: 'يجب أن يكون التقدم الحالي أقل من الهدف',
       currentAboveTarget: 'في الهدف التنازلي، يجب أن يكون التقدم الحالي أعلى من الهدف',
       unitRequired: 'الوحدة مطلوبة',
-      unitTooLong: 'يجب أن تكون الوحدة أقل من ٢٠ حرفًا',
+      unitTooLong: 'يجب ألا تزيد الوحدة عن ٢٠ حرفًا',
       pointsRequired: 'النقاط مطلوبة',
       pointsValid: 'يجب أن تكون النقاط رقمًا صحيحًا',
       pointsMin: 'يجب أن تكون النقاط على الأقل ٠',
-      pointsMax: 'يجب أن تكون النقاط أقل من ١٠٠٬٠٠٠',
+      pointsMax: 'يجب ألا تزيد النقاط عن ١٠٠٬٠٠٠',
     },
     achievements: {
       first_goal: { title: 'البداية', description: 'أكمل هدفك الأول' },
@@ -2069,6 +2203,7 @@ export const translations: Record<Language, Translations> = {
     },
     labels: {
       target: 'الهدف',
+      points: 'النقاط',
       category: 'الفئة',
       description: 'الوصف',
     },

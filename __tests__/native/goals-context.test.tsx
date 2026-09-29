@@ -290,8 +290,17 @@ describe('bonuses', () => {
   });
 
   it('pays a streak bonus for a recurring goal kept up period after period', async () => {
+    // One clock reading, completions mid-week: timed off separate Date.now()
+    // calls, "a week ago" fell a millisecond before the last week began
+    // whenever the clock ticked between them, and the streak broke.
+    const now = Date.now();
     await seed([
-      makeGoal({ period: 'weekly', isRecurring: true, completionHistory: [Date.now() - 14 * DAY, Date.now() - 7 * DAY] }),
+      makeGoal({
+        period: 'weekly',
+        isRecurring: true,
+        periodStartDate: now,
+        completionHistory: [now - 10.5 * DAY, now - 3.5 * DAY],
+      }),
     ]);
     const { result } = await renderGoals();
 

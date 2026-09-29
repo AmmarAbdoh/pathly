@@ -28,12 +28,13 @@ module.exports = defineConfig([
       /**
        * React Compiler guidance, promoted to an error in SDK 56.
        *
-       * Eight sites currently trip this, in two groups:
-       *  - Four provider mount effects (Goals/Theme/Language/Rewards) that load
-       *    persisted state from AsyncStorage. An effect is the correct place to
+       * Six sites currently trip this, in two groups:
+       *  - Four effects that load persisted state from AsyncStorage: the Goals,
+       *    Theme and Language providers on mount, and the goal templates modal's
+       *    saved templates when it opens. An effect is the correct place to
        *    read an external store; the setState is the point.
-       *  - Four prop-to-state mirrors (the goal detail slider, the add-goal
-       *    template prefill, and the two template modals' open/close resets).
+       *  - Two prop-to-state mirrors: the goal detail slider, and the shared
+       *    template modal's reset when it closes.
        *
        * Both groups work correctly. React would prefer the second group adjust
        * state during render instead, which is a behavioural refactor worth

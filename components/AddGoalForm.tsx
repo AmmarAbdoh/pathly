@@ -3,19 +3,20 @@
  * Form for creating new goals with validation
  */
 
-import { DEFAULT_GOAL_ICON, ICON_CATEGORIES } from '@/src/constants/icons';
+import { DEFAULT_GOAL_ICON } from '@/src/constants/icons';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useRewards } from '@/src/context/RewardsContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
+import { GoalDirection, GoalSchedule, TimePeriod } from '@/src/types';
 import { formatNumber } from '@/src/utils/number-formatting';
 import { canRecur, isPeriodLength, MAX_PERIOD_DAYS } from '@/src/utils/recurring-goals';
 import { validateGoalForm } from '@/src/utils/validation';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DropDownPicker from 'react-native-dropdown-picker';
 import ConfirmationModal from './ConfirmationModal';
+import IconPickerModal from './IconPickerModal';
 import GoalSchedulePicker from './GoalSchedulePicker';
 
 interface AddGoalFormProps {
@@ -46,8 +47,6 @@ interface AddGoalFormProps {
   parentTitle?: string; // Parent goal title for display
   editMode?: boolean; // If true, this is editing an existing goal
   isCompleted?: boolean; // If true, lock progress/points fields (only allow editing title/description)
-  templateData?: GoalTemplate | null; // Template to pre-fill form
-  onClearTemplate?: () => void; // Clear template after applying
   initialValues?: {
     title: string;
     description?: string;
@@ -70,7 +69,7 @@ interface AddGoalFormProps {
 /**
  * Form component for adding new goals
  */
-export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = false, parentTitle, editMode = false, isCompleted = false, templateData, onClearTemplate, initialValues }: AddGoalFormProps) {
+export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = false, parentTitle, editMode = false, isCompleted = false, initialValues }: AddGoalFormProps) {
   const { theme } = useTheme();
   const { t, isRTL, language } = useLanguage();
   const { getAvailableRewards } = useRewards();
@@ -78,11 +77,14 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
   const [title, setTitle] = useState(initialValues?.title || '');
   const [description, setDescription] = useState(initialValues?.description || '');
   const [target, setTarget] = useState(initialValues?.target.toString() || '');
-  const [current, setCurrent] = useState(initialValues?.current.toString() || '');
+  // This form edits goals and adds subgoals; a new one starts at 0 with no
+  // deadline. It started at a Custom period with no days and no start, so a
+  // subgoal couldn't be added until both were filled in.
+  const [current, setCurrent] = useState(initialValues?.current.toString() || '0');
   const [unit, setUnit] = useState(initialValues?.unit || '');
   const [points, setPoints] = useState(initialValues?.points.toString() || '');
   const [direction, setDirection] = useState<GoalDirection>(initialValues?.direction || 'increase');
-  const [period, setPeriod] = useState<TimePeriod>(initialValues?.period || 'custom');
+  const [period, setPeriod] = useState<TimePeriod>(initialValues?.period || 'ongoing');
   const [customPeriodDays, setCustomPeriodDays] = useState(initialValues?.customPeriodDays?.toString() || '');
   const [isUltimate, setIsUltimate] = useState(initialValues?.isUltimate || false);
   const [isRecurring, setIsRecurring] = useState(initialValues?.isRecurring || false);
@@ -91,7 +93,6 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
   const [subgoalsAwardPoints, setSubgoalsAwardPoints] = useState(initialValues?.subgoalsAwardPoints ?? false);
   const [selectedIcon, setSelectedIcon] = useState(initialValues?.icon || DEFAULT_GOAL_ICON);
   const [showIconPicker, setShowIconPicker] = useState(false);
-  const [selectedIconCategory, setSelectedIconCategory] = useState<string>('achievements'); // Track selected category in icon picker
   const [linkedRewardId, setLinkedRewardId] = useState<number | undefined>(initialValues?.linkedRewardId);
   const [rewardPickerOpen, setRewardPickerOpen] = useState(false);
   const [open, setOpen] = useState(false);
@@ -110,38 +111,6 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
   });
   const recurring = isRecurring && canBeRecurring;
   const resetHint = period === 'ongoing' ? null : t.goalForm.recurringResets[period];
-
-  // Apply template data when it changes
-  useEffect(() => {
-    if (templateData) {
-      setTitle(templateData.title);
-      setDescription(templateData.description || '');
-      setTarget(templateData.target.toString());
-      // Only the user knows where a decreasing goal starts: 0 put a "Lose
-      // Weight" goal past its 70 kg target before it began.
-      setCurrent(templateData.direction === 'decrease' ? '' : '0');
-      setUnit(templateData.unit);
-      setPoints(templateData.points.toString());
-      setDirection(templateData.direction);
-      setPeriod(templateData.period);
-      setCustomPeriodDays('');
-      setIsUltimate(false);
-      setIsRecurring(false);
-      // Set icon from template
-      if (templateData.icon) {
-        setSelectedIcon(templateData.icon);
-      }
-      setErrors({});
-      
-      // Clear template after applying
-      if (onClearTemplate) {
-        onClearTemplate();
-      }
-    }
-  // Intentionally keyed on the template's identity only: re-running whenever the
-  // templateData object changes would overwrite edits made after it was applied.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateData?.id, templateData?.icon, onClearTemplate]);
 
   // Dropdown items
   const directionItems = useMemo(
@@ -195,11 +164,11 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
     setTitle('');
     setDescription('');
     setTarget('');
-    setCurrent('');
+    setCurrent('0');
     setUnit('');
     setPoints('');
     setDirection('increase');
-    setPeriod('custom');
+    setPeriod('ongoing');
     setCustomPeriodDays('');
     setIsUltimate(false);
     setIsRecurring(false);
@@ -229,6 +198,11 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
     if (!isUltimate) {
       if (!target.trim()) {
         newErrors.target = t.validation.targetRequired;
+      } else if (direction === 'decrease') {
+        // Going down, 0 is a target (see validateGoalForm).
+        if (isNaN(parseFloat(target)) || parseFloat(target) < 0) {
+          newErrors.target = t.validation.targetNotNegative;
+        }
       } else if (isNaN(parseFloat(target)) || parseFloat(target) <= 0) {
         newErrors.target = t.validation.targetPositive;
       }
@@ -403,6 +377,8 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
     [theme]
   );
 
+  const submitLabel = editMode ? t.goalForm.editButton : parentId ? t.goalDetail.addSubgoal : t.goalForm.addButton;
+
   // An ultimate goal's target is its subgoals, not an amount to show.
   const confirmMessage = pendingGoalData
     ? [
@@ -410,7 +386,10 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
         ...(pendingGoalData.isUltimate
           ? []
           : [`${t.goalForm.targetLabel}: ${formatNumber(pendingGoalData.target, language)} ${pendingGoalData.unit}`]),
-        `${t.goalForm.points}: ${formatNumber(pendingGoalData.points, language)}`,
+        // A subgoal whose parent doesn't pay them has no points to show.
+        ...(parentId && !parentAwardsPoints
+          ? []
+          : [`${t.goalForm.points}: ${formatNumber(pendingGoalData.points, language)}`]),
       ].join('\n')
     : '';
 
@@ -485,6 +464,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
         multiline
         numberOfLines={3}
         textAlignVertical="top"
+        accessibilityLabel={t.goalForm.descriptionLabel}
       />
 
       {/* Ultimate Goal Checkbox (only if not a subgoal) - Moved to top */}
@@ -625,6 +605,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
         placeholder={t.goalForm.unit}
         placeholderTextColor={theme.colors.textSecondary}
         editable={!isCompleted}
+        accessibilityLabel={t.goalForm.unitLabel}
       />
       {renderError('unit')}
       
@@ -710,6 +691,7 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
             placeholder={t.goalForm.customPeriodPlaceholder}
             placeholderTextColor={theme.colors.textSecondary}
             keyboardType="number-pad"
+            accessibilityLabel={t.goalForm.customPeriodDays}
             value={customPeriodDays}
             onChangeText={(text) => {
               setCustomPeriodDays(text);
@@ -856,80 +838,21 @@ export default function AddGoalForm({ onAddGoal, parentId, parentAwardsPoints = 
         onPress={handleSubmit}
         activeOpacity={0.8}
         accessibilityRole="button"
-        accessibilityLabel={editMode ? t.goalForm.editButton : t.goalForm.addButton}
+        accessibilityLabel={submitLabel}
         accessibilityHint={t.goalForm.addButtonHint}
       >
-        <Text style={styles.buttonText}>{editMode ? t.goalForm.editButton : t.goalForm.addButton}</Text>
+        <Text style={styles.buttonText}>{submitLabel}</Text>
       </TouchableOpacity>
 
-      {/* Icon Picker Modal */}
-      <Modal visible={showIconPicker} animationType="fade" transparent>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowIconPicker(false)}>
-          <Pressable style={[styles.iconPickerContent, { backgroundColor: theme.colors.card }]} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{t.rewards.icon}</Text>
-              <TouchableOpacity onPress={() => setShowIconPicker(false)}>
-                <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            
-            {/* Category Tabs */}
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.categoryTabsContainer}
-            >
-              {Object.keys(ICON_CATEGORIES).map((category) => (
-                <TouchableOpacity
-                  key={category}
-                  style={[
-                    styles.categoryTab,
-                    { backgroundColor: theme.colors.background },
-                    selectedIconCategory === category && { 
-                      backgroundColor: theme.colors.primary,
-                      borderColor: theme.colors.primary 
-                    },
-                  ]}
-                  onPress={() => setSelectedIconCategory(category)}
-                >
-                  <Text style={[
-                    styles.categoryTabText,
-                    { color: theme.colors.text },
-                    selectedIconCategory === category && { color: '#fff', fontWeight: '600' }
-                  ]}>
-                    {t.iconCategories[category as keyof typeof t.iconCategories]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Icon Grid for Selected Category */}
-            <ScrollView 
-              style={styles.iconScrollView}
-              removeClippedSubviews={true}
-            >
-              <View style={styles.iconGrid}>
-                {ICON_CATEGORIES[selectedIconCategory]?.map((icon, index) => (
-                  <TouchableOpacity
-                    key={`icon-${index}-${icon}`}
-                    style={[
-                      styles.iconOption,
-                      { backgroundColor: theme.colors.background },
-                      selectedIcon === icon && { backgroundColor: theme.colors.primary + '20', borderColor: theme.colors.primary },
-                    ]}
-                    onPress={() => {
-                      setSelectedIcon(icon);
-                      setShowIconPicker(false);
-                    }}
-                  >
-                    <Text style={styles.iconOptionText}>{icon}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <IconPickerModal
+        visible={showIconPicker}
+        selected={selectedIcon}
+        onSelect={(icon) => {
+          setSelectedIcon(icon);
+          setShowIconPicker(false);
+        }}
+        onClose={() => setShowIconPicker(false)}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal
@@ -1054,75 +977,6 @@ const styles = StyleSheet.create({
   },
   selectedIcon: {
     fontSize: 48,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  iconPickerContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  iconScrollView: {
-    maxHeight: 400,
-  },
-  iconGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    padding: 20,
-    justifyContent: 'space-evenly',
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-    fontSize: 15,
-  },
-  iconOption: {
-    width: '18%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    marginBottom: 12,
-  },
-  iconOptionText: {
-    fontSize: 32,
-  },
-  categoryTabsContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  categoryTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  categoryTabText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   helperText: {
     fontSize: 13,

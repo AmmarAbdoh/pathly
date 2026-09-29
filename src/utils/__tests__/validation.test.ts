@@ -86,6 +86,15 @@ describe('Validation Utilities', () => {
         expect(result.errors.target).toBe('targetMin');
         expect(result.isValid).toBe(false);
       });
+
+      // Inbox zero, a debt paid off: three templates aim for 0, and were
+      // refused everywhere.
+      it('lets a decreasing goal aim for 0, but not below', () => {
+        const down = { ...validGoalData, direction: 'decrease' as const, current: 5 };
+        expect(validateGoalForm({ ...down, target: 0 }).errors.target).toBeUndefined();
+        expect(validateGoalForm({ ...down, target: 0 }).isValid).toBe(true);
+        expect(validateGoalForm({ ...down, target: -1 }).errors.target).toBe('targetNotNegative');
+      });
     });
 
     describe('Current Value Validation', () => {

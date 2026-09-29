@@ -137,6 +137,14 @@ describe('Goal Progress Calculations', () => {
       const progress = calculateProgress(60, 60, 'decrease', 50);
       expect(progress).toBe(100);
     });
+
+    // A target of 0 read as "nothing to reach", so a debt paid down to 0
+    // showed 0% all the way.
+    it('measures a decreasing goal down to 0', () => {
+      expect(calculateProgress(40, 0, 'decrease', 40)).toBe(0);
+      expect(calculateProgress(10, 0, 'decrease', 40)).toBe(75);
+      expect(calculateProgress(0, 0, 'decrease', 40)).toBe(100);
+    });
   });
 
   describe('formatProgressText', () => {

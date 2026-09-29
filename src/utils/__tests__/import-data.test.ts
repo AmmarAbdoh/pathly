@@ -3,7 +3,7 @@
  */
 
 import type { Goal, PointsEntry, Reward } from '../../types';
-import { buildImport, type AppData, type ImportedData } from '../import-data';
+import { buildImport, goalImportProblem, type AppData, type ImportedData } from '../import-data';
 import { ledgerFromHistory, ledgerTotal } from '../points-ledger';
 
 const NOW = 2_000_000_000_000;
@@ -382,6 +382,21 @@ describe('links between records', () => {
     expect(byTitle(next.goals, 'Done').progress).toBe(100);
     expect(byTitle(next.goals, 'Not started').progress).toBe(0);
     expect(byTitle(next.goals, 'Parent').progress).toBe(50);
+  });
+});
+
+describe('a target of 0', () => {
+  // Going down, 0 is a target (inbox zero); going up it leaves nothing to reach.
+  it('is kept for a decreasing goal, and refused otherwise', () => {
+    const down = goal({ title: 'Inbox', direction: 'decrease', target: 0, current: 40, initialValue: 40 });
+    expect(goalImportProblem(down)).toBeNull();
+    expect(goalImportProblem(goal({ target: 0 }))).toBe('target');
+    expect(goalImportProblem({ ...down, direction: 'sideways' })).toBe('target');
+    expect(goalImportProblem({ ...down, target: -1 })).toBe('target');
+
+    const [imported] = buildImport(empty, file({ goals: [down, goal({ id: 2, target: 0 })] }), 'replace', NOW).goals;
+    expect(imported).toMatchObject({ title: 'Inbox', target: 0, direction: 'decrease' });
+    expect(buildImport(empty, file({ goals: [down, goal({ id: 2, target: 0 })] }), 'replace', NOW).goals).toHaveLength(1);
   });
 });
 

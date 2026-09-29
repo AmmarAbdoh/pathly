@@ -59,6 +59,13 @@ export interface TemplateModalProps<TItem, TCategory extends string> {
   /** Row height hint for the FlatList fallback's getItemLayout. FlashList v2 measures rows itself. */
   estimatedItemSize?: number;
   searchPlaceholder?: string;
+  /**
+   * Rows all the same height, so the FlatList fallback can skip measuring
+   * them. False when a row can grow - a picked template asking for a value.
+   */
+  fixedItemHeight?: boolean;
+  /** Pinned below the list: what to do with what was picked. */
+  footer?: React.ReactNode;
 }
 
 function TemplateModal<TItem, TCategory extends string>({
@@ -75,6 +82,8 @@ function TemplateModal<TItem, TCategory extends string>({
   initialCategory = 'all',
   estimatedItemSize = 150,
   searchPlaceholder,
+  fixedItemHeight = true,
+  footer,
 }: TemplateModalProps<TItem, TCategory>) {
   const { theme } = useTheme();
   const { t } = useLanguage();
@@ -133,7 +142,12 @@ function TemplateModal<TItem, TCategory extends string>({
           {/* Header */}
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: theme.colors.text }]}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.closeButton}
+              accessibilityRole="button"
+              accessibilityLabel={t.common.close}
+            >
               <Ionicons name="close" size={28} color={theme.colors.text} />
             </TouchableOpacity>
           </View>
@@ -248,15 +262,16 @@ function TemplateModal<TItem, TCategory extends string>({
               updateCellsBatchingPeriod={50}
               windowSize={5}
               removeClippedSubviews={true}
-              getItemLayout={(_, index) => ({
-                length: itemSize,
-                offset: itemSize * index,
-                index,
-              })}
+              getItemLayout={
+                fixedItemHeight
+                  ? (_, index) => ({ length: itemSize, offset: itemSize * index, index })
+                  : undefined
+              }
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
             />
           )}
+          {footer}
         </Pressable>
       </Pressable>
     </Modal>

@@ -3,6 +3,7 @@
  * App-wide providers and navigation configuration
  */
 
+import NavigationTheme from '@/components/NavigationTheme';
 import StorageErrorBanner from '@/components/StorageErrorBanner';
 import { GoalsProvider } from '@/src/context/GoalsContext';
 import { LanguageProvider } from '@/src/context/LanguageContext';
@@ -30,30 +31,32 @@ export default function RootLayout() {
             <GoalsProvider>
               <RewardsProvider>
                 <StatusBar style="auto" />
-                <Stack
-                  screenOptions={{
-                    headerShown: false,
-                    contentStyle: { backgroundColor: 'transparent' },
-                    animation: 'slide_from_right',
-                    animationDuration: 220,
-                    gestureEnabled: true,
-                  }}
-                >
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="goal/[id]" options={{ presentation: 'card' }} />
-                  <Stack.Screen
-                    name="analytics"
-                    options={{ animation: 'slide_from_bottom' }}
-                  />
-                  <Stack.Screen
-                    name="review"
-                    options={{ animation: 'slide_from_bottom' }}
-                  />
-                  <Stack.Screen
-                    name="points-history"
-                    options={{ animation: 'slide_from_bottom' }}
-                  />
-                </Stack>
+                <NavigationTheme>
+                  <Stack
+                    screenOptions={{
+                      headerShown: false,
+                      contentStyle: { backgroundColor: 'transparent' },
+                      animation: 'slide_from_right',
+                      animationDuration: 220,
+                      gestureEnabled: true,
+                    }}
+                  >
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="goal/[id]" options={{ presentation: 'card' }} />
+                    <Stack.Screen
+                      name="analytics"
+                      options={{ animation: 'slide_from_bottom' }}
+                    />
+                    <Stack.Screen
+                      name="review"
+                      options={{ animation: 'slide_from_bottom' }}
+                    />
+                    <Stack.Screen
+                      name="points-history"
+                      options={{ animation: 'slide_from_bottom' }}
+                    />
+                  </Stack>
+                </NavigationTheme>
                 {/* Rendered after the Stack so it overlays every screen. */}
                 <StorageErrorBanner />
               </RewardsProvider>

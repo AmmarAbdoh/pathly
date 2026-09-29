@@ -32,7 +32,7 @@ real errors in `jest.setup.js` sit behind a green check.
    to it, don't silence it with `any` or `@ts-expect-error`. Fix the type.
 2. **Zero ESLint errors.** Warnings are tolerated; errors are not. The React Compiler's
    `set-state-in-effect` rule is deliberately set to `warn` in `eslint.config.js` — the
-   remaining hits are the four provider mount-loads and four intentional prop-to-state mirrors
+   remaining hits are four loads from storage and two intentional prop-to-state mirrors
    (listed there). Don't add new ones.
 3. **Never call a hook outside a component body.** This repo has already shipped one
    `useGoals()`-inside-a-`useCallback` crash. Destructure from the top-level hook call.
@@ -153,6 +153,7 @@ Pure functions in `src/utils/`, each unit-tested. Keep them pure — no React, n
 | `points.ts` | spent and available points: the one affordability rule |
 | `points-ledger.ts` | the points ledger: payouts, rebuilding one from history, the history screen's rows |
 | `bonuses.ts` | bonus points: early-bird, streak, welcome back (`BONUS_RULES`) |
+| `goal-draft.ts` | the Add tab's step-by-step form: defaults, each step's checks, the goal it makes |
 
 If you add logic to one of these, add a test in the sibling `__tests__/` directory.
 
@@ -367,14 +368,36 @@ Gotchas:
   `AddGoalForm` runs it after its own empty-field checks. It returned English, so no screen used
   it and the form missed its length and range rules. It also holds the direction rule: a goal
   starts short of its target (below it for Increasing, above for Decreasing). Templates leave a
-  Decreasing goal's start empty - 0 put "Lose Weight" past its 70 kg target.
+  Decreasing goal's start empty (`draftFromTemplate`) - 0 put "Lose Weight" past its 70 kg target.
+  **A Decreasing goal may aim for 0** (inbox zero, a debt paid off); an Increasing one needs a
+  target above 0. `validateGoalForm` holds the rule; `stepErrors`, `AddGoalForm`'s own check,
+  `calculateProgress` and import (`goalImportProblem`) follow it. Refusing 0 everywhere made three
+  built-in templates impossible to add.
 - `editGoal` sets every field it takes, so leaving an argument out clears it: the detail screen
   once dropped `linkedRewardId` (unlinking the goal's reward on every edit) and never passed the
   schedule at all. It also doesn't touch completion state or the period - reset a recurring goal
   with `resetRecurringGoal`.
-- `AddGoalForm` reads `initialValues` only when it mounts. The Add tab stays mounted between
-  goals, so `resetForm` must clear *every* field - it once kept the last goal's linked reward
-  for the next one - and showing a template again takes a remount (the screen keys the form on it).
+- **Two goal forms.** The Add tab is `GoalWizard`: four steps (what, how it's tracked, how
+  often, what it's worth), its rules in `goal-draft.ts` - `stepErrors` checks one step with
+  `validateGoalForm`'s keys, and `draftToGoal` makes the goal. Tracking comes before timing so a
+  goal made of subgoals is never offered a repeat it can't keep. Editing a goal and adding a
+  subgoal use the long `AddGoalForm`; both share `IconPickerModal`. Both forms read their
+  starting values only when they mount. The Add tab stays mounted between goals, so it remounts
+  the wizard (a new `key`) after Create and to open a template in it; `AddGoalForm`'s
+  `resetForm` must clear *every* field - it once kept the last goal's linked reward.
+  A new one there (a subgoal) starts at 0 with no deadline: it started at a Custom period with
+  no days and no start, so a title, target and unit weren't enough. Until a period is picked
+  (`periodChosen`), `withTrackBy` gives a goal made of subgoals no deadline and any other Daily.
+  A wizard opened past a step (a template opens at the last) checks every step on Create and
+  goes back to the first with something to fix.
+- **Templates are added several at once** (`TemplatesModal`, from the Add tab and Home's empty
+  state; `useAddTemplates` adds them). Each is made as the wizard would with nothing changed:
+  the template's period, points and icon, repeating if daily or weekly, starting at 0. A
+  decreasing one asks for its start in its card and can't be added until it's valid. Only a
+  template whose goal passes every step's checks can be picked (`canQuickAdd`); any other -
+  a saved one with a custom period, which keeps no length - says to set it up on the Add tab.
+  Ticked, one the checks refused was skipped without a word. A test runs every built-in
+  template through it. There, Customize (one picked) opens it in the wizard.
 - A goal's reminders live in the OS, not in the goal. Anything that takes a goal off the list
   (archive, delete, import) cancels its `notificationIds`, or they keep firing for a goal that
   is gone; loading does the same for an archived goal that still has them. Likewise any id
@@ -392,8 +415,20 @@ Gotchas:
   updates for existing installs.
 - `expo-notifications` no longer supports remote push in Expo Go — local scheduled notifications
   (all this app uses) work fine, but test them in a dev build.
+- **A `DropDownPicker` with anything after it opens upward** (`dropDownDirection="TOP"`). Its
+  `zIndex` only orders siblings, so a list opening down went under the wizard's Back / Create
+  buttons, and a tap on a reward there pressed Create - the goal was saved without it. (In
+  tests the default `AUTO` never opens: it waits on a measurement the renderer never makes.)
+- **Keep a `TextInput` out of a pressable card.** On web a tap in the field reaches the card:
+  a template's start field sat inside its card, and clicking it unticked the card and took the
+  field away. `TemplatesModal`'s card is a frame whose top part alone is pressable.
 - The tab bar is a `MaterialTopTabNavigator` pinned to the bottom, not a real bottom tab navigator.
-  That's what makes the tabs swipeable.
+  That's what makes the tabs swipeable. Its pages are lazy with `lazyPreloadDistance: 1`: the
+  pages beside the one shown render ahead, so a swipe lands on a drawn page, and the rest wait.
+- The navigators paint behind every screen - a tab page not rendered yet, a stack card - from
+  the *navigation* theme, which `NavigationTheme` (`components/`, around the root `Stack`)
+  builds from `useTheme()`. Without it they used the light default, and in dark mode a tab page
+  flashed light while swiping to it.
 
 ## Commits
 

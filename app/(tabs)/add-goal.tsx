@@ -1,59 +1,50 @@
 /**
  * Add Goal screen
- * Screen for creating new goals
+ * A new goal in four short steps, or several from templates at once.
  */
 
-import AddGoalForm from '@/components/AddGoalForm';
+import GoalWizard from '@/components/GoalWizard';
 import TemplatesModal from '@/components/TemplatesModal';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
-import { GoalDirection, GoalSchedule, GoalTemplate, TimePeriod } from '@/src/types';
-import { Ionicons } from '@expo/vector-icons';
+import { useAddTemplates } from '@/src/hooks/use-add-templates';
+import {
+  addGoalArgs,
+  draftFromTemplate,
+  firstStepWithErrors,
+  type GoalDraft,
+  type NewGoal,
+  type TemplatePick,
+  type WizardStep,
+} from '@/src/utils/goal-draft';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-/**
- * Add Goal screen component
- */
+/** What the step-by-step form starts from. A new key remounts it. */
+interface WizardStart {
+  key: number;
+  draft?: GoalDraft;
+  step?: WizardStep;
+}
+
 export default function AddGoalScreen() {
   const { addGoal } = useGoals();
+  const addTemplates = useAddTemplates();
   const { theme } = useTheme();
   const { t } = useLanguage();
   const router = useRouter();
   const [showTemplates, setShowTemplates] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<GoalTemplate | null>(null);
+  const [start, setStart] = useState<WizardStart>({ key: 0 });
 
-  /**
-   * Handle adding a new goal
-   */
-  const handleAddGoal = useCallback(
-    async (
-      title: string,
-      target: number,
-      current: number,
-      unit: string,
-      direction: GoalDirection,
-      points: number,
-      period: TimePeriod,
-      customPeriodDays?: number,
-      parentId?: number,
-      isUltimate?: boolean,
-      isRecurring?: boolean,
-      description?: string,
-      icon?: string,
-      linkedRewardId?: number,
-      subgoalsAwardPoints?: boolean,
-      schedule?: GoalSchedule
-    ) => {
+  const handleCreate = useCallback(
+    async (goal: NewGoal) => {
       try {
-        await addGoal(title, target, current, unit, direction, points, period, customPeriodDays, parentId, isUltimate, isRecurring, description, icon, linkedRewardId, subgoalsAwardPoints, schedule);
-        // The form reads initialValues only when it mounts, and remounts on the
-        // template's id: left set, picking the same template again did nothing.
-        setSelectedTemplate(null);
-        // Navigate back to home after successful creation
+        await addGoal(...addGoalArgs(goal));
+        // This tab stays mounted: the next goal starts from an empty form.
+        setStart((previous) => ({ key: previous.key + 1 }));
         router.push('/home');
       } catch (err) {
         console.error('Failed to add goal:', err);
@@ -62,76 +53,51 @@ export default function AddGoalScreen() {
     [addGoal, router]
   );
 
-  /**
-   * Handle template selection
-   */
-  const handleSelectTemplate = useCallback((template: GoalTemplate) => {
-    setSelectedTemplate(template);
-    setShowTemplates(false);
+  const handleAddTemplates = useCallback(
+    async (picks: TemplatePick[]) => {
+      try {
+        if ((await addTemplates(picks)) > 0) router.push('/home');
+      } catch (err) {
+        console.error('Failed to add goals:', err);
+      }
+    },
+    [addTemplates, router]
+  );
+
+  // Fill the steps from the template, and open the first with anything left
+  // to fill in - for a decreasing one without a start, the tracking step.
+  const handleCustomize = useCallback((pick: TemplatePick) => {
+    const draft = draftFromTemplate(pick.template);
+    if (pick.current !== undefined) draft.current = String(pick.current);
+    setStart((previous) => ({ key: previous.key + 1, draft, step: firstStepWithErrors(draft) ?? 4 }));
   }, []);
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      edges={['top']}
-    >
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            {t.goalForm.title}
-          </Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            {t.home.addGoal}
-          </Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>{t.goalForm.title}</Text>
         </View>
 
-        {/* Templates Button */}
-        <TouchableOpacity
-          style={[styles.templatesButton, { backgroundColor: theme.colors.card, ...theme.shadows.small }]}
-          onPress={() => setShowTemplates(true)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="albums-outline" size={24} color={theme.colors.primary} />
-          <View style={styles.templatesButtonText}>
-            <Text style={[styles.templatesButtonTitle, { color: theme.colors.text }]}>
-              {t.templates.useTemplate}
-            </Text>
-            <Text style={[styles.templatesButtonSubtitle, { color: theme.colors.textSecondary }]}>
-              {t.templates.quickStart}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
-        </TouchableOpacity>
-
-        {/* Add Goal Form */}
-        <AddGoalForm 
-          key={selectedTemplate?.id || 'default'}
-          onAddGoal={handleAddGoal}
-          initialValues={selectedTemplate ? {
-            title: selectedTemplate.title,
-            description: selectedTemplate.description,
-            target: selectedTemplate.target,
-            current: 0,
-            unit: selectedTemplate.unit,
-            direction: selectedTemplate.direction,
-            points: selectedTemplate.points,
-            period: selectedTemplate.period,
-            icon: selectedTemplate.icon,
-          } : undefined}
+        <GoalWizard
+          key={start.key}
+          initialDraft={start.draft}
+          initialStep={start.step}
+          onCreate={handleCreate}
+          onUseTemplate={() => setShowTemplates(true)}
         />
       </ScrollView>
 
-      {/* Templates Modal */}
       <TemplatesModal
         visible={showTemplates}
         onClose={() => setShowTemplates(false)}
-        onSelectTemplate={handleSelectTemplate}
+        onAdd={handleAddTemplates}
+        onCustomize={handleCustomize}
       />
     </SafeAreaView>
   );
@@ -147,35 +113,10 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  templatesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 24,
-    gap: 12,
-  },
-  templatesButtonText: {
-    flex: 1,
-  },
-  templatesButtonTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  templatesButtonSubtitle: {
-    fontSize: 13,
-    lineHeight: 18,
   },
 });

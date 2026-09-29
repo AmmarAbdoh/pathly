@@ -209,7 +209,10 @@ export default function TabLayout() {
       screenOptions={{
         swipeEnabled: true,
         animationEnabled: true,
+        // A page renders when it is next to the one shown, so a swipe lands on
+        // a page already drawn; the rest wait until they are near.
         lazy: true,
+        lazyPreloadDistance: 1,
       }}
     >
       <Tab.Screen name="home" component={HomeScreen} options={{ title: t.tabs.home }} />

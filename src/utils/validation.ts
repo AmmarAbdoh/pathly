@@ -16,6 +16,7 @@ export type ValidationKey =
   | 'titleTooLong'
   | 'targetRequired'
   | 'targetMin'
+  | 'targetNotNegative'
   | 'targetMax'
   | 'currentRequired'
   | 'currentMin'
@@ -49,11 +50,12 @@ export const validateGoalForm = (
     errors.title = 'titleTooLong';
   }
 
-  // Target validation
+  // Target validation. A goal going down may aim for 0 - inbox zero, a debt
+  // paid off - and templates do; one going up needs something to reach.
   if (data.target === undefined || data.target === null) {
     errors.target = 'targetRequired';
-  } else if (data.target < VALIDATION_RULES.GOAL_TARGET.MIN) {
-    errors.target = 'targetMin';
+  } else if (data.direction === 'decrease' ? data.target < 0 : data.target < VALIDATION_RULES.GOAL_TARGET.MIN) {
+    errors.target = data.direction === 'decrease' ? 'targetNotNegative' : 'targetMin';
   } else if (data.target > VALIDATION_RULES.GOAL_TARGET.MAX) {
     errors.target = 'targetMax';
   }

@@ -55,7 +55,8 @@ export const calculateProgress = (
   direction: GoalDirection,
   initialValue?: number
 ): number => {
-  if (target <= 0) return 0;
+  // Going down, 0 is a target: only going up does it leave nothing to reach.
+  if (direction === 'increase' ? target <= 0 : target < 0) return 0;
 
   let progress: number;
   

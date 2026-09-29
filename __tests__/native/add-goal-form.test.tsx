@@ -23,6 +23,8 @@ type FormProps = React.ComponentProps<typeof AddGoalForm>;
 type Initial = NonNullable<FormProps['initialValues']>;
 
 // The positions of onAddGoal's arguments this file checks.
+const CURRENT = 2;
+const PERIOD = 6;
 const CUSTOM_PERIOD_DAYS = 7;
 const IS_RECURRING = 10;
 const LINKED_REWARD = 13;
@@ -75,13 +77,12 @@ const type = (placeholder: string, text: string) =>
 function fillIn({ ultimate = false } = {}) {
   type(t.goalForm.titlePlaceholder, 'Next');
   if (!ultimate) {
-    type(t.goalForm.currentPlaceholder, '0');
     type(t.goalForm.targetPlaceholder, '5');
     type(t.goalForm.unit, 'km');
   }
   type(t.goalForm.pointsPlaceholder, '10');
-  type(t.goalForm.customPeriodPlaceholder, '3'); // the period starts as 'custom'
 }
+
 
 // react-native-dropdown-picker still uses React Native's own SafeAreaView,
 // which warns that it is deprecated. Nothing this app can change.
@@ -144,9 +145,10 @@ describe('editing', () => {
 });
 
 describe('adding one goal after another', () => {
-  // Regression: the reset after adding missed these, so the next goal got the
-  // last one's reward (linking one reward to two goals) and schedule.
-  it("starts without the last goal's reward or schedule", async () => {
+  // Regression: the reset after adding missed this, so the next goal got the
+  // last one's reward, linking one reward to two goals. (The schedule was
+  // missed too; the next goal now starts with no deadline, which can't repeat.)
+  it("starts without the last goal's reward, at 0 with no deadline", async () => {
     const onAddGoal = await renderForm({
       initialValues: { ...goal, isRecurring: true, schedule, linkedRewardId: 7 },
     });
@@ -154,12 +156,12 @@ describe('adding one goal after another', () => {
     expect(onAddGoal.mock.calls[0][LINKED_REWARD]).toBe(7);
 
     fillIn();
-    fireEvent.press(screen.getByLabelText(t.goalForm.recurringGoal));
     submit();
 
     expect(onAddGoal).toHaveBeenCalledTimes(2);
-    expect(onAddGoal.mock.calls[1][IS_RECURRING]).toBe(true);
     expect(onAddGoal.mock.calls[1][LINKED_REWARD]).toBeUndefined();
+    expect(onAddGoal.mock.calls[1][CURRENT]).toBe(0);
+    expect(onAddGoal.mock.calls[1][PERIOD]).toBe('ongoing');
     expect(onAddGoal.mock.calls[1][SCHEDULE]).toBeUndefined();
   });
 
@@ -225,26 +227,6 @@ describe('validation', () => {
 
     expect(onAddGoal).toHaveBeenCalledTimes(1);
   });
-
-  it('leaves the start of a decreasing template for the user to fill in', async () => {
-    await renderForm({
-      templateData: {
-        id: 'lose-weight',
-        title: 'Lose Weight',
-        category: 'health',
-        description: '',
-        target: 70,
-        unit: 'kg',
-        direction: 'decrease',
-        points: 100,
-        period: 'monthly',
-        icon: '⚖️',
-      },
-      onClearTemplate: jest.fn(),
-    });
-
-    expect(screen.getByPlaceholderText(t.goalForm.currentPlaceholder).props.value).toBe('');
-  });
 });
 
 describe('subgoal points', () => {
@@ -261,6 +243,48 @@ describe('subgoal points', () => {
     await renderForm({ parentId: 1, parentAwardsPoints: true });
 
     expect(screen.getByLabelText(t.goalForm.pointsLabel)).toBeTruthy();
+  });
+
+  // Regression: the form started at a Custom period with no days and no start,
+  // so a title, target and unit weren't enough; and its summary listed points
+  // the parent doesn't pay.
+  it('adds one from a title, target and unit, without showing points', async () => {
+    const onAddGoal = await renderForm({ parentId: 1 });
+
+    type(t.goalForm.titlePlaceholder, 'Vocabulary');
+    fireEvent.changeText(screen.getByLabelText(t.goalForm.targetLabel), '100');
+    fireEvent.changeText(screen.getByLabelText(t.goalForm.unitLabel), 'words');
+    fireEvent.press(screen.getByLabelText(translations.en.goalDetail.addSubgoal));
+
+    expect(screen.queryByText(new RegExp(t.goalForm.points))).toBeNull();
+    fireEvent.press(screen.getByLabelText(t.common.add));
+    expect(onAddGoal).toHaveBeenCalledTimes(1);
+    expect(onAddGoal.mock.calls[0].slice(0, 4)).toEqual(['Vocabulary', 100, 0, 'words']);
+  });
+});
+
+describe('a target of 0', () => {
+  // Inbox zero, a debt paid off: a goal going down may aim for 0. The form
+  // refused it, and with it three templates.
+  it('is taken for a goal going down', async () => {
+    const onAddGoal = await renderForm({
+      editMode: true,
+      initialValues: { ...goal, direction: 'decrease', target: 0, current: 40 },
+    });
+
+    submit(true);
+
+    expect(onAddGoal).toHaveBeenCalledTimes(1);
+    expect(onAddGoal.mock.calls[0][1]).toBe(0);
+  });
+
+  it('is refused for a goal going up', async () => {
+    const onAddGoal = await renderForm({ editMode: true, initialValues: { ...goal, target: 0, current: 0 } });
+
+    fireEvent.press(screen.getByLabelText(t.goalForm.editButton));
+
+    expect(screen.getByText(t.validation.targetPositive)).toBeTruthy();
+    expect(onAddGoal).not.toHaveBeenCalled();
   });
 });
 

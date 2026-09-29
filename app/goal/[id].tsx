@@ -41,6 +41,21 @@ import Slider from '@react-native-community/slider';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 /**
+ * The range the progress slider spans.
+ *
+ * A 'decrease' goal counts down from its starting value to the target, so
+ * its bounds are inverted relative to an 'increase' goal. Without a start, it
+ * starts from where it is - twice a target of 0 is 0, which left it no room.
+ */
+function sliderBoundsOf(goal: Goal | undefined): { min: number; max: number } {
+  if (!goal) return { min: 0, max: 0 };
+
+  return goal.direction === 'decrease'
+    ? { min: goal.target, max: goal.initialValue || Math.max(goal.target * 2, goal.current) }
+    : { min: goal.initialValue || 0, max: goal.target };
+}
+
+/**
  * Goal detail screen component
  */
 export default function GoalDetail() {
@@ -56,19 +71,7 @@ export default function GoalDetail() {
     [goals, id]
   );
 
-  /**
-   * The range the progress slider spans.
-   *
-   * A 'decrease' goal counts down from its starting value to the target, so
-   * its bounds are inverted relative to an 'increase' goal.
-   */
-  const sliderBounds = useMemo(() => {
-    if (!goal) return { min: 0, max: 0 };
-
-    return goal.direction === 'decrease'
-      ? { min: goal.target, max: goal.initialValue || goal.target * 2 }
-      : { min: goal.initialValue || 0, max: goal.target };
-  }, [goal]);
+  const sliderBounds = useMemo(() => sliderBoundsOf(goal), [goal]);
 
   const subgoals = useMemo(
     () => goal ? getSubgoals(goal.id) : [],
@@ -147,15 +150,14 @@ export default function GoalDetail() {
   const wouldReach100Percent = useCallback((value: number) => {
     if (!goal) return false;
     
-    let newProgress: number;
-    if (goal.direction === 'increase') {
-      newProgress = ((value - (goal.initialValue || 0)) / (goal.target - (goal.initialValue || 0))) * 100;
-    } else {
-      newProgress = (((goal.initialValue || goal.target * 2) - value) / ((goal.initialValue || goal.target * 2) - goal.target)) * 100;
-    }
-    
+    // From the slider's start to its end: the same bounds it is drawn with.
+    const { min, max } = sliderBounds;
+    const newProgress = goal.direction === 'increase'
+      ? ((value - min) / (max - min)) * 100
+      : ((max - value) / (max - min)) * 100;
+
     return Math.round(newProgress) >= 100;
-  }, [goal]);
+  }, [goal, sliderBounds]);
 
   /** The completion message, with what it paid: points, then any bonuses. */
   const finishMessage = useCallback(
@@ -1456,10 +1458,10 @@ export default function GoalDetail() {
               </View>
               <View style={styles.sliderLabels}>
                 <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>
-                  {formatNumber(goal.direction === 'decrease' ? goal.target : (goal.initialValue || 0), language)}
+                  {formatNumber(sliderBounds.min, language)}
                 </Text>
                 <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>
-                  {formatNumber(goal.direction === 'decrease' ? (goal.initialValue || goal.target * 2) : goal.target, language)}
+                  {formatNumber(sliderBounds.max, language)}
                 </Text>
               </View>
             </View>

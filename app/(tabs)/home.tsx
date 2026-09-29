@@ -10,10 +10,12 @@
 
 import GoalCard from '@/components/GoalCard';
 import GoalListHeader, { type FilterStatus } from '@/components/GoalListHeader';
+import TemplatesModal from '@/components/TemplatesModal';
 import { DURATION } from '@/src/constants/animation';
 import { useGoals } from '@/src/context/GoalsContext';
 import { useLanguage } from '@/src/context/LanguageContext';
 import { useTheme } from '@/src/context/ThemeContext';
+import { useAddTemplates } from '@/src/hooks/use-add-templates';
 import { useDebouncedValue } from '@/src/hooks/use-debounced-value';
 import { Goal, TimePeriod } from '@/src/types';
 import {
@@ -30,6 +32,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -89,6 +92,10 @@ function compareGoals(a: Goal, b: Goal): number {
 
 export default function HomeScreen() {
   const { goals, reorderGoals, refreshGoals, isLoading } = useGoals();
+  const addTemplates = useAddTemplates();
+  // Starting from nothing: pick several ready-made goals in one go, rather
+  // than one long form at a time.
+  const [showStarter, setShowStarter] = useState(false);
   const { theme } = useTheme();
   const { t, language } = useLanguage();
   const router = useRouter();
@@ -437,14 +444,36 @@ export default function HomeScreen() {
       );
     }
 
+    const filtered = Boolean(searchQuery) || filterStatus !== 'all';
     return (
       <Animated.View entering={FadeIn.duration(DURATION.normal)} style={styles.stateContainer}>
         <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-          {searchQuery || filterStatus !== 'all' ? t.home.noResults : t.home.noGoals}
+          {filtered ? t.home.noResults : t.home.noGoals}
         </Text>
+        {filtered ? null : (
+          <TouchableOpacity
+            style={[styles.starterButton, { backgroundColor: theme.colors.primary }]}
+            onPress={() => setShowStarter(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t.templates.pickToStart}
+          >
+            <Text style={styles.starterButtonText}>{t.templates.pickToStart}</Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
     );
   }, [isLoading, isRefreshing, theme, t, searchQuery, filterStatus]);
+
+  const handleAddStarters = useCallback(
+    async (picks: Parameters<typeof addTemplates>[0]) => {
+      try {
+        await addTemplates(picks);
+      } catch (err) {
+        console.error('Failed to add goals:', err);
+      }
+    },
+    [addTemplates]
+  );
 
   return (
     <SafeAreaView
@@ -474,6 +503,13 @@ export default function HomeScreen() {
         updateCellsBatchingPeriod={50}
         windowSize={11}
       />
+
+      <TemplatesModal
+        visible={showStarter}
+        onClose={() => setShowStarter(false)}
+        onAdd={handleAddStarters}
+        title={t.templates.pickToStart}
+      />
     </SafeAreaView>
   );
 }
@@ -495,6 +531,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
+  },
+  starterButton: {
+    marginTop: 20,
+    paddingHorizontal: 28,
+    paddingVertical: 15,
+    borderRadius: 14,
+  },
+  starterButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
   sectionHeader: {
     marginTop: 24,
