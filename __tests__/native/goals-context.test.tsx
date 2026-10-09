@@ -276,7 +276,8 @@ describe('bonuses', () => {
   }
 
   it('records an early finish as a bonus, and says what was paid', async () => {
-    await seed([makeGoal({ period: 'weekly' })]);
+    // A recurring goal made weeks ago, at the start of a later week.
+    await seed([makeGoal({ period: 'weekly', isRecurring: true, createdAt: Date.now() - 30 * DAY })]);
     const { result } = await renderGoals();
 
     const paid = await finish(result);
@@ -323,6 +324,32 @@ describe('bonuses', () => {
     expect(paid[1].points).toBe(10);
   });
 
+  // The tester's case: a daily goal made at 21:48 and ticked off at once
+  // earned an early-bird bonus. So did a one-off goal, whose deadline the
+  // user picks - a quick task given Yearly earned nearly the most.
+  it('pays no early-bird bonus in the period a goal was made in', async () => {
+    await seed([]);
+    const { result } = await renderGoals();
+    // A clock that moves on every reading: read twice, a goal's first period
+    // began a moment after it was made, and counted as a later one.
+    // It starts a second back, so it never runs ahead of the real one.
+    let tick = Date.now() - 1000;
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => ++tick);
+    try {
+      await act(async () => {
+        await result.current.addGoal('Walk', 1, 0, 'time', 'increase', 10, 'daily', undefined, undefined, false, true);
+        await result.current.addGoal('Report', 1, 0, 'time', 'increase', 10, 'yearly');
+      });
+    } finally {
+      clock.mockRestore();
+    }
+    const [walk, report] = result.current.goals;
+    expect(walk.periodStartDate).toBe(walk.createdAt);
+
+    expect(kinds(await finish(result, walk.id))).toEqual(['completion']);
+    expect(kinds(await finish(result, report.id))).toEqual(['completion']);
+  });
+
   // Each changes the period by hand: a late finish would count as early.
   describe('no early-bird bonus once the timing was changed by hand', () => {
     it('by extending the deadline', async () => {
@@ -332,6 +359,7 @@ describe('bonuses', () => {
         await result.current.extendDeadline(1, 14);
       });
 
+      expect(result.current.goals[0].timingChanged).toBe(true);
       expect(kinds(await finish(result))).toEqual(['completion']);
     });
 
@@ -346,14 +374,16 @@ describe('bonuses', () => {
     });
 
     it('by changing the period, and only then', async () => {
+      // Recurring goals made weeks ago: only they earn early-bird bonuses.
+      const longAgo = Date.now() - 30 * DAY;
       await seed([
-        makeGoal({ id: 1, period: 'weekly', periodStartDate: Date.now() - 6 * DAY }),
-        makeGoal({ id: 2, period: 'weekly' }),
+        makeGoal({ id: 1, period: 'weekly', isRecurring: true, createdAt: longAgo, periodStartDate: Date.now() - 6 * DAY }),
+        makeGoal({ id: 2, period: 'weekly', isRecurring: true, createdAt: longAgo }),
       ]);
       const { result } = await renderGoals();
       const edit = (id: number, title: string, period: Goal['period']) =>
         act(async () => {
-          await result.current.editGoal(id, title, 10, 0, 'books', 'increase', 50, period);
+          await result.current.editGoal(id, title, 10, 0, 'books', 'increase', 50, period, undefined, false, true);
         });
       await edit(1, 'Read books', 'yearly');
       await edit(2, 'Renamed', 'weekly');

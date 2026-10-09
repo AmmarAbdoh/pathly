@@ -49,16 +49,30 @@ describe('early-bird bonus', () => {
   });
 
   // A recurring goal's deadline is its reset: a daily goal ends at midnight.
-  it("measures a recurring goal to its reset, a one-off to its last day's end", () => {
+  it('measures a recurring goal to its reset', () => {
     const nineAm = new Date(2026, 0, 5, 9, 0).getTime();
     const sixPm = new Date(2026, 0, 5, 18, 0).getTime();
-    const daily = (isRecurring: boolean) =>
-      goal({ period: 'daily', isRecurring, periodStartDate: nineAm, completedAt: sixPm });
+    const daily = goal({ period: 'daily', createdAt: nineAm - 30 * DAY, periodStartDate: nineAm, completedAt: sixPm });
 
-    // Recurring: 9am to midnight, 6 of 15 hours left. One-off: to the end of
-    // tomorrow, 30 of 39 left.
-    expect(bonus(daily(true), 'early', [], sixPm)).toBe(10);
-    expect(bonus(daily(false), 'early', [], sixPm)).toBe(19);
+    // 9am to midnight: 6 of 15 hours left.
+    expect(bonus(daily, 'early', [], sixPm)).toBe(10);
+  });
+
+  // Made and ticked off at once, a goal earned the most early-bird there is.
+  it('is none in the period the goal was made in', () => {
+    expect(bonus(goal({ createdAt: NOW }), 'early')).toBe(0);
+    expect(bonus(goal({ createdAt: NOW - DAY, periodStartDate: NOW - DAY }), 'early')).toBe(0);
+  });
+
+  it('comes from the second period on', () => {
+    expect(bonus(goal({ createdAt: NOW - 7 * DAY, periodStartDate: NOW }), 'early')).toBe(25);
+  });
+
+  // Its only period is the one it was made in, and its deadline is the
+  // user's own: a quick task given Yearly earned nearly all of it.
+  it('is none for a one-off goal', () => {
+    expect(bonus(goal({ isRecurring: false }), 'early')).toBe(0);
+    expect(bonus(goal({ isRecurring: false, period: 'yearly' }), 'early', [], NOW + DAY)).toBe(0);
   });
 
   it('is none for a goal with no deadline', () => {

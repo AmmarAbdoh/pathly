@@ -2,7 +2,8 @@
  * Bonus points: extra points a completion earns, each its own ledger entry.
  *
  * Three bonuses, each scaled to the goal's own points:
- * - early-bird: finishing with much of the period left - the more, the more;
+ * - early-bird: finishing a recurring goal with much of the period left - the
+ *   more, the more - from its second period on;
  * - streak: a recurring goal completed period after period;
  * - welcome back: the first completion after a break of a few days.
  *
@@ -39,14 +40,21 @@ export interface Bonus {
 const isTime = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-/** The share of its points finishing `goal` now earns for being early. */
+/**
+ * The share of its points finishing `goal` now earns for being early: a
+ * recurring goal's, from its second period on. The period a goal is made in
+ * earns none - a goal made and ticked off at once, or a quick task given a
+ * long deadline, isn't finished early - and a one-off goal has no other.
+ */
 function earlyShare(goal: Goal, now: number): number {
-  if (goal.period === 'ongoing' || goal.timingChanged || !isTime(goal.periodStartDate)) return 0;
+  if (!goal.isRecurring || goal.period === 'ongoing' || goal.timingChanged || !isTime(goal.periodStartDate)) return 0;
 
-  // The end the card counts down to: a recurring goal's reset, a one-off
-  // goal's last day.
+  // A new goal's first period starts the moment it is made.
   const start = goal.periodStartDate;
-  const end = calculatePeriodEndDate(start, goal.period, goal.customPeriodDays, goal.isRecurring);
+  if (isTime(goal.createdAt) && goal.createdAt >= start) return 0;
+
+  // The end the card counts down to: its reset.
+  const end = calculatePeriodEndDate(start, goal.period, goal.customPeriodDays, true);
   if (!(end > start)) return 0;
 
   const timeLeft = Math.min(1, Math.max(0, (end - now) / (end - start)));

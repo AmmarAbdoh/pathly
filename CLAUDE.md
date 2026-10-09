@@ -184,7 +184,11 @@ the Points history screen (`buildPointsHistory`) puts the two together.
 - Where a subgoal's points aren't paid, the app doesn't show or ask for them.
 - **Bonuses are ledger entries too** (`reason: 'bonus'`, `bonus: kind`), recorded with the payout
   by `recordPayout` from `computeBonuses` (`src/utils/bonuses.ts`, numbers in `BONUS_RULES`):
-  early-bird (up to +25%, scaled by the share of the period left, none in its last quarter),
+  early-bird (up to +25%, scaled by the share of the period left, none in its last quarter;
+  recurring goals only, from their second period - the period a goal is made in starts as it
+  is made, so a goal made and ticked off at once earned the most, and a one-off goal has no
+  other period and a deadline the user picked; `addGoal` reads the clock once for `createdAt`
+  and `periodStartDate`, which is how the first period is known),
   streak (+10% per recurring period in a row after the first, up to +50%) and welcome back
   (+20% on the first completion after 3+ days of none). They are paid on the goal *as
   completed* - its completion and streak count - so `finishGoal` passes the goal from `next`.

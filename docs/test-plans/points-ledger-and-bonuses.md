@@ -69,17 +69,17 @@ recorded. Only a goal's **first completion in a period** pays. A subgoal pays on
 has "Subgoals award their own points" on.
 
 - **Early-bird:**
-  - **When it applies:** the goal has a deadline (its period isn't Ongoing), and the period's
-    timing hasn't been changed by hand (`timingChanged`).
+  - **When it applies:** all of these must hold:
+    - the goal is **recurring**; a one-off goal never earns it
+    - it's past its **first period**: the period it was created in (`createdAt` before
+      `periodStartDate`) earns none
+    - its period hasn't been changed by hand (`timingChanged`)
   - **The formula:**
     - `timeLeft = (end − now) / (end − start)`, clamped to the range 0–1.
     - If `timeLeft ≥ 0.25`, the bonus is `round(points × 0.25 × timeLeft)`. Otherwise there's
       none.
-  - **The period's end:**
-    - **Recurring goal** (the moment it resets): daily is midnight that day; weekly is exactly 7
-      days after the start; monthly is the same time next month.
-    - **One-off goal:** the end of its last day. For weekly, that's 11:59 PM on the day 7 days
-      after the start.
+  - **The period's end** is the moment it resets: daily is midnight that day; weekly is exactly
+    7 days after the start; monthly is the same time next month.
 - **Streak:** recurring goals only.
   - `streak` is the number of consecutive periods completed, this one included.
   - The bonus is `round(points × min(0.5, 0.1 × (streak − 1)))`.
@@ -243,7 +243,8 @@ Seed each case, complete the goal as described in "How to complete a goal" above
 
 | # | Seed (`goals`, with `ledger: []` unless shown) | Complete | Expected new entries |
 |---|---|---|---|
-| 4.1 | `[goal({ title: 'Report', period: 'weekly' })]`: one-off, just started | goal 1 | `completion 50 Report`, `bonus:early 12` (11–12 is fine) |
+| 4.1 | `[goal({ title: 'Report', period: 'weekly' })]`: one-off, just started | goal 1 | `completion 50 Report` only (a one-off goal earns no early-bird) |
+| 4.1a | `[goal({ title: 'New habit', period: 'weekly', isRecurring: true, createdAt: now })]`: recurring, created just now | goal 1 | `completion 50` only (none in the period a goal was created in) |
 | 4.2 | `[goal({ title: 'Run', points: 100, period: 'weekly', isRecurring: true, periodStartDate: now - 3 * DAY })]` | goal 1 | `completion 100`, `bonus:early 14` (4/7 of the week left) |
 | 4.3 | as 4.2 but `periodStartDate: now - 6 * DAY` | goal 1 | `completion 100` only (last quarter: no early-bird) |
 | 4.4 | `[goal({ title: 'Meditate' })]`: ongoing, no deadline | goal 1 | `completion 50` only |
@@ -289,7 +290,7 @@ seed({ goals: [
 
 **Expected:**
 - **Complete goal 2:** no new entries.
-- **Complete goal 4:** `completion 20 Paid sub` and `bonus:early 5`.
+- **Complete goal 4:** `completion 20 Paid sub` only (a subgoal is one-off, so no early-bird).
 
 **4.13 Blocked goal.** Seed:
 
@@ -313,17 +314,20 @@ seed({ goals: [goal({ title: 'Late', period: 'weekly', periodStartDate: now - 10
   11 days.
 - Wait 2 seconds and check the flag:
   `JSON.parse(localStorage.getItem('@pathly:goals'))[0].timingChanged`. **Expected:** `true`.
-- Complete it. **Expected:** `completion 50` only, with **no** early-bird bonus, even though the
-  new window has barely started.
+- Complete it. **Expected:** `completion 50` only, with **no** early-bird bonus. (A one-off goal
+  earns none anyway; the flag is what matters here.)
 
 **5.2 The period changed in the edit form.** Seed:
 
 ```js
-seed({ goals: [goal({ id: 1, title: 'Switch', period: 'weekly' }), goal({ id: 2, title: 'Rename', period: 'weekly' })] });
+seed({ goals: [goal({ id: 1, title: 'Switch', period: 'weekly', isRecurring: true }),
+               goal({ id: 2, title: 'Rename', period: 'weekly', isRecurring: true })] });
 ```
 
-- **Goal 1:** Edit Goal, change Time Period to **Yearly**, then Save Changes and confirm.
-  Complete it. **Expected:** `completion 50` only.
+Both are recurring and were created weeks ago, so both could earn early-bird.
+
+- **Goal 1:** Edit Goal, change Time Period to **Yearly** (leave it recurring), then Save
+  Changes and confirm. Complete it. **Expected:** `completion 50` only.
 - **Goal 2:** Edit Goal, change **only the title** to "Renamed", then save and confirm. Complete
   it. **Expected:** `completion 50` plus `bonus:early` (about 12). The early-bird bonus is kept
   when the period wasn't touched.
@@ -364,7 +368,7 @@ Complete goal 1. **Expected:**
 
 ## 7. Saving
 
-1. Seed as in 4.1 and complete the goal. **Make your very next action a page reload.**
+1. Seed as in 4.2 and complete the goal. **Make your very next action a page reload.**
    **Expected:** both entries are still there (points are saved at once, not after a delay).
 2. Reload again. **Expected:** the ledger, Total Earned and the History rows are all unchanged.
 

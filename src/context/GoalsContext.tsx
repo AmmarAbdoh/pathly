@@ -908,6 +908,9 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
     ) => {
       try {
         const recurring = isRecurring && canRecur({ period, customPeriodDays, parentId, isUltimate });
+        // One reading for both: the first period starts as the goal is made,
+        // which is how the early-bird bonus knows it (see bonuses.ts).
+        const createdAt = Date.now();
         const newGoal: Goal = {
           // Not Date.now(): goals added in the same millisecond (import does
           // this in a loop) would share an id. goalsRef is updated
@@ -920,7 +923,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           initialValue: current,
           unit: unit.trim(),
           progress: calculateProgress(current, target, direction, current),
-          createdAt: Date.now(),
+          createdAt,
           direction,
           points,
           icon,
@@ -928,7 +931,7 @@ export function GoalsProvider({ children }: GoalsProviderProps) {
           customPeriodDays,
           parentId,
           subGoals: [],
-          periodStartDate: Date.now(),
+          periodStartDate: createdAt,
           isUltimate,
           isComplete: false,
           // Only where it can: see canRecur.

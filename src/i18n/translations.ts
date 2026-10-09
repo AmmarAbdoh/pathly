@@ -1146,7 +1146,7 @@ export const translations: Record<Language, Translations> = {
       empty: 'No points yet. Complete a goal to earn some!',
       carried: 'Points from before history was kept',
       completedGoal: 'Completed a goal',
-      bonusHint: 'Earn bonus points by finishing early, keeping a streak going, or coming back after a break.',
+      bonusHint: 'Earn bonus points by finishing a repeating goal early, keeping a streak going, or coming back after a break.',
       bonus: {
         early: 'Early-bird bonus',
         streak: 'Streak bonus',
@@ -1907,7 +1907,7 @@ export const translations: Record<Language, Translations> = {
       empty: 'لا توجد نقاط بعد. أكمل هدفاً لتكسب بعضها!',
       carried: 'نقاط من قبل بدء السجل',
       completedGoal: 'إكمال هدف',
-      bonusHint: 'اكسب نقاطاً إضافية بالإنجاز مبكراً، أو بالحفاظ على سلسلتك، أو بالعودة بعد انقطاع.',
+      bonusHint: 'اكسب نقاطاً إضافية بإنجاز هدف متكرر مبكراً، أو بالحفاظ على سلسلتك، أو بالعودة بعد انقطاع.',
       bonus: {
         early: 'مكافأة الإنجاز المبكر',
         streak: 'مكافأة السلسلة',
